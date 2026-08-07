@@ -235,8 +235,11 @@ export default function PracticePage() {
                       })}
                     </div>
                     {d.solution && (
-                      <div className="mt-3 whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
-                        <b className="text-[#00467F]">解析:</b> {renderRich(d.solution)}
+                      <div className="mt-3 rounded border border-[#e3d6b0] bg-[#fbf6e9] px-3 py-2.5">
+                        <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#8a6d1f]">
+                          <span>💡</span><span>解析</span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(d.solution)}</div>
                       </div>
                     )}
                   </div>

@@ -103,6 +103,8 @@ export interface WrongItem {
   subject: string;
   difficulty: number;
   stem: string;
+  answer?: string | null;
+  solution?: string | null;
   wrongCount: number;
   mastered: boolean;
 }

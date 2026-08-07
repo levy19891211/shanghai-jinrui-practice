@@ -4,9 +4,61 @@ import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/paper-set.js";
 import { planAutoFix } from "../lib/autofix.js";
+import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
+
+// 解析 options(JSON 字符串或数组) → 字符串数组
+function safeParseOptions(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
+  }
+  return [];
+}
+
+// 组装发给 LLM 的题目信息
+function buildSolutionPrompt({ stem, options, answer, topic }) {
+  const optText = Array.isArray(options) && options.length
+    ? options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("\n")
+    : "(无选项 / 填空题)";
+  return [
+    `【科目/知识点】${topic || "数学"}`,
+    `【题干】${stem}`,
+    `【选项】\n${optText}`,
+    `【参考答案】${answer || "(见题干或解析)"}`,
+    "",
+    "请基于以上信息给出解析,务必包含解题步骤、考查知识点、易错点提醒三部分。",
+  ].join("\n");
+}
+
+// 清理 LLM 可能返回的代码块包裹 / 多余前后缀
+function cleanSolution(text) {
+  let t = String(text || "").trim();
+  const fence = t.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) t = fence[1].trim();
+  return t;
+}
+
+// 若题目缺解析且已配置 LLM,则生成结构化解析;否则返回 null
+async function tryGenerateSolution(q) {
+  if (!llmConfigured() || (q.solution && String(q.solution).trim())) return null;
+  try {
+    const raw = await chatComplete({
+      system:
+        "你是资深的英国大学附加数学笔试(TMUA/ESAT 等)辅导老师。请针对题目给出清晰、严谨、面向学生的解题解析。" +
+        "严格按以下三部分用 Markdown 小标题组织:\n## 解题步骤\n## 考查知识点\n## 易错点提醒\n" +
+        "数学公式用 LaTeX 行内 $...$ 或独立 $$...$$ 表示。只输出解析内容,不要寒暄。",
+      user: buildSolutionPrompt({ stem: q.stem, options: safeParseOptions(q.options), answer: q.answer, topic: q.topic }),
+      temperature: 0.2,
+      maxTokens: 900,
+    });
+    return cleanSolution(raw) || null;
+  } catch {
+    return null;
+  }
+}
 
 // 简单 CSV 解析(支持双引号包裹的字段)
 function parseCsv(text) {
@@ -304,6 +356,12 @@ router.post(
     }
 
     const data = { ...plan.patch };
+    let solutionGenerated = false;
+    const missingSol = !q.solution || !String(q.solution).trim();
+    if (missingSol) {
+      const sol = await tryGenerateSolution(q);
+      if (sol) { data.solution = sol; solutionGenerated = true; }
+    }
     if (resubmit) {
       // 修正后重新排队审核;保留原退回意见到修正日志里,便于复核时对照
       data.status = "PENDING_REVIEW";
@@ -311,20 +369,24 @@ router.post(
       data.reviewedAt = null;
       data.reviewedBy = null;
     }
+    const manual = solutionGenerated
+      ? plan.manual.filter((m) => m.code !== "missing_solution")
+      : plan.manual;
     data.autoFixLog = JSON.stringify({
       at: new Date().toISOString(),
       by: req.user.id,
       fromNote: q.reviewNote || null,
       fixes: plan.fixes.map((f) => ({ code: f.code, field: f.field, targeted: !!f.targeted })),
-      manual: plan.manual,
+      manual,
       remaining: plan.remaining,
+      solutionGenerated: solutionGenerated || undefined,
     });
     const updated = await prisma.question.update({ where: { id: q.id }, data });
     await recalcPapersOfQuestion(q.id);
     return ok(
       res,
-      { id: updated.id, applied: true, status: updated.status, ...plan },
-      `${describePlan(plan)}${resubmit ? ",已重新提交审核" : ""}`
+      { id: updated.id, applied: true, status: updated.status, ...plan, manual },
+      `${describePlan(plan)}${solutionGenerated ? ",已自动生成解析" : ""}${resubmit ? ",已重新提交审核" : ""}`
     );
   })
 );
@@ -349,22 +411,31 @@ router.post(
       const plan = planAutoFix(q);
       const hasPatch = Object.keys(plan.patch).length > 0;
       const willResubmit = resubmit && (plan.clean || !onlyClean);
-      if (apply && (hasPatch || willResubmit)) {
-        const data = { ...plan.patch };
-        if (willResubmit) {
-          data.status = "PENDING_REVIEW";
-          data.reviewNote = null;
-          data.reviewedAt = null;
-          data.reviewedBy = null;
-        }
-        data.autoFixLog = JSON.stringify({
-          at: new Date().toISOString(),
-          by: req.user.id,
-          fromNote: q.reviewNote || null,
-          fixes: plan.fixes.map((f) => ({ code: f.code, field: f.field, targeted: !!f.targeted })),
-          manual: plan.manual,
-          remaining: plan.remaining,
-        });
+        if (apply && (hasPatch || willResubmit || ((!q.solution || !String(q.solution).trim()) && llmConfigured()))) {
+          const data = { ...plan.patch };
+          let solutionGenerated = false;
+          if (!q.solution || !String(q.solution).trim()) {
+            const sol = await tryGenerateSolution(q);
+            if (sol) { data.solution = sol; solutionGenerated = true; }
+          }
+          if (willResubmit) {
+            data.status = "PENDING_REVIEW";
+            data.reviewNote = null;
+            data.reviewedAt = null;
+            data.reviewedBy = null;
+          }
+          const manual = solutionGenerated
+            ? plan.manual.filter((m) => m.code !== "missing_solution")
+            : plan.manual;
+          data.autoFixLog = JSON.stringify({
+            at: new Date().toISOString(),
+            by: req.user.id,
+            fromNote: q.reviewNote || null,
+            fixes: plan.fixes.map((f) => ({ code: f.code, field: f.field, targeted: !!f.targeted })),
+            manual,
+            remaining: plan.remaining,
+            solutionGenerated: solutionGenerated || undefined,
+          });
         await prisma.question.update({ where: { id: q.id }, data });
         await recalcPapersOfQuestion(q.id);
         if (hasPatch) fixedCount++;
@@ -392,6 +463,64 @@ router.post(
         ? `已修正 ${fixedCount} 道,重新提交审核 ${resubmitted} 道${stuck ? `,${stuck} 道仍需人工处理` : ""}`
         : `体检完成:${fixedCount} 道可自动修正${stuck ? `,${stuck} 道存在需人工处理的问题` : ""}`
     );
+  })
+);
+
+// POST /api/questions/:id/generate-solution — AI 生成结构化解析草稿
+router.post(
+  "/:id/generate-solution",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    if (!llmConfigured()) {
+      return fail(res, 400, "服务端未配置 LLM_API_KEY,无法生成解析。请在 .env 配置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL。");
+    }
+    const q = await prisma.question.findUnique({ where: { id: req.params.id } });
+    if (!q) return fail(res, 404, "题目不存在");
+
+    const prompt = buildSolutionPrompt({
+      stem: q.stem,
+      options: safeParseOptions(q.options),
+      answer: q.answer,
+      topic: q.topic,
+    });
+
+    let raw;
+    try {
+      raw = await chatComplete({
+        system:
+          "你是资深的英国大学附加数学笔试(TMUA/ESAT 等)辅导老师。请针对题目给出清晰、严谨、面向学生的解题解析。" +
+          "严格按以下三部分用 Markdown 小标题组织:\n## 解题步骤\n## 考查知识点\n## 易错点提醒\n" +
+          "数学公式用 LaTeX 行内 $...$ 或独立 $$...$$ 表示。只输出解析内容,不要寒暄。",
+        user: prompt,
+        temperature: 0.2,
+        maxTokens: 900,
+      });
+    } catch (e) {
+      return fail(res, e.code === "LLM_NOT_CONFIGURED" ? 400 : 502, e.message || "LLM 调用失败");
+    }
+
+    const solution = cleanSolution(raw);
+    if (!solution) return fail(res, 502, "LLM 返回内容为空,请重试");
+
+    // 写入 solution;若题目当前不在审核态,则置为 PENDING_REVIEW 进入审核队列由老师确认
+    const data = { solution };
+    if (q.status !== "PENDING_REVIEW" && q.status !== "REJECTED") {
+      data.status = "PENDING_REVIEW";
+      data.reviewNote = null;
+      data.reviewedAt = null;
+      data.reviewedBy = null;
+    }
+    data.autoFixLog = JSON.stringify({
+      at: new Date().toISOString(),
+      by: req.user.id,
+      action: "generate-solution",
+      model: llmInfo().model,
+      previousSolution: q.solution || null,
+    });
+    const updated = await prisma.question.update({ where: { id: q.id }, data });
+    await recalcPapersOfQuestion(q.id);
+    ok(res, { id: q.id, solution: updated.solution, status: updated.status }, "已生成解析,请老师在审核中确认后发布");
   })
 );
 

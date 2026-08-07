@@ -30,7 +30,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const list = await prisma.wrongBook.findMany({
       where: { studentId: req.user.id },
-      include: { question: { select: { id: true, topic: true, subject: true, difficulty: true, stem: true } } },
+      include: { question: { select: { id: true, topic: true, subject: true, difficulty: true, stem: true, solution: true, answer: true } } },
       orderBy: { updatedAt: "desc" },
     });
     ok(res, {
@@ -40,6 +40,8 @@ router.get(
         subject: w.question.subject,
         difficulty: w.question.difficulty,
         stem: w.question.stem,
+        answer: w.question.answer,
+        solution: w.question.solution,
         wrongCount: w.wrongCount,
         mastered: w.mastered,
       })),

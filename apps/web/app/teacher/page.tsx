@@ -71,6 +71,7 @@ export default function TeacherPage() {
   const [batchSummary, setBatchSummary] = useState<{ total: number; fixedCount: number; stuck: number; resubmitted: number; applied: boolean } | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchError, setBatchError] = useState("");
+  const [genBusy, setGenBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ pageSize: "50" });
@@ -213,6 +214,24 @@ export default function TeacherPage() {
     }
   }
 
+  // AI 生成解析:调用后端 LLM 生成结构化解析草稿(步骤/考点/易错点)
+  async function generateSolution(q: Question) {
+    if (!window.confirm("确认使用 AI 为这道题目生成解析吗?\n生成后会进入审核队列,由你确认后发布。")) return;
+    setGenBusy(q.id);
+    setMessage("");
+    try {
+      const r = await api.post<{ id: string; solution: string; status: string }>(`/questions/${q.id}/generate-solution`, {});
+      setMessage("已生成解析,题目进入审核队列,请在审核中确认后发布。");
+      await load();
+      setTimeout(() => setMessage(""), 4000);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "生成失败");
+      setTimeout(() => setMessage(""), 5000);
+    } finally {
+      setGenBusy(null);
+    }
+  }
+
   async function applyAutoFix(resubmit: boolean) {
     if (!fixQ) return;
     setFixApplying(true);
@@ -351,6 +370,9 @@ export default function TeacherPage() {
                       {q.status === "REJECTED" && (
                         <button onClick={() => openAutoFix(q)} className="font-medium text-amber-600 hover:underline">一键修正</button>
                       )}
+                      <button onClick={() => generateSolution(q)} disabled={genBusy === q.id} className="font-medium text-emerald-600 hover:underline disabled:opacity-50">
+                        {genBusy === q.id ? "生成中..." : "AI 生成解析"}
+                      </button>
                       <button onClick={() => openEdit(q)} className="text-indigo-600 hover:underline">编辑</button>
                       {user?.role === "ADMIN" && (
                         <button onClick={() => remove(q)} className="text-red-500 hover:underline">删除</button>
