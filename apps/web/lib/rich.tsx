@@ -152,6 +152,7 @@ export function isMathToken(token: string): boolean {
 }
 
 // 将文本按"数学片段 / 纯文本片段"切分,数学片段用 KaTeX 渲染
+// 关键:每次 flushMath 后追加一个 " " 文本节点,避免 KaTeX 吞掉尾部空格导致与后续文本挤在一起(0differ)
 export function smartMath(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   const tokens = text.split(/(\s+)/);
@@ -165,6 +166,8 @@ export function smartMath(text: string): React.ReactNode[] {
       parts.push(
         <span key={key++} className="mx-0.5 inline-block align-middle" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
       );
+      // KaTeX 数学模式忽略尾部空格,显式补一个视觉间隔
+      parts.push(<span key={key++}> </span>);
       mathBuf = [];
     }
   };
