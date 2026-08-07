@@ -6,6 +6,7 @@ import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/pape
 import { planAutoFix } from "../lib/autofix.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
+import { normalizeNewlines } from "../lib/text-clean.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
@@ -114,10 +115,10 @@ async function importRows(req, rows) {
           topic: r.topic,
           difficulty: Number(r.difficulty) || 3,
           type: r.type || "SINGLE_CHOICE",
-          stem: r.stem,
-          options: JSON.stringify(options),
-          answer: String(r.answer),
-          solution: r.solution || null,
+          stem: normalizeNewlines(r.stem),
+          options: JSON.stringify(options.map((o) => normalizeNewlines(o))),
+          answer: normalizeNewlines(String(r.answer)),
+          solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
           status: r.status || "PENDING_REVIEW",
           createdBy: req.user.id,
@@ -260,10 +261,10 @@ router.post(
         topic,
         difficulty: difficulty || 3,
         type: type || "SINGLE_CHOICE",
-        stem,
-        options: JSON.stringify(options),
-        answer: String(answer),
-        solution: solution || null,
+        stem: normalizeNewlines(stem),
+        options: JSON.stringify(options.map((o) => normalizeNewlines(o))),
+        answer: normalizeNewlines(String(answer)),
+        solution: solution ? normalizeNewlines(solution) : null,
         source: source || null,
         status: status || "PENDING_REVIEW",
         createdBy: req.user.id,
@@ -290,11 +291,15 @@ router.put(
     const b = req.body || {};
     const data = {};
     for (const key of ["subject", "paper", "topic", "difficulty", "type", "stem", "answer", "solution", "source", "status"]) {
-      if (b[key] !== undefined) data[key] = key === "options" ? undefined : b[key];
+      if (b[key] === undefined) continue;
+      if (key === "options") continue;
+      if (key === "stem" || key === "answer") data[key] = normalizeNewlines(String(b[key]));
+      else if (key === "solution") data[key] = b[key] ? normalizeNewlines(String(b[key])) : b[key];
+      else data[key] = b[key];
     }
     if (b.options !== undefined) {
       if (!Array.isArray(b.options) || b.options.length < 2) return fail(res, 400, "options 至少 2 个选项");
-      data.options = JSON.stringify(b.options);
+      data.options = JSON.stringify(b.options.map((o) => normalizeNewlines(o)));
     }
     const q = await prisma.question.update({ where: { id: req.params.id }, data });
     // 状态可能被手动改动,同步刷新所在试卷的就绪度

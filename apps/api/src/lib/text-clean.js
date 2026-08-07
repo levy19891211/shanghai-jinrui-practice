@@ -39,6 +39,18 @@ export function latexify(s) {
     .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
 }
 
+// 换行归一化:统一换行符、去行尾空白、合并 >=3 连续换行为 2、去首尾换行与空白。
+// 用于录入/导入/一键修正的边界,保证存库的题干/选项/解析换行一致(作者每行=一行,只清理多余空白)。
+export function normalizeNewlines(s) {
+  if (!s) return s;
+  return s
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "")
+    .trim();
+}
+
 // 把一份可能含 HTML 与 \( \) 的文本,转成规范富文本(含 $...$ 公式)
 // 关键点:
 //  - 数学:`\(...\)` → `$...$`,`\[...\]` → `$$...$$`,并用 latexify 把 √/π/²/≤ 等转成 LaTeX
@@ -70,8 +82,8 @@ export function toCanonicalText(raw = "") {
   // 2) 删除其余所有 HTML 标签(此时 < > 仅剩真正的不等式等文本符号)
   s = s.replace(/<[^>]+>/g, "");
 
-  // 3) 换行规范化
-  s = s.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  // 3) 换行规范化(统一换行符、去行尾空白、合并多余空行)
+  s = normalizeNewlines(s);
 
   // 4) 数学定界符归一化
   s = s
