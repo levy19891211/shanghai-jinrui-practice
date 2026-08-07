@@ -65,7 +65,7 @@ export function renderRich(text: string | null | undefined): React.ReactNode[] {
           <span
             key={key++}
             className={t.display ? "my-2 block overflow-x-auto" : "align-baseline"}
-            dangerouslySetInnerHTML={{ __html: renderMathExpr(t.expr!, t.display!) }}
+            dangerouslySetInnerHTML={{ __html: renderMathExpr(latexify(t.expr!), t.display!) }}
           />
         );
       default:
