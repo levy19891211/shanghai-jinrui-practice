@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { renderRich } from "@/lib/rich";
 import type { WrongItem } from "@/lib/types";
 
 export default function WrongBookPage() {
@@ -37,7 +38,7 @@ export default function WrongBookPage() {
             <span>·</span>
             <span>难度 {w.difficulty}</span>
           </div>
-          <p className="mt-2 text-sm leading-relaxed text-slate-800">{w.stem}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(w.stem)}</p>
         </div>
         <div className="shrink-0 text-right">
           <p className="text-xs text-slate-400">错 {w.wrongCount} 次</p>

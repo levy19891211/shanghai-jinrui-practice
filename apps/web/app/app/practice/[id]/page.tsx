@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { renderRich } from "@/lib/rich";
 import type { GradeResult, QuizQuestion, SessionDetail } from "@/lib/types";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
@@ -126,7 +127,7 @@ export default function PracticePage() {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <p className="text-sm text-slate-400">第 {i + 1} 题 · {d.topic}</p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-800">{d.stem}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(d.stem)}</p>
               </div>
               <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${d.isCorrect ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
                 {d.isCorrect ? "答对" : "答错"}
@@ -135,7 +136,7 @@ export default function PracticePage() {
             <div className="mt-3 space-y-1.5">
               {d.options.map((opt, j) => (
                 <div key={j} className={`rounded-lg px-3 py-2 text-sm ${opt === d.answer ? "bg-emerald-50 text-emerald-700" : opt === d.selected ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"}`}>
-                  <span className="font-medium">{LETTERS[j]}. </span>{opt}
+                  <span className="font-medium">{LETTERS[j]}. </span>{renderRich(opt)}
                   {opt === d.answer && <span className="ml-2 text-xs text-emerald-500">正确答案</span>}
                 </div>
               ))}
@@ -179,7 +180,7 @@ export default function PracticePage() {
       )}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-slate-400">第 {current + 1} 题</p>
-        <p className="mt-2 text-base leading-relaxed text-slate-800">{q.stem}</p>
+        <p className="mt-2 text-base leading-relaxed text-slate-800">{renderRich(q.stem)}</p>
         <div className="mt-5 space-y-2">
           {q.options.map((opt, j) => {
             const selected = answers[q.id] === opt;
@@ -195,7 +196,7 @@ export default function PracticePage() {
                 <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>
                   {LETTERS[j]}
                 </span>
-                <span className="leading-relaxed">{opt}</span>
+                <span className="leading-relaxed">{renderRich(opt)}</span>
               </button>
             );
           })}

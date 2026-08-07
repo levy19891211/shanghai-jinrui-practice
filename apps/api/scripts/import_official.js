@@ -6,6 +6,7 @@ import { prisma } from "../src/lib/db.js";
 
 const SOURCE = "TMUA Specimen 2017 Paper 1";
 const SOURCE_P2 = "TMUA Specimen 2017 Paper 2";
+const SOURCE_GRAPHICS = "TMUA Specimen 2017 Paper 2(图形题)";
 
 // [题干, 选项数组, 答案内容, 知识点, 难度, 解析]
 const P1 = [
@@ -126,6 +127,21 @@ const P2 = [
     "逐一分析真值组合(官方答案:恰有 3 句可同时为真)。"],
 ];
 
+// 图形题(题干/选项嵌入图片,图片位于 apps/web/public/images/questions/)
+const P2_GRAPHICS = [
+  ["A set of five cards each have a letter printed on their front and a number printed on their back, as follows: ![五张卡片](/images/questions/q4-cards.png) Which one of the five cards (A, B, C, D or E) provides a counterexample to the following statement? Every card that has a vowel on its front has an even number on its back.",
+    ["卡 A", "卡 B", "卡 C", "卡 D", "卡 E"], "卡 A", "逻辑", 2,
+    "反例需正面是元音且背面是奇数:卡 A 正面 E(元音)、背面 7(奇数),故可推翻该命题。(卡片内容为教学复现版,请与官方 PDF 核对)"],
+  ["Which one of the following is a sketch of the graph (x + y)(x^2 − xy + y^2) = 1?",
+    ["![A](/images/questions/q7-a.png)", "![B](/images/questions/q7-b.png)", "![C](/images/questions/q7-c.png)", "![D](/images/questions/q7-d.png)"],
+    "![C](/images/questions/q7-c.png)", "函数图像", 3,
+    "(x+y)(x^2−xy+y^2) = x^3 + y^3 = 1,曲线过 (1,0) 与 (0,1),随 x 增大 y 单调递减,答案 C。"],
+  ["Which one of the following is a sketch of the graph of y = log₂ x for x > 1?",
+    ["![A](/images/questions/q10-a.png)", "![B](/images/questions/q10-b.png)", "![C](/images/questions/q10-c.png)", "![D](/images/questions/q10-d.png)", "![E](/images/questions/q10-e.png)", "![F](/images/questions/q10-f.png)"],
+    "![E](/images/questions/q10-e.png)", "对数函数图像", 3,
+    "y = log₂x 在 x > 1 上递增、过 (1,0)、增速放缓(下凸),答案 E。"],
+];
+
 async function main() {
   const existing = await prisma.question.count({ where: { source: SOURCE } });
   if (existing > 0) {
@@ -157,6 +173,22 @@ async function main() {
       });
     }
     console.log(`[ok] 导入 ${SOURCE_P2} ${P2.length} 道题`);
+  }
+
+  const existingG = await prisma.question.count({ where: { source: SOURCE_GRAPHICS } });
+  if (existingG > 0) {
+    console.log(`[skip] ${SOURCE_GRAPHICS} 已有 ${existingG} 道题`);
+  } else {
+    for (const [stem, options, answer, topic, difficulty, solution] of P2_GRAPHICS) {
+      await prisma.question.create({
+        data: {
+          subject: "TMUA", paper: "Paper 2", topic, difficulty,
+          type: "SINGLE_CHOICE", stem, options: JSON.stringify(options),
+          answer, solution, source: SOURCE_GRAPHICS, status: "PUBLISHED", createdBy: "official-import",
+        },
+      });
+    }
+    console.log(`[ok] 导入 ${SOURCE_GRAPHICS} ${P2_GRAPHICS.length} 道题`);
   }
   await prisma.$disconnect();
   console.log(`题库总数: ${await prisma.question.count()}`);

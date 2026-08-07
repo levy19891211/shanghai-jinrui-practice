@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
+import { plainText } from "@/lib/rich";
 import type { Question, QuestionList } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", ARCHIVED: "已下架" };
@@ -172,7 +173,7 @@ export default function TeacherPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">{q.topic}</td>
-                  <td className="max-w-[280px] truncate px-4 py-3 text-slate-600">{q.stem}</td>
+                  <td className="max-w-[280px] truncate px-4 py-3 text-slate-600">{plainText(q.stem)}</td>
                   <td className="px-4 py-3">{q.difficulty}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded px-2 py-0.5 text-xs ${q.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600" : q.status === "DRAFT" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
@@ -293,13 +294,13 @@ export default function TeacherPage() {
               </div>
             </div>
             <div className="mt-3">
-              <label className="mb-1 block text-sm text-slate-600">题干(支持 LaTeX 文本)</label>
-              <textarea className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干..." />
+              <label className="mb-1 block text-sm text-slate-600">题干(支持 LaTeX 文本与图片语法 `![说明](/images/questions/xx.png)`)</label>
+              <textarea className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 可粘贴图片标记" />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm text-slate-600">选项(每行一个)</label>
-                <textarea className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n..."} />
+                <label className="mb-1 block text-sm text-slate-600">选项(每行一个,支持图片)</label>
+                <textarea className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n! [图]( /images/questions/xx.png)"} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">正确答案</label>
