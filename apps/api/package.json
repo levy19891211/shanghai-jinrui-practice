@@ -13,6 +13,7 @@
     "smoke": "node scripts/smoke.js",
     "verify:math": "node scripts/verify_math.js",
     "fix:math": "node scripts/fix_math_data.js",
+    "normalize:math": "node scripts/normalize_math_data.js",
     "test": "node --test test/"
   },
   "dependencies": {

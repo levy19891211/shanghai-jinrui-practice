@@ -14,8 +14,6 @@ function latexify(s) {
     .replace(/log₁₀/g, "\\log_{10}")
     .replace(/log₂/g, "\\log_2")
     .replace(/log₃/g, "\\log_3")
-    .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
-    .replace(/\(([^()]+)\)\s*\/\s*([0-9πθ][0-9πθ.]*)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/π/g, "\\pi")
     .replace(/θ/g, "\\theta")
     .replace(/²/g, "^{2}")
@@ -33,7 +31,7 @@ function latexify(s) {
     .replace(/\^\{(\d)\}\^\{(\d)\}/g, "^{$1$2}")
     .replace(/\^\{(\d)\}(\d{2,})/g, "^{$1$2}")
     .replace(/×/g, "\\times")
-    .replace(/·/g, "\\cdot")
+    .replace(/·/g, "\\cdot ")
     .replace(/≤/g, "\\le")
     .replace(/≥/g, "\\ge")
     .replace(/≈/g, "\\approx")
@@ -41,7 +39,9 @@ function latexify(s) {
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
     .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
-    .replace(/([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
+    .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
+    .replace(/\(([^()]+)\)\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
+    .replace(/(?<![\^{])([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
     .replace(/\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}");
 }
 
