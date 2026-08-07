@@ -6,6 +6,101 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
 
+// 简单 CSV 解析(支持双引号包裹的字段)
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(field.trim()); field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field.trim()); field = "";
+      if (row.some((c) => c !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += ch;
+    }
+  }
+  row.push(field.trim());
+  if (row.some((c) => c !== "")) rows.push(row);
+  return rows;
+}
+
+// 批量导入:兼容 JSON 数组 或 CSV 文本
+// CSV 列顺序:subject,paper,topic,difficulty,type,stem,options(分号分隔),answer,solution,source,status
+async function importRows(req, rows) {
+  const errors = [];
+  let imported = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    try {
+      const options = Array.isArray(r.options)
+        ? r.options
+        : String(r.options || "").split(/[;；]/).map((s) => s.trim()).filter(Boolean);
+      if (!r.subject || !r.topic || !r.stem || options.length < 2 || !r.answer) {
+        throw new Error("字段不完整(需要 subject/topic/stem/options≥2/answer)");
+      }
+      await prisma.question.create({
+        data: {
+          subject: r.subject,
+          paper: r.paper || null,
+          topic: r.topic,
+          difficulty: Number(r.difficulty) || 3,
+          type: r.type || "SINGLE_CHOICE",
+          stem: r.stem,
+          options: JSON.stringify(options),
+          answer: String(r.answer),
+          solution: r.solution || null,
+          source: r.source || "批量导入",
+          status: r.status || "PUBLISHED",
+          createdBy: req.user.id,
+        },
+      });
+      imported++;
+    } catch (e) {
+      errors.push({ row: i + 1, reason: e.message });
+    }
+  }
+  return { imported, errors };
+}
+
+// POST /api/questions/import — 批量导入题目(老师/管理员)
+router.post(
+  "/import",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { items, csv } = req.body || {};
+    let rows = [];
+    if (Array.isArray(items)) rows = items;
+    else if (typeof csv === "string" && csv.trim()) {
+      const parsed = parseCsv(csv);
+      if (parsed.length) parsed.shift(); // 跳过表头
+      rows = parsed.map((cols) => ({
+        subject: cols[0], paper: cols[1], topic: cols[2], difficulty: cols[3],
+        type: cols[4], stem: cols[5], options: cols[6], answer: cols[7],
+        solution: cols[8], source: cols[9], status: cols[10],
+      }));
+    } else {
+      return fail(res, 400, "请提供 items(JSON 数组)或 csv(文本,含表头)");
+    }
+    if (rows.length === 0) return fail(res, 400, "没有可导入的数据");
+    const { imported, errors } = await importRows(req, rows);
+    ok(res, { imported, failed: errors.length, errors: errors.slice(0, 20) }, `导入完成:成功 ${imported} 条,失败 ${errors.length} 条`);
+  })
+);
+
 // 列表查询公共逻辑
 function buildWhere(query, user) {
   const where = {};

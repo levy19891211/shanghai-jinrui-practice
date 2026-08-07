@@ -81,7 +81,31 @@
 
 ### 2.5 删除题目 `DELETE /api/questions/:id`(需管理员)
 
+### 2.6 批量导入 `POST /api/questions/import`(需老师/管理员)
+
+支持两种格式(任选其一):
+- `items`:JSON 数组 `[{ subject, paper, topic, difficulty, type, stem, options[], answer, solution, source, status }]`
+- `csv`:CSV 文本(首行为表头,列顺序 `subject,paper,topic,difficulty,type,stem,options(分号分隔),answer,solution,source,status`)
+
+返回 `data`: `{ imported, failed, errors: [{ row, reason }] }`
+
+## 三、试卷与组卷
+
+### 3.0 组卷 `POST /api/papers/generate`(需老师/管理员)
+
+```json
+{ "title": "TMUA 代数专项", "subject": "TMUA", "mode": "PRACTICE", "durationMin": 40,
+  "topics": ["代数"], "difficulties": [2,3], "count": 10 }
+```
+
+按条件随机抽题生成试卷。返回 `data`: `{ id, title, subject, mode, durationMin, questionCount }`
+
+### 3.0.1 试卷列表 `GET /api/papers`(需认证)
+
+### 3.0.2 试卷详情 `GET /api/papers/:id`(需认证,题目不含答案)
+
 ## 三、答题会话
+
 
 ### 3.1 创建会话 `POST /api/sessions`(需学生)
 

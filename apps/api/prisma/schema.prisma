@@ -54,7 +54,7 @@ model Paper {
   title       String
   subject     String
   mode        String   @default("PRACTICE")
-  durationMin Int
+  durationMin Int? // EXAM 试卷的限时时长(分钟),练习卷可空
   questionIds String
   createdAt   DateTime @default(now())
   sessions    Session[]

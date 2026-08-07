@@ -8,7 +8,8 @@ import type { CreateSessionData, SessionSummary, StatsData } from "@/lib/types";
 export default function StudentHome() {
   const router = useRouter();
   const user = getUser();
-  const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40 });
+  const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "" });
+  const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number }[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,6 +18,7 @@ export default function StudentHome() {
   useEffect(() => {
     api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => setSessions(d.list.slice(0, 5))).catch(() => {});
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
+    api.get<{ list: { id: string; title: string; mode: string; questionCount: number }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
   }, []);
 
   async function start() {
@@ -28,6 +30,7 @@ export default function StudentHome() {
         limit: form.limit,
         subject: form.subject || undefined,
         durationMin: form.mode === "EXAM" ? form.durationMin : undefined,
+        paperId: form.paperId || undefined,
       });
       sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
       router.push(`/app/practice/${data.sessionId}`);
@@ -58,6 +61,17 @@ export default function StudentHome() {
               <option value="EXAM">模拟考(限时)</option>
             </select>
           </div>
+          {papers.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm text-slate-600">试卷</label>
+              <select className={input} value={form.paperId} onChange={(e) => setForm({ ...form, paperId: e.target.value })}>
+                <option value="">随机组卷</option>
+                {papers.filter((p) => p.mode === form.mode).map((p) => (
+                  <option key={p.id} value={p.id}>{p.title}({p.questionCount}题)</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm text-slate-600">科目</label>
             <select className={input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>

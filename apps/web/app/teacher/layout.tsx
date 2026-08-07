@@ -25,6 +25,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
   const nav = [
     { href: "/teacher", label: "题库管理" },
+    { href: "/teacher/papers", label: "试卷组卷" },
     { href: "/teacher/students", label: "学情统计" },
   ];
 

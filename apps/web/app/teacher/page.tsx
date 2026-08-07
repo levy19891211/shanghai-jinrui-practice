@@ -35,6 +35,12 @@ export default function TeacherPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"json" | "csv">("json");
+  const [importText, setImportText] = useState("");
+  const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[] } | null>(null);
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
 
   async function load() {
     const d = await api.get<QuestionList>(`/questions?pageSize=50${statusFilter ? `&status=${statusFilter}` : ""}`);
@@ -95,6 +101,24 @@ export default function TeacherPage() {
     }
   }
 
+  async function doImport() {
+    setImportError("");
+    setImportResult(null);
+    if (!importText.trim()) { setImportError("请粘贴数据"); return; }
+    setImporting(true);
+    try {
+      const payload = importMode === "json" ? { items: JSON.parse(importText) } : { csv: importText };
+      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[] }>("/questions/import", payload);
+      setImportResult(r);
+      setImportText("");
+      await load();
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "导入失败(请检查格式)");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const input =
     "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
@@ -114,6 +138,9 @@ export default function TeacherPage() {
           </select>
           <button onClick={openCreate} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
             + 新建题目
+          </button>
+          <button onClick={() => { setImportOpen(true); setImportText(""); setImportResult(null); setImportError(""); }} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
+            批量导入
           </button>
         </div>
       </div>
@@ -164,6 +191,66 @@ export default function TeacherPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {importOpen && (
+        <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">批量导入题目</h2>
+              <button onClick={() => setImportOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="mt-4 flex gap-2">
+              {(["json", "csv"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setImportMode(m)}
+                  className={`rounded-lg px-4 py-1.5 text-sm ${importMode === m ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                >
+                  {m === "json" ? "JSON 数组" : "CSV 文本"}
+                </button>
+              ))}
+            </div>
+            {importMode === "json" ? (
+              <>
+                <textarea
+                  className={`${input} mt-3 h-48 font-mono text-xs`}
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={'[\n  { "subject": "TMUA", "topic": "代数", "difficulty": 3, "type": "SINGLE_CHOICE", "stem": "题干...", "options": ["A", "B", "C", "D"], "answer": "A", "solution": "解析", "source": "来源", "status": "PUBLISHED" }\n]'}
+                />
+                <p className="mt-2 text-xs text-slate-400">字段:subject 必填,topic 必填,stem 必填,options 至少 2 个,answer 必填;其余可选</p>
+              </>
+            ) : (
+              <>
+                <textarea
+                  className={`${input} mt-3 h-48 font-mono text-xs`}
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={"subject,paper,topic,difficulty,type,stem,options(分号分隔),answer,solution,source,status\nTMUA,Paper 1,代数,3,SINGLE_CHOICE,\"题干...\",A;B;C;D,A,解析,来源,PUBLISHED"}
+                />
+                <p className="mt-2 text-xs text-slate-400">首行为表头;options 用分号分隔;含逗号的字段用双引号包裹</p>
+              </>
+            )}
+            {importError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{importError}</p>}
+            {importResult && (
+              <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                导入完成:成功 {importResult.imported} 条,失败 {importResult.failed} 条
+                {importResult.errors.length > 0 && (
+                  <ul className="mt-1 list-inside list-disc text-xs">
+                    {importResult.errors.map((e, i) => <li key={i}>第 {e.row} 行:{e.reason}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setImportOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
+              <button onClick={doImport} disabled={importing} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                {importing ? "导入中..." : "开始导入"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
