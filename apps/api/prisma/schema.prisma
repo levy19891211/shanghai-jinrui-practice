@@ -67,6 +67,7 @@ model Session {
   paperId      String?
   paper        Paper?        @relation(fields: [paperId], references: [id])
   mode         String
+  durationMin  Int? // EXAM 模式的限时时长(分钟),超时后不可再作答
   score        Float?
   total        Int?
   correctCount Int?

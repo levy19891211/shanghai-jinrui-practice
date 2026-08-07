@@ -51,6 +51,7 @@ export interface QuizQuestion {
 export interface CreateSessionData {
   sessionId: string;
   mode: "PRACTICE" | "EXAM";
+  durationMin?: number | null;
   questions: QuizQuestion[];
 }
 
@@ -58,6 +59,7 @@ export interface GradeResult {
   score: number;
   total: number;
   correctCount: number;
+  timedOut?: boolean;
   details: { questionId: string; selected: string | null; isCorrect: boolean }[];
 }
 
@@ -74,6 +76,7 @@ export interface SessionSummary {
 export interface SessionDetail {
   id: string;
   mode: string;
+  durationMin?: number | null;
   score: number | null;
   total: number | null;
   correctCount: number | null;

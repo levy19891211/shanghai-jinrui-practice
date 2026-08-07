@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { GradeResult, QuizQuestion, SessionDetail } from "@/lib/types";
@@ -18,40 +18,50 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const submittedRef = useRef(false);
 
+  const isExam = !!deadline;
+
+  // 初始化:读缓存题目;并向后端确认会话信息(时限/是否已提交)
   useEffect(() => {
     const cached = sessionStorage.getItem(`session-${id}`);
-    if (cached) {
-      setQuestions(JSON.parse(cached));
-      const saved = sessionStorage.getItem(`answers-${id}`);
-      if (saved) setAnswers(JSON.parse(saved));
-      setLoading(false);
-    } else {
-      // 无缓存(如刷新后):尝试读取会话,若已提交则展示结果
-      api.get<SessionDetail>(`/sessions/${id}`)
-        .then((d) => {
+    if (cached) setQuestions(JSON.parse(cached));
+    const saved = sessionStorage.getItem(`answers-${id}`);
+    if (saved) setAnswers(JSON.parse(saved));
+
+    api.get<SessionDetail>(`/sessions/${id}`)
+      .then((d) => {
+        if (d.submittedAt) {
           setDetail(d);
-          if (!d.submittedAt) setQuestions(d.details.map((x) => ({ id: x.questionId, stem: x.stem, options: x.options, topic: x.topic, type: "SINGLE_CHOICE", subject: "", difficulty: 0 })));
-        })
-        .catch((e) => setError(e.message))
-        .finally(() => setLoading(false));
-    }
+          setResult({ score: d.score ?? 0, total: d.total ?? 0, correctCount: d.correctCount ?? 0, details: [] });
+          return;
+        }
+        if (d.durationMin && d.startedAt) {
+          const dl = new Date(d.startedAt).getTime() + d.durationMin * 60000;
+          setDeadline(dl);
+          setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
+        }
+        if (!cached && d.details?.length) {
+          setQuestions(d.details.map((x) => ({
+            id: x.questionId, stem: x.stem, options: x.options, topic: x.topic,
+            type: "SINGLE_CHOICE", subject: "", difficulty: 0,
+          })));
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [id]);
 
-  const saveAnswer = useMemo(() => (qid: string, selected: string) => {
+  const saveAnswer = useCallback((qid: string, selected: string) => {
     api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: 20 }).catch(() => {});
   }, [id]);
 
-  function choose(selected: string) {
-    const qid = questions[current].id;
-    const next = { ...answers, [qid]: selected };
-    setAnswers(next);
-    sessionStorage.setItem(`answers-${id}`, JSON.stringify(next));
-    saveAnswer(qid, selected);
-  }
-
-  async function submit() {
-    if (!window.confirm("确认提交?提交后将无法修改答案。")) return;
+  const submit = useCallback(async (auto = false) => {
+    if (submittedRef.current) return;
+    if (!auto && !window.confirm("确认提交?提交后将无法修改答案。")) return;
+    submittedRef.current = true;
     setSaving(true);
     setError("");
     try {
@@ -62,25 +72,51 @@ export default function PracticePage() {
       sessionStorage.removeItem(`session-${id}`);
       sessionStorage.removeItem(`answers-${id}`);
     } catch (e) {
+      submittedRef.current = false;
       setError(e instanceof Error ? e.message : "提交失败");
     } finally {
       setSaving(false);
     }
+  }, [id]);
+
+  // 倒计时:归零后自动交卷
+  useEffect(() => {
+    if (remaining === null || detail || result) return;
+    if (remaining <= 0) {
+      submit(true);
+      return;
+    }
+    const t = setTimeout(() => setRemaining((r) => (r === null ? null : r - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [remaining, detail, result, submit]);
+
+  function choose(selected: string) {
+    if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
+    const qid = questions[current].id;
+    const next = { ...answers, [qid]: selected };
+    setAnswers(next);
+    sessionStorage.setItem(`answers-${id}`, JSON.stringify(next));
+    saveAnswer(qid, selected);
   }
+
+  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   if (loading) return <p className="text-sm text-slate-500">加载中...</p>;
 
   // 已提交:展示成绩与解析
-  if (detail?.submittedAt || result) {
-    const items = detail?.details ?? [];
+  if (detail?.submittedAt) {
+    const items = detail.details ?? [];
     return (
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-sm text-slate-500">本次得分</p>
+          {result?.timedOut && (
+            <p className="mb-2 text-xs font-medium text-amber-600">考试时间已到,系统已自动交卷</p>
+          )}
+          <p className="text-sm text-slate-500">本次得分({detail.mode === "EXAM" ? "模拟考" : "练习"})</p>
           <p className="mt-2 text-4xl font-bold text-indigo-600">
-            {result?.score ?? detail?.score} <span className="text-lg text-slate-400">/ {result?.total ?? detail?.total}</span>
+            {detail.score} <span className="text-lg text-slate-400">/ {detail.total}</span>
           </p>
-          <p className="mt-2 text-sm text-slate-500">答对 {result?.correctCount ?? detail?.correctCount} 题</p>
+          <p className="mt-2 text-sm text-slate-500">答对 {detail.correctCount} 题</p>
           <button onClick={() => router.push("/app")} className="mt-4 rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700">
             返回首页
           </button>
@@ -121,13 +157,26 @@ export default function PracticePage() {
   }
   const q = questions[current];
   const answeredCount = Object.keys(answers).length;
+  const expired = isExam && deadline !== null && Date.now() > deadline;
 
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>已答 {answeredCount} / {questions.length}</span>
-        <span>{q.topic} · 难度 {q.difficulty}</span>
+        <div className="flex items-center gap-3">
+          {isExam && remaining !== null && (
+            <span className={`rounded-lg px-3 py-1 font-mono text-sm font-medium ${remaining <= 60 ? "animate-pulse bg-red-50 text-red-600" : "bg-slate-100 text-slate-600"}`}>
+              {fmt(remaining)}
+            </span>
+          )}
+          <span>{q.topic} · 难度 {q.difficulty}</span>
+        </div>
       </div>
+      {isExam && remaining !== null && remaining <= 300 && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-600">
+          模拟考模式,时间到将自动交卷{remaining <= 60 ? ",请尽快作答!" : ""}
+        </p>
+      )}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-slate-400">第 {current + 1} 题</p>
         <p className="mt-2 text-base leading-relaxed text-slate-800">{q.stem}</p>
@@ -138,7 +187,8 @@ export default function PracticePage() {
               <button
                 key={j}
                 onClick={() => choose(opt)}
-                className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm transition ${
+                disabled={expired}
+                className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm transition disabled:opacity-50 ${
                   selected ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}
               >
@@ -178,8 +228,8 @@ export default function PracticePage() {
             下一题
           </button>
         ) : (
-          <button onClick={submit} disabled={saving} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-            {saving ? "提交中..." : "提交判分"}
+          <button onClick={() => submit(false)} disabled={saving} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+            {saving ? "提交中..." : "交卷"}
           </button>
         )}
       </div>

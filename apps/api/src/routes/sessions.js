@@ -43,18 +43,36 @@ router.post(
     }
     if (questionIds.length === 0) return fail(res, 400, "题库为空,暂无可作答题目");
 
+    // 限时:EXAM 模式必须有时长(整数分钟),优先取 body,其次取试卷配置
+    let durationMin = null;
+    if (mode === "EXAM") {
+      durationMin = Math.round(Number(req.body?.durationMin));
+      if (!durationMin && req.body?.paperId) {
+        const paper = await prisma.paper.findUnique({ where: { id: req.body.paperId } });
+        durationMin = paper?.durationMin ?? null;
+      }
+      if (!durationMin || durationMin <= 0) return fail(res, 400, "模拟考必须指定时长(分钟)");
+    }
+
     const session = await prisma.session.create({
       data: {
         studentId: req.user.id,
         paperId: req.body?.paperId || null,
         mode,
+        durationMin,
         total: questionIds.length,
       },
     });
     const questions = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
-    ok(res, { sessionId: session.id, mode, questions }, "会话已创建");
+    ok(res, { sessionId: session.id, mode, durationMin, questions }, "会话已创建");
   })
 );
+
+// 计算会话截止时间(EXAM)
+function deadlineOf(session) {
+  if (session.mode !== "EXAM" || !session.durationMin) return null;
+  return new Date(session.startedAt.getTime() + session.durationMin * 60000);
+}
 
 // POST /api/sessions/:id/answer — 保存单题作答(实时保存,可覆盖)
 router.post(
@@ -64,6 +82,11 @@ router.post(
     const session = await prisma.session.findUnique({ where: { id: req.params.id } });
     if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
     if (session.submittedAt) return fail(res, 400, "会话已提交,无法再作答");
+    // 考试超时:不可再作答
+    const deadline = deadlineOf(session);
+    if (deadline && Date.now() > deadline.getTime()) {
+      return fail(res, 400, "考试时间已到,请提交试卷");
+    }
     const { questionId, selected, timeSpent } = req.body || {};
     if (!questionId) return fail(res, 400, "questionId 必填");
 
@@ -96,6 +119,10 @@ router.post(
       session.records.map((r) => ({ question: qMap.get(r.questionId), selected: r.selected }))
     );
 
+    // 超时标记(EXAM 模式且已过截止时间)
+    const deadline = deadlineOf(session);
+    const timedOut = !!(deadline && Date.now() > deadline.getTime());
+
     // 写回判分结果
     await prisma.$transaction([
       ...result.details.map((d) =>
@@ -119,7 +146,7 @@ router.post(
           })
         ),
     ]);
-    ok(res, result, "判分完成");
+    ok(res, { ...result, timedOut }, "判分完成");
   })
 );
 
@@ -154,6 +181,7 @@ router.get(
     ok(res, {
       id: session.id,
       mode: session.mode,
+      durationMin: session.durationMin,
       score: session.score,
       total: session.total,
       correctCount: session.correctCount,

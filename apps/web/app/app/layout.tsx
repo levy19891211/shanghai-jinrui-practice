@@ -1,18 +1,27 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuth, getUser } from "@/lib/api";
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const user = getUser();
+  const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
+  const [ready, setReady] = useState(false);
 
-  if (!user || user.role !== "STUDENT") {
-    router.push("/login");
-    return null;
-  }
+  useEffect(() => {
+    const u = getUser();
+    if (!u || u.role !== "STUDENT") {
+      router.replace("/login");
+    } else {
+      setUser(u);
+      setReady(true);
+    }
+  }, [router]);
+
+  if (!ready) return null;
 
   const nav = [
     { href: "/app", label: "刷题练习" },
@@ -46,7 +55,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">{user.name}</span>
+            <span className="text-sm text-slate-500">{user?.name}</span>
             <button onClick={logout} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">
               退出
             </button>

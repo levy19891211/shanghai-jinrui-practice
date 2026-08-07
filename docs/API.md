@@ -86,10 +86,12 @@
 ### 3.1 创建会话 `POST /api/sessions`(需学生)
 
 ```json
-{ "mode": "PRACTICE", "paperId": "可选", "questionIds": ["可选,自定义题目"] }
+{ "mode": "PRACTICE" | "EXAM", "paperId": "可选", "questionIds": ["可选"], "durationMin": 40 }
 ```
 
-后端按规则组卷(未指定则从已发布题目中按知识点抽取)。返回 `data`: `{ sessionId, questions: [不含答案] }`
+- `EXAM` 模式(模拟考)必须指定 `durationMin`(分钟),超时后后端拒绝继续作答
+- 后端按规则组卷(未指定则从已发布题目中随机抽取,`limit` 控制题量)
+- 返回 `data`: `{ sessionId, mode, durationMin, questions: [不含答案] }`
 
 ### 3.2 保存单题作答 `POST /api/sessions/:id/answer`
 
@@ -101,11 +103,11 @@
 
 ### 3.3 提交判分 `POST /api/sessions/:id/submit`
 
-对全部已作答题目判分,记录成绩、写错题本。返回 `data`:
+对全部已作答题目判分,记录成绩、写错题本。超时提交也允许(带 `timedOut: true` 标记)。返回 `data`:
 
 ```json
 {
-  "score": 12, "total": 20, "correctCount": 12,
+  "score": 12, "total": 20, "correctCount": 12, "timedOut": false,
   "details": [{ "questionId": "q1", "selected": "B", "isCorrect": false }]
 }
 ```
