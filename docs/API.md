@@ -35,8 +35,10 @@
 ### 1.1 注册 `POST /api/auth/register`
 
 ```json
-{ "email": "stu@example.com", "password": "123456", "name": "张三", "role": "STUDENT" }
+{ "email": "stu@example.com", "password": "123456", "name": "张三" }
 ```
+
+> 公开注册仅创建学生账号(STUDENT);老师/管理员账号由管理员创建。
 
 返回 `data`: `{ token, user: { id, email, name, role } }`
 

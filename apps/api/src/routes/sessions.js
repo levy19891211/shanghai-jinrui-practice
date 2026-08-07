@@ -144,6 +144,7 @@ router.get(
       selected: r.selected,
       isCorrect: r.isCorrect,
       timeSpent: r.timeSpent,
+      options: JSON.parse(r.question.options || "[]"),
       // 提交后(本人/老师)才可见答案与解析
       answer: session.submittedAt ? r.question.answer : undefined,
       solution: session.submittedAt ? r.question.solution : undefined,

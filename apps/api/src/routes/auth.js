@@ -12,8 +12,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { email, password, name, role } = req.body || {};
     if (!email || !password || !name) return fail(res, 400, "email、password、name 必填");
-    const validRoles = ["STUDENT", "TEACHER", "ADMIN"];
-    if (role && !validRoles.includes(role)) return fail(res, 400, "role 取值不合法");
+    // 公开注册仅允许学生账号;老师/管理员账号由管理员创建(或通过种子数据)
+    if (role && role !== "STUDENT") return fail(res, 400, "公开注册仅支持学生账号");
     const existed = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
     if (existed) return fail(res, 400, "该邮箱已注册");
 
@@ -22,7 +22,7 @@ router.post(
         email: String(email).toLowerCase(),
         passwordHash: await bcrypt.hash(password, 10),
         name,
-        role: role || "STUDENT",
+        role: "STUDENT",
       },
     });
     const safe = { id: user.id, email: user.email, name: user.name, role: user.role };
