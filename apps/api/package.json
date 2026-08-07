@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "db:push": "prisma db push",
     "seed": "node scripts/seed.js",
+    "seed:official": "node scripts/import_official.js",
     "test": "node --test test/"
   },
   "dependencies": {
