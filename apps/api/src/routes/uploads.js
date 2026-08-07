@@ -2,13 +2,11 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { fileURLToPath } from "url";
 import { ok, fail } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// apps/api/src/routes -> apps/web/public/uploads
-const UPLOAD_DIR = path.resolve(__dirname, "../../../web/public/uploads");
+// 上传目录放在 Nginx 可直接静态托管、且不受 /root 家目录权限限制的路径
+const UPLOAD_DIR = "/var/www/uploads";
 
 const ALLOWED_EXT = {
   "image/png": "png",
