@@ -54,7 +54,7 @@ export default function StudentHome() {
 
   // 成绩趋势数据(已提交且有总分的会话,按时间升序,最近 10 次)
   const trendData = allSessions
-    .filter((s) => s.submittedAt && s.total && s.total > 0)
+    .filter((s) => s.submittedAt && s.total && s.total > 0 && typeof s.score === "number")
     .slice()
     .reverse()
     .slice(-10)
@@ -65,7 +65,9 @@ export default function StudentHome() {
     }));
 
   // 掌握度雷达数据
-  const radarData = (stats?.byTopic ?? []).map((t) => ({ topic: t.topic, rate: t.correctRate }));
+  const radarData = (stats?.byTopic ?? [])
+    .filter((t) => typeof t.correctRate === "number")
+    .map((t) => ({ topic: t.topic, rate: t.correctRate }));
 
   return (
     <div className="space-y-6">

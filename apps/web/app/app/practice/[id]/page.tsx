@@ -27,10 +27,19 @@ export default function PracticePage() {
 
   // 初始化:读缓存题目;并向后端确认会话信息(时限/是否已提交)
   useEffect(() => {
-    const cached = sessionStorage.getItem(`session-${id}`);
-    if (cached) setQuestions(JSON.parse(cached));
-    const saved = sessionStorage.getItem(`answers-${id}`);
-    if (saved) setAnswers(JSON.parse(saved));
+    let cached: string | null = null;
+    try {
+      cached = sessionStorage.getItem(`session-${id}`);
+      if (cached) setQuestions(JSON.parse(cached));
+    } catch {
+      sessionStorage.removeItem(`session-${id}`);
+    }
+    try {
+      const saved = sessionStorage.getItem(`answers-${id}`);
+      if (saved) setAnswers(JSON.parse(saved));
+    } catch {
+      sessionStorage.removeItem(`answers-${id}`);
+    }
 
     api.get<SessionDetail>(`/sessions/${id}`)
       .then((d) => {
