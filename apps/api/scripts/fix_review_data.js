@@ -9,10 +9,17 @@ import questions from "./data/tmua2016.js";
 
 const SOURCE_2016 = "TMUA 2016 Paper 1";
 
-// Specimen 2017 Paper 1 中 answer 与选项文本不一致的题目(按 id 后缀定位,改为正确选项文本)
+// Specimen 2017 Paper 1 中 answer 用 / 除法书写、而选项用 \frac,导致前端 opt===answer
+// 永远不匹配(判分必错)。按「内容特征」定位(不依赖 id,跨库通用),把 answer 改为正确选项文本。
 const SPECIMEN_FIXES = [
-  { idEnds: "g4jicz", ansIdx: 4 }, // 指数与对数 → 选项 E
-  { idEnds: "0bdctp", ansIdx: 4 }, // 指数方程 → 选项 E
+  {
+    match: (q) => q.source === "TMUA Specimen 2017 Paper 1" && /指数与对数/.test(q.topic) && /\/ \\log_\{10\}\(ab\^\{2\}c\^\{3\}/.test(q.answer),
+    pick: (opts) => opts.find((o) => /\\frac\{\\log_\{10\} 2/.test(o) && /\\log_\{10\}\(ab\^\{2\}c\^\{3\}/.test(o)),
+  },
+  {
+    match: (q) => q.source === "TMUA Specimen 2017 Paper 1" && /指数方程/.test(q.topic) && /\/ \\log_\{10\} 2\$/.test(q.answer),
+    pick: (opts) => opts.find((o) => /\\frac\{\\log_\{10\} 15/.test(o) && /\\log_\{10\} 2/.test(o)),
+  },
 ];
 
 async function main() {
@@ -34,13 +41,14 @@ async function main() {
   // —— 2) Specimen answer 修正 ——
   const all = await prisma.question.findMany({});
   for (const f of SPECIMEN_FIXES) {
-    const q = all.find((r) => r.id.endsWith(f.idEnds));
-    if (!q) { console.log("未找到", f.idEnds); continue; }
+    const q = all.find(f.match);
+    if (!q) { console.log("未找到匹配的 Specimen 题目"); continue; }
     const opts = JSON.parse(q.options);
-    const correct = opts[f.ansIdx];
+    const correct = f.pick(opts);
+    if (!correct) { console.log(q.id.slice(-6), "未定位到正确选项,跳过"); continue; }
     if (q.answer.trim() === correct.trim()) { console.log(q.id.slice(-6), "已一致,跳过"); continue; }
     await prisma.question.update({ where: { id: q.id }, data: { answer: correct } });
-    console.log(`[ok] ${q.id.slice(-6)} (${q.topic}) answer → 选项 ${String.fromCharCode(65 + f.ansIdx)}`);
+    console.log(`[ok] ${q.id.slice(-6)} (${q.topic}) answer → ${correct}`);
   }
 
   await prisma.$disconnect();
