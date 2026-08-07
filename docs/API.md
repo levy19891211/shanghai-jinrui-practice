@@ -132,11 +132,19 @@
 
 返回 `data`: `{ byTopic: [{ topic, attempts, correctRate }] }`
 
-## 五、老师学情(需老师)
+## 五、老师学情(需老师/管理员)
 
-### 5.1 学生成绩列表 `GET /api/teacher/students?search=`
+### 5.1 学生列表与成绩概览 `GET /api/teacher/students?search=`
 
-### 5.2 某学生详情 `GET /api/teacher/students/:id/stats`
+返回 `data`: `{ list: [{ id, name, email, sessionCount, avgRate, lastSession }] }`(按平均正确率降序)
+
+### 5.2 学生详情 `GET /api/teacher/students/:id/stats`
+
+返回 `data`: `{ student, sessions: [...], byTopic: [{ topic, attempts, correctRate }] }`
+
+### 5.3 班级学情总览 `GET /api/teacher/stats/overview`
+
+返回 `data`: `{ students, sessions, totalAnswered, byTopic: [按正确率升序,薄弱在前] }`
 
 ---
 
