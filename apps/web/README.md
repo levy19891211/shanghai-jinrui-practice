@@ -1,5 +1,6 @@
 # apps/web — 前端(Next.js 14 + TypeScript + Tailwind)
 
+> 系统名称:**上海金瑞学校 附加笔试刷题系统**(TMUA / ESAT)
 > 目录负责人:**Vibe Coding 工具**(当前由 WorkBuddy 搭建的 M1 版本可作为起点继续迭代)。
 
 ## 已实现功能(M1)

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TMUA / ESAT 刷题系统",
-  description: "面向 TMUA 与 ESAT 的在线刷题、模拟考与学情分析平台",
+  title: "上海金瑞学校 附加笔试刷题系统",
+  description: "上海金瑞学校附加笔试(TMUA / ESAT)在线刷题、模拟考与学情分析平台",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

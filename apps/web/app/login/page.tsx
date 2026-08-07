@@ -36,8 +36,8 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-center text-2xl font-bold text-slate-900">TMUA / ESAT 刷题系统</h1>
-        <p className="mt-1 text-center text-sm text-slate-500">练习 · 模拟考 · 学情分析</p>
+        <h1 className="text-center text-2xl font-bold text-slate-900">上海金瑞学校 附加笔试刷题系统</h1>
+        <p className="mt-1 text-center text-sm text-slate-500">TMUA / ESAT 附加笔试 · 练习 · 模拟考 · 学情分析</p>
 
         <div className="mt-6 flex rounded-lg bg-slate-100 p-1 text-sm">
           {(["login", "register"] as const).map((m) => (
