@@ -118,8 +118,9 @@ export function latexify(s: string): string {
     .replace(/∫/g, "\\int")
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母,避免误伤单词)
     .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
-    // 分数:2x/(x-2√3) → \frac{2x}{x-2\sqrt{3}},显示为标准分数
-    .replace(/([^()/]+)\/\(([^()]+)\)/g, "\\frac{$1}{$2}");
+    // 分数:A/(B) 或 (A)/(B) → \frac{A}{B}(单层括号,A 首字符必须是字母/数字避免吞运算符)
+    .replace(/([A-Za-z0-9][^()/]*)\/\(([^()]+)\)/g, "\\frac{$1}{$2}")
+    .replace(/\(([^()]+)\)\/\(([^()]+)\)/g, "\\frac{$1}{$2}");
 }
 
 // ===== 智能数学识别:将文本中的数学片段自动渲染为公式 =====
