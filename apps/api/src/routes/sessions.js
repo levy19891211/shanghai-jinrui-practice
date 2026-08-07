@@ -63,10 +63,24 @@ router.post(
         total: questionIds.length,
       },
     });
-    const questions = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
+    const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
+    // 统一将 options 从 JSON 字符串解析为数组,避免前端 q.options.map 报错
+    const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
     ok(res, { sessionId: session.id, mode, durationMin, questions }, "会话已创建");
   })
 );
+
+// 安全解析 options 字段(JSON 字符串或已是数组)
+function safeParseOptions(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  try {
+    const arr = JSON.parse(value);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
 
 // 计算会话截止时间(EXAM)
 function deadlineOf(session) {

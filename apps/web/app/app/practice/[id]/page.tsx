@@ -30,7 +30,21 @@ export default function PracticePage() {
     let cached: string | null = null;
     try {
       cached = sessionStorage.getItem(`session-${id}`);
-      if (cached) setQuestions(JSON.parse(cached));
+      if (cached) {
+        const raw = JSON.parse(cached);
+        // 兜底:options 若仍是 JSON 字符串(脏缓存/旧版本),解析为数组
+        if (Array.isArray(raw)) {
+          const norm = raw.map((q) => ({
+            ...q,
+            options: Array.isArray(q.options)
+              ? q.options
+              : typeof q.options === "string"
+                ? (() => { try { const v = JSON.parse(q.options); return Array.isArray(v) ? v : []; } catch { return []; } })()
+                : [],
+          }));
+          setQuestions(norm);
+        }
+      }
     } catch {
       sessionStorage.removeItem(`session-${id}`);
     }
