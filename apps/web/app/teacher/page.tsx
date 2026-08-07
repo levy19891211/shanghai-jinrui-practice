@@ -294,13 +294,13 @@ export default function TeacherPage() {
               </div>
             </div>
             <div className="mt-3">
-              <label className="mb-1 block text-sm text-slate-600">题干(支持 LaTeX 文本与图片语法 `![说明](/images/questions/xx.png)`)</label>
-              <textarea className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 可粘贴图片标记" />
+              <label className="mb-1 block text-sm text-slate-600">题干(支持公式 `$x^2$`、图片 `![说明](/images/questions/xx.png)`、LaTeX 文本)</label>
+              <textarea className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 公式用 $ 包裹,如 求 $x^2 - 5x + 6 = 0$ 的根" />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm text-slate-600">选项(每行一个,支持图片)</label>
-                <textarea className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n! [图]( /images/questions/xx.png)"} />
+                <label className="mb-1 block text-sm text-slate-600">选项(每行一个,支持公式 $ 与图片)</label>
+                <textarea className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n$\\sqrt{2}$ 或 ![图]( /images/questions/xx.png)"} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">正确答案</label>

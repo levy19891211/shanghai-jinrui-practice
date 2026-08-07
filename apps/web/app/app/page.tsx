@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+} from "recharts";
 import { api, getUser } from "@/lib/api";
 import type { CreateSessionData, SessionSummary, StatsData } from "@/lib/types";
 
@@ -11,12 +15,16 @@ export default function StudentHome() {
   const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "" });
   const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number }[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [allSessions, setAllSessions] = useState<SessionSummary[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => setSessions(d.list.slice(0, 5))).catch(() => {});
+    api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
+      setSessions(d.list.slice(0, 5));
+      setAllSessions(d.list);
+    }).catch(() => {});
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
     api.get<{ list: { id: string; title: string; mode: string; questionCount: number }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
   }, []);
@@ -43,6 +51,21 @@ export default function StudentHome() {
 
   const input =
     "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500";
+
+  // 成绩趋势数据(已提交且有总分的会话,按时间升序,最近 10 次)
+  const trendData = allSessions
+    .filter((s) => s.submittedAt && s.total && s.total > 0)
+    .slice()
+    .reverse()
+    .slice(-10)
+    .map((s, i) => ({
+      name: `${i + 1}`,
+      rate: Math.round((s.score! / s.total!) * 100),
+      mode: s.mode === "EXAM" ? "模考" : "练习",
+    }));
+
+  // 掌握度雷达数据
+  const radarData = (stats?.byTopic ?? []).map((t) => ({ topic: t.topic, rate: t.correctRate }));
 
   return (
     <div className="space-y-6">
@@ -127,6 +150,38 @@ export default function StudentHome() {
                 <p className="mt-1 text-xs text-slate-600">正确率 {t.correctRate}%</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {trendData.length >= 2 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-medium text-slate-700">成绩趋势(正确率 %)</h2>
+          <div className="mt-4 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} label={{ value: "第 N 次", position: "insideBottomRight", offset: -2, fontSize: 11, fill: "#94a3b8" }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} labelFormatter={(l) => `第 ${l} 次`} />
+                <Line type="monotone" dataKey="rate" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {radarData.length >= 3 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-medium text-slate-700">知识点掌握度雷达图</h2>
+          <div className="mt-2 h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} outerRadius="70%">
+                <PolarGrid stroke="#e2e8f0" />
+                <PolarAngleAxis dataKey="topic" tick={{ fontSize: 11, fill: "#475569" }} />
+                <Radar dataKey="rate" stroke="#6366f1" fill="#6366f1" fillOpacity={0.25} />
+                <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { RadarChart, PolarGrid, PolarAngleAxis, Radar, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "@/lib/api";
 
 interface Detail {
@@ -32,6 +33,18 @@ export default function StudentDetailPage() {
       {detail.byTopic.length > 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-medium text-slate-700">知识点掌握度</h2>
+          {detail.byTopic.length >= 3 && (
+            <div className="mt-2 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={detail.byTopic.map((t) => ({ topic: t.topic, rate: t.correctRate }))} outerRadius="70%">
+                  <PolarGrid stroke="#e2e8f0" />
+                  <PolarAngleAxis dataKey="topic" tick={{ fontSize: 11, fill: "#475569" }} />
+                  <Radar dataKey="rate" stroke="#6366f1" fill="#6366f1" fillOpacity={0.25} />
+                  <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
             {detail.byTopic.map((t) => (
               <div key={t.topic} className="rounded-xl bg-slate-50 p-4">
