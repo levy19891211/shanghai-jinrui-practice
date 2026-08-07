@@ -123,21 +123,31 @@ export function latexify(s: string): string {
 // ===== 智能数学识别:将文本中的数学片段自动渲染为公式 =====
 
 // 运算符 / 数字 / 单字母变量 / 函数名
-const OP_TOKEN = /^[+\-−*/=<>≤≥≈≠×÷±()]$/;
-const NUM_TOKEN = /^[-−]?\d+([.,]\d+)?%?$/;
+// 注意:字符类中的连字符需用 \- 转义或放末尾,避免被解析为范围
+const OP_TOKEN = /^[+\-*/=<>≤≥≈≠×÷±()−]$/;
+const NUM_TOKEN = /^[\-−]?\d+([.,]\d+)?%?$/;
 const VAR_TOKEN = /^[a-zA-Z]$/;
 const FUNC_TOKEN = /^(log|log₁₀|log₂|log₃|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)$/;
 // 含数学符号的 token
 const MATHY_TOKEN = /[√πθΣ∫≤≥≈≠×÷±²³⁴⁵⁶⁷⁸⁹⁰¹^]/;
+// 纯小写英文单词(长度≥2 且非函数名) → 文本(避免 sum/Given/it 等英文单词误判;单字母 x/y 由 VAR 处理)
+const PURE_WORD = /^[a-z]{2,}$/;
 // 数字/符号开头的紧凑表达式(如 3x^2、10^(-y)、2π、(1、5650/79.5、−log₁₀(1)
-const MIXED_TOKEN = /^[0-9√πθ([−\-][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]+$/;
+const MIXED_NUM = /^[0-9√πθ([−\-+][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
+// 字母开头,内部必须含数学特征(数字/^/() 等)(如 x^2、x)、(c+1)²、ab^2c^3)
+const MIXED_LET = /^[a-zA-Z][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*[0-9₁₀₂₃^√πθ()\[\]/.,−][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
+function isMixedMath(token: string): boolean {
+  return MIXED_NUM.test(token) || MIXED_LET.test(token);
+}
 
 export function isMathToken(token: string): boolean {
+  // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
+  if (PURE_WORD.test(token) && !FUNC_TOKEN.test(token)) return false;
   if (OP_TOKEN.test(token) || NUM_TOKEN.test(token) || FUNC_TOKEN.test(token)) return true;
   // 单字母变量(a/A/i/I 是英文冠词/代词,不当作数学)
   if (VAR_TOKEN.test(token) && !["a", "A", "i", "I"].includes(token)) return true;
   if (MATHY_TOKEN.test(token)) return true;
-  if (MIXED_TOKEN.test(token)) return true;
+  if (isMixedMath(token)) return true;
   return false;
 }
 
