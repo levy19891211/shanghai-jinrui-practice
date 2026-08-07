@@ -78,5 +78,6 @@ export const api = {
   get: <T>(p: string) => request<T>(p),
   post: <T>(p: string, data?: unknown) => request<T>(p, { method: "POST", body: JSON.stringify(data ?? {}) }),
   put: <T>(p: string, data?: unknown) => request<T>(p, { method: "PUT", body: JSON.stringify(data ?? {}) }),
+  patch: <T>(p: string, data?: unknown) => request<T>(p, { method: "PATCH", body: JSON.stringify(data ?? {}) }),
   del: <T>(p: string) => request<T>(p, { method: "DELETE" }),
 };

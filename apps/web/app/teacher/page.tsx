@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
-import type { Question, QuestionList } from "@/lib/types";
+import type { AutoFixBatchItem, AutoFixPlan, Question, QuestionList } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
 
@@ -56,14 +56,49 @@ export default function TeacherPage() {
   const [reviewNote, setReviewNote] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState("");
+  // 从「试卷管理 → 去审核」跳转过来时,只看这张卷内的题
+  const [paperId, setPaperId] = useState("");
+  const [paperTitle, setPaperTitle] = useState("");
+  // 一键自动修正
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fixQ, setFixQ] = useState<Question | null>(null);
+  const [fixPlan, setFixPlan] = useState<AutoFixPlan | null>(null);
+  const [fixLoading, setFixLoading] = useState(false);
+  const [fixApplying, setFixApplying] = useState(false);
+  const [fixError, setFixError] = useState("");
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchItems, setBatchItems] = useState<AutoFixBatchItem[] | null>(null);
+  const [batchSummary, setBatchSummary] = useState<{ total: number; fixedCount: number; stuck: number; resubmitted: number; applied: boolean } | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState("");
 
-  async function load() {
-    const d = await api.get<QuestionList>(`/questions?pageSize=50${statusFilter ? `&status=${statusFilter}` : ""}`);
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams({ pageSize: "50" });
+    if (statusFilter) qs.set("status", statusFilter);
+    if (paperId) qs.set("paperId", paperId);
+    const d = await api.get<QuestionList>(`/questions?${qs.toString()}`);
     setList(d.list);
     setTotal(d.total);
-  }
+  }, [statusFilter, paperId]);
 
-  useEffect(() => { load().catch((e) => setError(e.message)); }, [statusFilter]);
+  // 读取 ?paperId=,进入「按试卷审核」模式
+  useEffect(() => {
+    const pid = new URLSearchParams(window.location.search).get("paperId");
+    if (!pid) return;
+    setPaperId(pid);
+    api
+      .get<{ title: string }>(`/papers/${pid}/manage`)
+      .then((p) => setPaperTitle(p.title))
+      .catch(() => setPaperTitle(""));
+  }, []);
+
+  useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+
+  function exitPaperMode() {
+    setPaperId("");
+    setPaperTitle("");
+    window.history.replaceState(null, "", "/teacher");
+  }
 
   function openCreate() { setForm(EMPTY); setError(""); setShowForm(true); }
   function openEdit(q: Question) {
@@ -161,6 +196,70 @@ export default function TeacherPage() {
     }
   }
 
+  // 一键修正:先 dry-run 拿到修改方案与前后对比,老师确认后再落库
+  async function openAutoFix(q: Question) {
+    setFixQ(q);
+    setFixPlan(null);
+    setFixError("");
+    setFixOpen(true);
+    setFixLoading(true);
+    try {
+      const plan = await api.post<AutoFixPlan>(`/questions/${q.id}/autofix`, { apply: false });
+      setFixPlan(plan);
+    } catch (e) {
+      setFixError(e instanceof Error ? e.message : "分析失败");
+    } finally {
+      setFixLoading(false);
+    }
+  }
+
+  async function applyAutoFix(resubmit: boolean) {
+    if (!fixQ) return;
+    setFixApplying(true);
+    setFixError("");
+    try {
+      const r = await api.post<AutoFixPlan>(`/questions/${fixQ.id}/autofix`, { apply: true, resubmit });
+      setFixOpen(false);
+      setMessage(
+        `已修正 ${r.fixes.length} 处${resubmit ? ",题目已重新提交审核" : ",未改变审核状态"}` +
+          (r.remaining.length ? `;仍有 ${r.remaining.length} 项需人工确认` : "")
+      );
+      await load();
+      setTimeout(() => setMessage(""), 4000);
+    } catch (e) {
+      setFixError(e instanceof Error ? e.message : "修正失败");
+    } finally {
+      setFixApplying(false);
+    }
+  }
+
+  // 批量体检:默认扫描全部已退回题目
+  async function runBatch(apply: boolean) {
+    setBatchBusy(true);
+    setBatchError("");
+    try {
+      const r = await api.post<{ total: number; fixedCount: number; resubmitted: number; stuck: number; applied: boolean; items: AutoFixBatchItem[] }>(
+        "/questions/autofix/batch",
+        { status: "REJECTED", apply, resubmit: true, onlyClean: true }
+      );
+      setBatchItems(r.items);
+      setBatchSummary({ total: r.total, fixedCount: r.fixedCount, stuck: r.stuck, resubmitted: r.resubmitted, applied: r.applied });
+      if (apply) await load();
+    } catch (e) {
+      setBatchError(e instanceof Error ? e.message : "批量修正失败");
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  function openBatch() {
+    setBatchOpen(true);
+    setBatchItems(null);
+    setBatchSummary(null);
+    setBatchError("");
+    runBatch(false);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -171,6 +270,9 @@ export default function TeacherPage() {
         <div className="flex items-center gap-3">
           <button onClick={() => setStatusFilter("PENDING_REVIEW")} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"}`}>
             审核队列
+          </button>
+          <button onClick={openBatch} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
+            退回题一键修正
           </button>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
             <option value="">全部状态</option>
@@ -188,6 +290,17 @@ export default function TeacherPage() {
           </button>
         </div>
       </div>
+
+      {paperId && (
+        <div className="flex items-center justify-between rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-700">
+          <span>
+            正在按试卷审核{paperTitle ? `:「${paperTitle}」` : ""} —— 只显示这张卷里的题目,卷内每道题通过后学生才可作答。
+          </span>
+          <button onClick={exitPaperMode} className="font-medium text-violet-600 hover:underline">
+            退出 ✕
+          </button>
+        </div>
+      )}
 
       {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-600">{message}</p>}
       {error && !showForm && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
@@ -216,7 +329,14 @@ export default function TeacherPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">{q.topic}</td>
-                  <td className="max-w-[280px] truncate px-4 py-3 text-slate-600">{plainText(q.stem)}</td>
+                  <td className="max-w-[280px] px-4 py-3 text-slate-600">
+                    <div className="truncate">{plainText(q.stem)}</div>
+                    {q.status === "REJECTED" && q.reviewNote && (
+                      <div className="mt-0.5 truncate text-xs text-red-500" title={q.reviewNote}>
+                        退回:{q.reviewNote}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">{q.difficulty}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
@@ -227,6 +347,9 @@ export default function TeacherPage() {
                     <div className="flex gap-3">
                       {(q.status === "PENDING_REVIEW" || q.status === "REJECTED") && (
                         <button onClick={() => openReview(q)} className="font-medium text-blue-600 hover:underline">审核</button>
+                      )}
+                      {q.status === "REJECTED" && (
+                        <button onClick={() => openAutoFix(q)} className="font-medium text-amber-600 hover:underline">一键修正</button>
                       )}
                       <button onClick={() => openEdit(q)} className="text-indigo-600 hover:underline">编辑</button>
                       {user?.role === "ADMIN" && (
@@ -416,8 +539,221 @@ export default function TeacherPage() {
             {reviewError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{reviewError}</p>}
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setReviewOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">取消</button>
+              {reviewQ.status === "REJECTED" && (
+                <button
+                  onClick={() => { setReviewOpen(false); openAutoFix(reviewQ); }}
+                  className="rounded-lg border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
+                >
+                  一键修正
+                </button>
+              )}
               <button onClick={() => doReview("reject")} disabled={reviewing} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">驳回</button>
               <button onClick={() => doReview("approve")} disabled={reviewing} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">{reviewing ? "处理中..." : "通过审核并发布"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 单题一键修正:先预览方案与前后对比,确认后再落库并重新提交审核 */}
+      {fixOpen && fixQ && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">一键修正 · 根据退回原因自动差错</h2>
+              <button onClick={() => setFixOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            {fixQ.reviewNote ? (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">退回原因:{fixQ.reviewNote}</p>
+            ) : (
+              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">该题没有填写退回原因,将执行通用体检(与发布前校验同一套标准)。</p>
+            )}
+
+            {fixLoading && <p className="mt-4 text-sm text-slate-400">正在分析题目...</p>}
+            {fixError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{fixError}</p>}
+
+            {fixPlan && (
+              <>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  <span className={`rounded-full px-3 py-1 ${fixPlan.fixes.length ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                    可自动修正 {fixPlan.fixes.length} 处
+                  </span>
+                  {fixPlan.manual.length > 0 && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">需人工 {fixPlan.manual.length} 处</span>
+                  )}
+                  {fixPlan.noteMatched && (
+                    <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-700">已按退回原因定向定位</span>
+                  )}
+                  <span className={`rounded-full px-3 py-1 ${fixPlan.clean ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                    {fixPlan.clean ? "修正后可通过体检" : `修正后仍有 ${fixPlan.remaining.length} 项问题`}
+                  </span>
+                </div>
+
+                {fixPlan.fixes.length === 0 && fixPlan.manual.length === 0 && (
+                  <p className="mt-4 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                    未检出可自动修正的问题。可能是内容/学术层面的问题,请手动编辑后再提交审核。
+                  </p>
+                )}
+
+                {fixPlan.fixes.length > 0 && (
+                  <div className="mt-4">
+                    <p className="mb-2 text-xs font-medium text-slate-400">将要执行的修改</p>
+                    <div className="space-y-2">
+                      {fixPlan.fixes.map((f, i) => (
+                        <div key={i} className="rounded-xl border border-slate-200 p-3">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium text-slate-700">{f.label}</span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{f.field}</span>
+                            {f.targeted && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs text-violet-600">对应退回原因</span>}
+                          </div>
+                          {f.why && <p className="mt-1 text-xs text-slate-400">{f.why}</p>}
+                          <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <div className="rounded-lg bg-red-50 px-2 py-1.5">
+                              <p className="text-[11px] text-red-400">修改前</p>
+                              <p className="break-all font-mono text-xs text-red-700">{f.before || "(空)"}</p>
+                            </div>
+                            <div className="rounded-lg bg-emerald-50 px-2 py-1.5">
+                              <p className="text-[11px] text-emerald-500">修改后</p>
+                              <p className="break-all font-mono text-xs text-emerald-700">{f.after || "(空)"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {fixPlan.manual.length > 0 && (
+                  <div className="mt-4 rounded-xl bg-amber-50 p-3">
+                    <p className="text-xs font-medium text-amber-700">以下问题不能自动改,需要人工确认</p>
+                    <ul className="mt-1 list-inside list-disc text-xs text-amber-700">
+                      {fixPlan.manual.map((m, i) => (
+                        <li key={i}>
+                          {m.label}
+                          {m.detail ? ` —— ${m.detail}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {fixPlan.fixes.length > 0 && (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="mb-2 text-xs font-medium text-slate-400">修正后的效果预览</p>
+                    <div className="text-sm leading-relaxed text-slate-800">{renderRich(fixPlan.preview.stem)}</div>
+                    <div className="mt-2 space-y-1">
+                      {fixPlan.preview.options.map((opt, i) => (
+                        <div key={i} className={`flex gap-2 rounded px-2 py-1 text-sm ${opt === fixPlan.preview.answer ? "bg-emerald-50 text-emerald-700" : "text-slate-600"}`}>
+                          <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                          <span className="flex-1">{renderRich(opt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!fixPlan.clean && (
+                  <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                    修正后仍存在:{fixPlan.remaining.join(";")}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setFixOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">取消</button>
+              <button
+                onClick={() => { setFixOpen(false); openEdit(fixQ); }}
+                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+              >
+                手动编辑
+              </button>
+              <button
+                onClick={() => applyAutoFix(false)}
+                disabled={fixApplying || !fixPlan || fixPlan.fixes.length === 0}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 disabled:opacity-50"
+              >
+                只修正不提交
+              </button>
+              <button
+                onClick={() => applyAutoFix(true)}
+                disabled={fixApplying || !fixPlan || (fixPlan.fixes.length === 0 && fixPlan.clean === false)}
+                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              >
+                {fixApplying ? "处理中..." : "修正并重新提交审核"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量一键修正:扫描全部已退回题目 */}
+      {batchOpen && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">退回题目批量修正</h2>
+              <button onClick={() => setBatchOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <p className="mt-2 text-sm text-slate-500">
+              系统会逐题解析退回原因并自动差错。只有修正后能通过体检的题目才会重新提交审核,仍有问题的会留在退回列表等待人工处理。
+            </p>
+
+            {batchBusy && <p className="mt-4 text-sm text-slate-400">处理中...</p>}
+            {batchError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{batchError}</p>}
+
+            {batchSummary && (
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">扫描 {batchSummary.total} 道</span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+                  {batchSummary.applied ? "已修正" : "可修正"} {batchSummary.fixedCount} 道
+                </span>
+                {batchSummary.applied && (
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-600">重新提交审核 {batchSummary.resubmitted} 道</span>
+                )}
+                {batchSummary.stuck > 0 && (
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">{batchSummary.stuck} 道需人工处理</span>
+                )}
+              </div>
+            )}
+
+            {batchItems && batchItems.length > 0 && (
+              <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
+                {batchItems.map((it) => (
+                  <div key={it.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="flex-1 truncate text-sm text-slate-700">{plainText(it.stem)}</p>
+                      <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${it.clean ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-700"}`}>
+                        {it.clean ? `可修正 ${it.fixCount} 处` : "需人工"}
+                      </span>
+                    </div>
+                    {it.reviewNote && <p className="mt-1 text-xs text-red-500">退回:{it.reviewNote}</p>}
+                    {it.fixes.length > 0 && (
+                      <p className="mt-1 text-xs text-slate-500">修正项:{it.fixes.map((f) => f.label).join("、")}</p>
+                    )}
+                    {it.remaining.length > 0 && (
+                      <p className="mt-1 text-xs text-amber-700">仍存在:{it.remaining.join(";")}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {batchItems && batchItems.length === 0 && (
+              <p className="mt-4 text-sm text-slate-400">当前没有已退回的题目。</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setBatchOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
+              <button onClick={() => runBatch(false)} disabled={batchBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 disabled:opacity-50">
+                重新体检
+              </button>
+              <button
+                onClick={() => runBatch(true)}
+                disabled={batchBusy || !batchSummary || batchSummary.fixedCount === 0}
+                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              >
+                {batchBusy ? "处理中..." : "全部修正并重新提交审核"}
+              </button>
             </div>
           </div>
         </div>

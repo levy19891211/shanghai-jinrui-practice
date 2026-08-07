@@ -15,7 +15,9 @@ import { prisma } from "../src/lib/db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 应被清洗掉、却仍残留的结构性/格式标签(不等式 < > 不会命中,因为 b/i 被排除)
-const TAG_RE = /<\/?(?:p|div|br|span|table|tbody|thead|tr|td|th|ul|ol|li|font|small|big|h[1-6]|strong|em|sub|sup)\b/gi;
+// 与 src/lib/autofix.js 的 TAG_RE 保持同一份白名单(一键修正与离线校验必须同标准)
+const TAG_RE =
+  /<\/?(?:p|div|br|hr|span|table|tbody|thead|tfoot|caption|col|colgroup|tr|td|th|ul|ol|li|dl|dt|dd|font|small|big|h[1-6]|strong|em|b|i|u|s|a|img|code|pre|blockquote|center|nobr|section|article|header|footer|sub|sup)\b[^<>]*>/gi;
 const MATH_RE = /\$\$([\s\S]+?)\$\$|\$([^\s$][^$]*?)\$/g;
 const TEX_CMD_RE = /\\[\(\[\)\]]/g; // 残留的 \( \) \[ \]
 

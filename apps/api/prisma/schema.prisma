@@ -51,6 +51,7 @@ model Question {
   reviewNote String? // 审核意见(驳回原因等)
   reviewedBy String? // 审核人 id
   reviewedAt DateTime? // 审核时间
+  autoFixLog String? // 最近一次「一键修正」的记录(JSON 字符串,含修正项与前后值)
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   records    AnswerRecord[]
@@ -74,6 +75,13 @@ model InterviewQuestion {
   updatedAt DateTime @updatedAt
 }
 
+// 试卷
+// origin 合法值:MANUAL(老师手动组卷) | AUTO_SET(套题录入时自动成卷)
+// status 合法值:DRAFT | READY | ARCHIVED
+//   DRAFT  组卷完成但仍有题目未审核通过 → 学生不可见、不可作答
+//   READY  卷内每道题都已审核发布 → 学生可作答
+//   ARCHIVED 已下架
+// sourceKey:套题去重键(subject::paper::source),保证同一套真题重复导入时并入同一张卷
 model Paper {
   id          String   @id @default(cuid())
   title       String
@@ -81,7 +89,12 @@ model Paper {
   mode        String   @default("PRACTICE")
   durationMin Int? // EXAM 试卷的限时时长(分钟),练习卷可空
   questionIds String
+  source      String? // 来源,如 "TMUA 2016 真题"
+  origin      String   @default("MANUAL")
+  sourceKey   String?  @unique
+  status      String   @default("READY")
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
   sessions    Session[]
 }
 

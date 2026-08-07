@@ -111,3 +111,120 @@ export interface StatsData {
   byTopic: { topic: string; attempts: number; correctRate: number }[];
   totalAnswered: number;
 }
+
+// ---- 试卷(含套题自动组卷) ----
+
+/** 卷内题目的审核分布 */
+export interface PaperStats {
+  total: number;
+  published: number;
+  pending: number;
+  rejected: number;
+  draft: number;
+  archived: number;
+  /** 卷内引用的题目已被删除的数量 */
+  missing: number;
+}
+
+export interface PaperRow {
+  id: string;
+  title: string;
+  subject: string;
+  mode: string;
+  durationMin: number | null;
+  questionCount: number;
+  createdAt: string;
+  /** 以下字段仅老师视角返回 */
+  source?: string | null;
+  /** MANUAL = 手动组卷;AUTO_SET = 套题录入自动成卷 */
+  origin?: "MANUAL" | "AUTO_SET";
+  /** DRAFT = 还有题没审完;READY = 全部通过,学生可作答;ARCHIVED = 已下架 */
+  status?: "DRAFT" | "READY" | "ARCHIVED";
+  stats?: PaperStats;
+}
+
+export interface PaperManageQuestion {
+  id: string;
+  index: number;
+  missing: boolean;
+  subject?: string;
+  paper?: string | null;
+  topic?: string;
+  difficulty?: number;
+  type?: string;
+  stem?: string;
+  options?: string[];
+  answer?: string;
+  solution?: string | null;
+  status?: Question["status"];
+  reviewNote?: string | null;
+  source?: string | null;
+}
+
+export interface PaperManageDetail {
+  id: string;
+  title: string;
+  subject: string;
+  mode: string;
+  durationMin: number | null;
+  source?: string | null;
+  origin?: "MANUAL" | "AUTO_SET";
+  status: "DRAFT" | "READY" | "ARCHIVED";
+  createdAt: string;
+  stats: PaperStats;
+  questions: PaperManageQuestion[];
+}
+
+// ---- 退回题目一键自动修正 ----
+
+export interface AutoFixDiff {
+  code: string;
+  label: string;
+  field: string;
+  before: string;
+  after: string;
+  why?: string;
+  /** 是否由退回意见中的关键词定向命中 */
+  targeted?: boolean;
+}
+
+export interface AutoFixManual {
+  code: string;
+  label: string;
+  detail?: string;
+  targeted?: boolean;
+}
+
+export interface AutoFixPlan {
+  id: string;
+  applied: boolean;
+  status?: Question["status"];
+  reviewNote?: string | null;
+  fixes: AutoFixDiff[];
+  manual: AutoFixManual[];
+  patch: Record<string, unknown>;
+  /** 修正后仍存在的问题;为空表示体检通过 */
+  remaining: string[];
+  clean: boolean;
+  targetedCodes: string[];
+  noteMatched: boolean;
+  preview: {
+    stem: string;
+    options: string[];
+    answer: string;
+    solution: string;
+    difficulty: number;
+  };
+}
+
+export interface AutoFixBatchItem {
+  id: string;
+  stem: string;
+  reviewNote: string | null;
+  fixCount: number;
+  fixes: { code: string; label: string; field: string; targeted?: boolean }[];
+  manual: AutoFixManual[];
+  remaining: string[];
+  clean: boolean;
+  willResubmit: boolean;
+}
