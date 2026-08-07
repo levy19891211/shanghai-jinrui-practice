@@ -4,9 +4,10 @@
 
 ## 项目概况
 
-- **项目**:AI 协同开发的 Web 应用(暂名 `ai-co-built-app`)
-- **技术栈**:Next.js 14 + React 18 + TypeScript(前端);Node.js + Express(后端);npm workspaces 管理 monorepo
+- **项目**:TMUA / ESAT 在线刷题系统(学生刷题 + 考试数据维护 + 老师题库管理)
+- **技术栈**:Next.js 14 + React 18 + TypeScript(前端);Node.js + Express + Prisma(后端);SQLite(开发)/ PostgreSQL(生产);npm workspaces 管理 monorepo
 - **包管理器**:npm(根目录 `package.json` 已配置 workspaces)
+- **设计文档**:架构见 `docs/ARCHITECTURE.md`,接口契约见 `docs/API.md`,任务看板见 `TASKS.md`
 
 ## 目录结构与所有权(重要!)
 
@@ -45,6 +46,7 @@
 npm install            # 安装全部 workspace 依赖(根目录执行)
 npm run dev:web        # 启动前端,http://localhost:3000
 npm run dev:api        # 启动后端,http://localhost:4000
+npm run seed --workspace=apps/api   # 写入种子数据(演示账号 + 示例题目)
 ```
 
 ## 沟通方式

@@ -1,0 +1,166 @@
+import { Router } from "express";
+import { prisma } from "../lib/db.js";
+import { ok, fail, asyncHandler } from "../lib/res.js";
+import { grade } from "../lib/grading.js";
+import { requireAuth } from "../middleware/auth.js";
+
+const router = Router();
+
+// 面向学生的题目字段(不含答案与解析)
+const QUIZ_FIELDS = {
+  id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true,
+};
+
+// 组卷:确定题目集合
+async function resolveQuestionIds(body) {
+  if (body.paperId) {
+    const paper = await prisma.paper.findUnique({ where: { id: body.paperId } });
+    if (!paper) throw Object.assign(new Error("试卷不存在"), { code: 404 });
+    return JSON.parse(paper.questionIds || "[]");
+  }
+  if (Array.isArray(body.questionIds) && body.questionIds.length > 0) {
+    return body.questionIds;
+  }
+  // 默认:从已发布题目中随机抽取 10 道(优先按 subject 过滤)
+  const where = { status: "PUBLISHED" };
+  if (body.subject) where.subject = body.subject;
+  const all = await prisma.question.findMany({ where, select: { id: true } });
+  const picked = all.sort(() => Math.random() - 0.5).slice(0, Number(body.limit) || 10);
+  return picked.map((q) => q.id);
+}
+
+// POST /api/sessions — 创建答题会话
+router.post(
+  "/",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const mode = req.body?.mode === "EXAM" ? "EXAM" : "PRACTICE";
+    let questionIds;
+    try {
+      questionIds = await resolveQuestionIds(req.body || {});
+    } catch (e) {
+      return fail(res, e.code || 500, e.message);
+    }
+    if (questionIds.length === 0) return fail(res, 400, "题库为空,暂无可作答题目");
+
+    const session = await prisma.session.create({
+      data: {
+        studentId: req.user.id,
+        paperId: req.body?.paperId || null,
+        mode,
+        total: questionIds.length,
+      },
+    });
+    const questions = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
+    ok(res, { sessionId: session.id, mode, questions }, "会话已创建");
+  })
+);
+
+// POST /api/sessions/:id/answer — 保存单题作答(实时保存,可覆盖)
+router.post(
+  "/:id/answer",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    if (session.submittedAt) return fail(res, 400, "会话已提交,无法再作答");
+    const { questionId, selected, timeSpent } = req.body || {};
+    if (!questionId) return fail(res, 400, "questionId 必填");
+
+    const question = await prisma.question.findUnique({ where: { id: questionId } });
+    if (!question) return fail(res, 404, "题目不存在");
+
+    await prisma.answerRecord.upsert({
+      where: { sessionId_questionId: { sessionId: session.id, questionId } },
+      create: { sessionId: session.id, questionId, selected: selected ?? null, timeSpent: Number(timeSpent) || null },
+      update: { selected: selected ?? null, timeSpent: Number(timeSpent) || null },
+    });
+    ok(res, null, "已保存");
+  })
+);
+
+// POST /api/sessions/:id/submit — 提交判分
+router.post(
+  "/:id/submit",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id }, include: { records: true } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    if (session.submittedAt) return fail(res, 400, "会话已提交");
+
+    const questions = await prisma.question.findMany({
+      where: { id: { in: session.records.map((r) => r.questionId) } },
+    });
+    const qMap = new Map(questions.map((q) => [q.id, q]));
+    const result = grade(
+      session.records.map((r) => ({ question: qMap.get(r.questionId), selected: r.selected }))
+    );
+
+    // 写回判分结果
+    await prisma.$transaction([
+      ...result.details.map((d) =>
+        prisma.answerRecord.update({
+          where: { sessionId_questionId: { sessionId: session.id, questionId: d.questionId } },
+          data: { isCorrect: d.isCorrect },
+        })
+      ),
+      prisma.session.update({
+        where: { id: session.id },
+        data: { score: result.score, correctCount: result.correctCount, submittedAt: new Date() },
+      }),
+      // 错题写入错题本
+      ...result.details
+        .filter((d) => !d.isCorrect)
+        .map((d) =>
+          prisma.wrongBook.upsert({
+            where: { studentId_questionId: { studentId: req.user.id, questionId: d.questionId } },
+            create: { studentId: req.user.id, questionId: d.questionId, wrongCount: 1 },
+            update: { wrongCount: { increment: 1 }, mastered: false },
+          })
+        ),
+    ]);
+    ok(res, result, "判分完成");
+  })
+);
+
+// GET /api/sessions/:id — 会话详情(本人或老师)
+router.get(
+  "/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({
+      where: { id: req.params.id },
+      include: {
+        records: { include: { question: true } },
+      },
+    });
+    if (!session) return fail(res, 404, "会话不存在");
+    const isOwner = session.studentId === req.user.id;
+    const isTeacher = ["TEACHER", "ADMIN"].includes(req.user.role);
+    if (!isOwner && !isTeacher) return fail(res, 403, "无权限查看");
+
+    const details = session.records.map((r) => ({
+      questionId: r.questionId,
+      selected: r.selected,
+      isCorrect: r.isCorrect,
+      timeSpent: r.timeSpent,
+      // 提交后(本人/老师)才可见答案与解析
+      answer: session.submittedAt ? r.question.answer : undefined,
+      solution: session.submittedAt ? r.question.solution : undefined,
+      stem: r.question.stem,
+      topic: r.question.topic,
+    }));
+    ok(res, {
+      id: session.id,
+      mode: session.mode,
+      score: session.score,
+      total: session.total,
+      correctCount: session.correctCount,
+      startedAt: session.startedAt,
+      submittedAt: session.submittedAt,
+      details,
+    });
+  })
+);
+
+export default router;

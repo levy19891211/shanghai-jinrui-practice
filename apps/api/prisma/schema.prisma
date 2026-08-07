@@ -1,0 +1,104 @@
+// Prisma schema — TMUA/ESAT 刷题系统
+// 开发环境:SQLite(不支持 enum,字段用 String 并注释合法值)
+// 生产环境:切换 provider 为 "postgresql" 后可恢复为 enum 类型
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// role 合法值:STUDENT | TEACHER | ADMIN
+// subject 合法值:TMUA | ESAT
+// type 合法值:SINGLE_CHOICE | MULTIPLE_CHOICE | NUMERIC
+// status 合法值:DRAFT | PUBLISHED | ARCHIVED
+// mode 合法值:PRACTICE | EXAM
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  name             String
+  role             String    @default("STUDENT")
+  targetUniversity String?
+  createdAt        DateTime  @default(now())
+  sessions         Session[]
+  wrongBook        WrongBook[]
+}
+
+model Question {
+  id         String        @id @default(cuid())
+  subject    String
+  paper      String?
+  topic      String
+  difficulty Int           @default(3)
+  type       String        @default("SINGLE_CHOICE")
+  stem       String
+  options    String
+  answer     String
+  solution   String?
+  source     String?
+  status     String        @default("DRAFT")
+  createdBy  String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  records    AnswerRecord[]
+  wrongBook  WrongBook[]
+}
+
+model Paper {
+  id          String   @id @default(cuid())
+  title       String
+  subject     String
+  mode        String   @default("PRACTICE")
+  durationMin Int
+  questionIds String
+  createdAt   DateTime @default(now())
+  sessions    Session[]
+}
+
+model Session {
+  id           String        @id @default(cuid())
+  studentId    String
+  student      User          @relation(fields: [studentId], references: [id])
+  paperId      String?
+  paper        Paper?        @relation(fields: [paperId], references: [id])
+  mode         String
+  score        Float?
+  total        Int?
+  correctCount Int?
+  startedAt    DateTime      @default(now())
+  submittedAt  DateTime?
+  records      AnswerRecord[]
+}
+
+model AnswerRecord {
+  id         String   @id @default(cuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id])
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  selected   String?
+  isCorrect  Boolean?
+  timeSpent  Int?
+  createdAt  DateTime @default(now())
+
+  @@unique([sessionId, questionId])
+}
+
+model WrongBook {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id])
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  wrongCount Int      @default(1)
+  mastered   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studentId, questionId])
+}
