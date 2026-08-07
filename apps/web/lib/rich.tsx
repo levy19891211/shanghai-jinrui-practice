@@ -64,7 +64,7 @@ export function renderRich(text: string | null | undefined): React.ReactNode[] {
         return (
           <span
             key={key++}
-            className={t.display ? "my-2 block overflow-x-auto" : "mx-0.5 inline-block align-middle"}
+            className={t.display ? "my-2 block overflow-x-auto" : "align-baseline"}
             dangerouslySetInnerHTML={{ __html: renderMathExpr(t.expr!, t.display!) }}
           />
         );
@@ -117,7 +117,9 @@ export function latexify(s: string): string {
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母,避免误伤单词)
-    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
+    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
+    // 分数:2x/(x-2√3) → \frac{2x}{x-2\sqrt{3}},显示为标准分数
+    .replace(/([^()/]+)\/\(([^()]+)\)/g, "\\frac{$1}{$2}");
 }
 
 // ===== 智能数学识别:将文本中的数学片段自动渲染为公式 =====
@@ -164,7 +166,7 @@ export function smartMath(text: string): React.ReactNode[] {
     if (mathBuf.length) {
       const expr = latexify(mathBuf.join(" "));
       parts.push(
-        <span key={key++} className="mx-0.5 inline-block align-middle" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
+        <span key={key++} className="align-baseline" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
       );
       // KaTeX 数学模式忽略尾部空格,显式补一个视觉间隔
       parts.push(<span key={key++}> </span>);
