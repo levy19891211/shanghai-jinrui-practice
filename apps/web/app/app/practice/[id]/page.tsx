@@ -1,12 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import type { GradeResult, QuizQuestion, SessionDetail } from "@/lib/types";
 
-const LETTERS = ["A", "B", "C", "D", "E", "F"];
+const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
+// 知识点 → 标签配色(试卷风格)
+const TOPIC_COLORS: Record<string, string> = {
+  代数: "#2e6f40", 函数: "#2e6f40", "代数方程组": "#2e6f40", 不等式: "#2e6f40",
+  微积分: "#7a3b8f", 定积分: "#7a3b8f",
+  三角: "#b8860b", 三角函数: "#b8860b",
+  概率: "#1f6fb2", 统计: "#1f6fb2",
+  数列: "#a14a3a", "数列级数": "#a14a3a",
+  几何: "#3d6b6b", "坐标几何": "#3d6b6b", "立体几何": "#3d6b6b", "解析几何": "#3d6b6b",
+  逻辑: "#5b3a8f",
+};
+const DEFAULT_TOPIC = "#00467F";
+
+function topicColor(topic: string): string {
+  return TOPIC_COLORS[topic] || DEFAULT_TOPIC;
+}
+
+// 成绩等级
+function gradeOf(pct: number): { label: string; color: string } {
+  if (pct >= 90) return { label: "Outstanding", color: "#2e7d32" };
+  if (pct >= 75) return { label: "Strong", color: "#1f6fb2" };
+  if (pct >= 60) return { label: "Solid", color: "#b8860b" };
+  if (pct >= 45) return { label: "Developing", color: "#c62828" };
+  return { label: "Keep practising", color: "#9e9e9e" };
+}
+
+const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
 export default function PracticePage() {
   const { id } = useParams<{ id: string }>();
@@ -32,7 +59,6 @@ export default function PracticePage() {
       cached = sessionStorage.getItem(`session-${id}`);
       if (cached) {
         const raw = JSON.parse(cached);
-        // 兜底:options 若仍是 JSON 字符串(脏缓存/旧版本),解析为数组
         if (Array.isArray(raw)) {
           const norm = raw.map((q) => ({
             ...q,
@@ -84,7 +110,7 @@ export default function PracticePage() {
 
   const submit = useCallback(async (auto = false) => {
     if (submittedRef.current) return;
-    if (!auto && !window.confirm("确认提交?提交后将无法修改答案。")) return;
+    if (!auto && !window.confirm("确认交卷?交卷后将无法修改答案。")) return;
     submittedRef.current = true;
     setSaving(true);
     setError("");
@@ -114,8 +140,20 @@ export default function PracticePage() {
     return () => clearTimeout(t);
   }, [remaining, detail, result, submit]);
 
+  // 键盘导航:←/→ 切题
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowLeft") setCurrent((c) => Math.max(0, c - 1));
+      if (e.key === "ArrowRight") setCurrent((c) => Math.min(questions.length - 1, c + 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [questions.length]);
+
   function choose(selected: string) {
     if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
+    if (questions.length === 0) return;
     const qid = questions[current].id;
     const next = { ...answers, [qid]: selected };
     setAnswers(next);
@@ -123,141 +161,237 @@ export default function PracticePage() {
     saveAnswer(qid, selected);
   }
 
-  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  if (loading) return <p className="py-10 text-center text-sm text-slate-500">加载中...</p>;
 
-  if (loading) return <p className="text-sm text-slate-500">加载中...</p>;
+  const modeLabel = isExam ? "模拟考" : "练习";
+  const answeredCount = Object.keys(answers).length;
+  const total = questions.length;
 
-  // 已提交:展示成绩与解析
+  /* ============ 已提交:成绩总结 + 逐题解析 ============ */
   if (detail?.submittedAt) {
     const items = detail.details ?? [];
+    const correct = detail.correctCount ?? 0;
+    const wrong = items.filter((d) => d.selected != null && !d.isCorrect).length;
+    const blank = items.filter((d) => d.selected == null).length;
+    const pct = detail.total ? Math.round((correct / detail.total) * 100) : 0;
+    const grade = gradeOf(pct);
+
     return (
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          {result?.timedOut && (
-            <p className="mb-2 text-xs font-medium text-amber-600">考试时间已到,系统已自动交卷</p>
-          )}
-          <p className="text-sm text-slate-500">本次得分({detail.mode === "EXAM" ? "模拟考" : "练习"})</p>
-          <p className="mt-2 text-4xl font-bold text-indigo-600">
-            {detail.score} <span className="text-lg text-slate-400">/ {detail.total}</span>
-          </p>
-          <p className="mt-2 text-sm text-slate-500">答对 {detail.correctCount} 题</p>
-          <button onClick={() => router.push("/app")} className="mt-4 rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-            返回首页
-          </button>
-        </div>
-        {items.map((d, i) => (
-          <div key={d.questionId} className={`rounded-2xl border bg-white p-6 shadow-sm ${d.isCorrect ? "border-emerald-200" : "border-red-200"}`}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <p className="text-sm text-slate-400">第 {i + 1} 题 · {d.topic}</p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(d.stem)}</p>
-              </div>
-              <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${d.isCorrect ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
-                {d.isCorrect ? "答对" : "答错"}
-              </span>
-            </div>
-            <div className="mt-3 space-y-1.5">
-              {d.options.map((opt, j) => (
-                <div key={j} className={`rounded-lg px-3 py-2 text-sm ${opt === d.answer ? "bg-emerald-50 text-emerald-700" : opt === d.selected ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"}`}>
-                  <span className="font-medium">{LETTERS[j]}. </span>{renderRich(opt)}
-                  {opt === d.answer && <span className="ml-2 text-xs text-emerald-500">正确答案</span>}
-                </div>
-              ))}
-            </div>
-            {d.solution && (
-              <div className="mt-3 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900">
-                <span className="font-medium">解析:</span> {d.solution}
-              </div>
-            )}
+      <div className="mx-auto max-w-3xl">
+        <div className="overflow-hidden rounded-lg bg-[#fbf8f1] shadow-lg ring-1 ring-[#d9d2c2]">
+          {/* 头 */}
+          <div className="bg-gradient-to-br from-[#00467F] to-[#1f6fb2] px-8 py-6 text-white">
+            <h1 className="text-lg font-bold tracking-wide">上海金瑞学校 · 附加笔试刷题系统</h1>
+            <p className="mt-1 text-xs opacity-90">{modeLabel} · 成绩报告</p>
+            {result?.timedOut && <p className="mt-2 inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs">考试时间已到,系统已自动交卷</p>}
           </div>
-        ))}
+          {/* 成绩总结 */}
+          <div className="px-8 py-8 text-center">
+            <p className="text-sm text-[#5a5346]">本次得分</p>
+            <p className="mt-2 text-6xl font-bold leading-none text-[#00467F]">
+              {correct}
+              <small className="ml-1 text-2xl text-[#8a8377]">/ {detail.total}</small>
+            </p>
+            <p className="mt-3 text-2xl font-bold" style={{ color: grade.color }}>{pct}%</p>
+            <span className="mt-2 inline-block rounded-full px-4 py-1 text-sm font-semibold text-white" style={{ background: grade.color }}>
+              {grade.label}
+            </span>
+            <div className="mt-5 flex justify-center gap-3 text-sm">
+              <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">答对 <b className="text-[#2e7d32]">{correct}</b></span>
+              <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">答错 <b className="text-[#c62828]">{wrong}</b></span>
+              <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">未答 <b className="text-[#8a8377]">{blank}</b></span>
+            </div>
+            <div className="mt-6 flex justify-center gap-3">
+              <button onClick={() => router.push("/app")} className="rounded bg-[#00467F] px-5 py-2 text-sm font-medium text-white hover:bg-[#1f6fb2]">
+                返回首页
+              </button>
+            </div>
+          </div>
+          {/* 逐题 */}
+          <div className="space-y-4 px-6 pb-8">
+            {items.map((d, i) => (
+              <div key={d.questionId} className={`rounded border bg-white p-5 ${d.isCorrect ? "border-[#2e7d32] shadow-[0_0_0_3px_rgba(46,125,50,0.15)]" : "border-[#c62828] shadow-[0_0_0_3px_rgba(198,40,40,0.12)]"}`}>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 min-w-[52px] text-sm font-bold text-[#b8860b]">Q{i + 1}.</span>
+                  <div className="flex-1">
+                    <span className="mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(d.topic) }}>
+                      {d.topic}
+                    </span>
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${d.isCorrect ? "bg-[#e8f5e9] text-[#2e7d32]" : d.selected ? "bg-[#fdecea] text-[#c62828]" : "bg-[#f0ead8] text-[#5a5346]"}`}>
+                      {d.isCorrect ? "✓ 答对" : d.selected ? "✗ 答错" : "未作答"}
+                    </span>
+                    <p className="mt-2 text-[15px] leading-relaxed text-[#1a1a1a]">{renderRich(d.stem)}</p>
+                    <div className="mt-3 space-y-1">
+                      {d.options.map((opt, j) => {
+                        const isAns = opt === d.answer;
+                        const isSel = opt === d.selected;
+                        return (
+                          <div key={j} className={`rounded px-3 py-1.5 text-[14px] ${isAns ? "bg-[#e8f5e9] font-medium text-[#1b3a1d]" : isSel ? "bg-[#fdecea] text-[#5a1a17]" : "text-[#5a5346]"}`}>
+                            <span className="mr-1 font-bold text-[#00467F]">{LETTERS[j]}.</span>
+                            {renderRich(opt)}
+                            {isAns && <span className="ml-2 text-xs text-[#2e7d32]">正确答案</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {d.solution && (
+                      <div className="mt-3 rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
+                        <b className="text-[#00467F]">解析:</b> {d.solution}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  // 答题中
+  /* ============ 答题中:试卷风格 ============ */
   if (questions.length === 0) {
-    return <p className="text-sm text-slate-500">该会话没有可用的题目。</p>;
+    return <p className="py-10 text-center text-sm text-slate-500">该会话没有可用的题目。</p>;
   }
   const q = questions[current];
-  const answeredCount = Object.keys(answers).length;
   const expired = isExam && deadline !== null && Date.now() > deadline;
+  const remainingStr = remaining === null ? "" : fmt(remaining);
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
-        <span>已答 {answeredCount} / {questions.length}</span>
-        <div className="flex items-center gap-3">
-          {isExam && remaining !== null && (
-            <span className={`rounded-lg px-3 py-1 font-mono text-sm font-medium ${remaining <= 60 ? "animate-pulse bg-red-50 text-red-600" : "bg-slate-100 text-slate-600"}`}>
-              {fmt(remaining)}
-            </span>
-          )}
-          <span>{q.topic} · 难度 {q.difficulty}</span>
+      <div className="overflow-hidden rounded-lg bg-[#fbf8f1] shadow-lg ring-1 ring-[#d9d2c2]">
+        {/* 试卷头 */}
+        <div className="bg-gradient-to-br from-[#00467F] to-[#1f6fb2] px-8 py-5 text-white">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-base font-bold tracking-wide">上海金瑞学校 · 附加笔试</h1>
+              <p className="mt-0.5 text-xs opacity-90">
+                {modeLabel} · 共 {total} 题 · 每题 1 分
+                {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.round((deadline - Date.now() + remaining! * 1000) / 60000) : ""} 分钟</span>}
+              </p>
+            </div>
+            <div className="text-right">
+              {isExam && remaining !== null ? (
+                <>
+                  <p className={`font-mono text-3xl font-bold tabular-nums ${remaining <= 60 ? "animate-pulse text-amber-300" : ""}`}>{remainingStr}</p>
+                  <p className="text-[11px] opacity-80">{remaining <= 60 ? "即将自动交卷" : "剩余时间"}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-3xl font-bold text-white/40">∞</p>
+                  <p className="text-[11px] opacity-60">不限时</p>
+                </>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-      {isExam && remaining !== null && remaining <= 300 && (
-        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-600">
-          模拟考模式,时间到将自动交卷{remaining <= 60 ? ",请尽快作答!" : ""}
-        </p>
-      )}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-sm text-slate-400">第 {current + 1} 题</p>
-        <p className="mt-2 text-base leading-relaxed text-slate-800">{renderRich(q.stem)}</p>
-        <div className="mt-5 space-y-2">
-          {q.options.map((opt, j) => {
-            const selected = answers[q.id] === opt;
+
+        {/* 进度条 */}
+        <div className="flex items-center gap-3 bg-[#f1ead9] px-6 py-2.5 text-[13px] text-[#5a5346]">
+          <span className="shrink-0">已答 {answeredCount} / {total}</span>
+          <div className="h-2 flex-1 overflow-hidden rounded bg-[#e0d8c2]">
+            <div className="h-full bg-[#00467F] transition-all duration-300" style={{ width: `${total ? (answeredCount / total) * 100 : 0}%` }} />
+          </div>
+          <span className="shrink-0 text-[#8a8377]">进度 {total ? Math.round((answeredCount / total) * 100) : 0}%</span>
+        </div>
+
+        {/* 题号导航网格 */}
+        <div className="flex flex-wrap gap-1.5 bg-[#f1ead9] px-6 pb-4">
+          {questions.map((qq, i) => {
+            const isCur = i === current;
+            const hasAns = !!answers[qq.id];
             return (
               <button
-                key={j}
-                onClick={() => choose(opt)}
-                disabled={expired}
-                className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm transition disabled:opacity-50 ${
-                  selected ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                key={qq.id}
+                onClick={() => setCurrent(i)}
+                className={`flex h-9 w-9 items-center justify-center rounded text-[13px] font-bold transition-all ${
+                  isCur
+                    ? "bg-[#b8860b] text-white shadow-[0_0_0_3px_rgba(184,134,11,0.35)]"
+                    : hasAns
+                      ? "bg-[#00467F] text-white"
+                      : "border border-[#d9d2c2] bg-white text-[#5a5346] hover:border-[#00467F] hover:text-[#00467F]"
                 }`}
               >
-                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-                  {LETTERS[j]}
-                </span>
-                <span className="leading-relaxed">{renderRich(opt)}</span>
+                {i + 1}
               </button>
             );
           })}
         </div>
+
+        {/* 题目卡片 */}
+        <div className="px-6 py-6">
+          <div className="rounded border border-[#d9d2c2] bg-white p-5">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-bold text-[#b8860b]">Q{current + 1}.</span>
+              <span className="rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(q.topic) }}>
+                {q.topic}
+              </span>
+              <span className="text-xs text-[#8a8377]">难度 {q.difficulty}</span>
+            </div>
+            <div className="mt-3 text-[15.5px] leading-relaxed text-[#1a1a1a]">{renderRich(q.stem)}</div>
+            <div className="mt-4 space-y-1.5">
+              {q.options.map((opt, j) => {
+                const selected = answers[q.id] === opt;
+                return (
+                  <label
+                    key={j}
+                    className={`flex cursor-pointer items-start gap-2.5 rounded border px-3 py-2 text-[15px] transition-all ${
+                      selected
+                        ? "border-[#00467F] bg-[#e8eef7] shadow-[0_0_0_1px_#00467F]"
+                        : "border-[#d9d2c2] bg-[#fdfaf2] hover:bg-[#f6f1e2]"
+                    } ${expired ? "pointer-events-none opacity-60" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name={`q-${current}`}
+                      checked={selected}
+                      disabled={expired}
+                      onChange={() => choose(opt)}
+                      className="mt-1.5 h-4 w-4 accent-[#00467F]"
+                    />
+                    <span className="font-bold text-[#00467F]">{LETTERS[j]}.</span>
+                    <span className="leading-relaxed">{renderRich(opt)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 分页导航 */}
+        <div className="flex items-center justify-between px-6 pb-5">
+          <button
+            onClick={() => setCurrent((c) => Math.max(0, c - 1))}
+            disabled={current === 0}
+            className="rounded bg-[#00467F] px-4 py-2 text-sm text-white hover:bg-[#1f6fb2] disabled:bg-[#9aa3ad]"
+          >
+            ← 上一题
+          </button>
+          <span className="text-sm text-[#5a5346]">第 {current + 1} 题 / 共 {total} 题</span>
+          {current < total - 1 ? (
+            <button
+              onClick={() => setCurrent((c) => Math.min(total - 1, c + 1))}
+              className="rounded bg-[#00467F] px-4 py-2 text-sm text-white hover:bg-[#1f6fb2]"
+            >
+              下一题 →
+            </button>
+          ) : (
+            <button
+              onClick={() => submit(false)}
+              disabled={saving}
+              className="rounded bg-[#b8860b] px-5 py-2 text-sm font-semibold text-white hover:bg-[#d4a017] disabled:opacity-60"
+            >
+              {saving ? "交卷中..." : "交卷"}
+            </button>
+          )}
+        </div>
+
+        {error && <p className="px-6 pb-4 text-sm text-[#c62828]">{error}</p>}
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <button
-          onClick={() => setCurrent((c) => Math.max(0, c - 1))}
-          disabled={current === 0}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 disabled:opacity-40"
-        >
-          上一题
-        </button>
-        <div className="flex gap-1.5">
-          {questions.map((qq, i) => (
-            <button
-              key={qq.id}
-              onClick={() => setCurrent(i)}
-              className={`h-8 w-8 rounded-md text-xs font-medium transition ${
-                i === current ? "bg-indigo-600 text-white" : answers[qq.id] ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
-        {current < questions.length - 1 ? (
-          <button onClick={() => setCurrent((c) => Math.min(questions.length - 1, c + 1))} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">
-            下一题
-          </button>
-        ) : (
-          <button onClick={() => submit(false)} disabled={saving} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-            {saving ? "提交中..." : "交卷"}
-          </button>
-        )}
-      </div>
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      <p className="mt-3 text-center text-xs text-[#8a8377]">
+        支持键盘 ← → 切换题目 · 作答实时保存,刷新不丢失
+      </p>
     </div>
   );
 }
