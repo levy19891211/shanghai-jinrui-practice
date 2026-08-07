@@ -11,3 +11,4 @@ build/
 npm-debug.log*
 *.db
 *.db-journal
+.workbuddy/
