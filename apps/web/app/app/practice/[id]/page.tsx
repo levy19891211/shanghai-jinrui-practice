@@ -235,8 +235,8 @@ export default function PracticePage() {
                       })}
                     </div>
                     {d.solution && (
-                      <div className="mt-3 rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
-                        <b className="text-[#00467F]">解析:</b> {d.solution}
+                      <div className="mt-3 whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
+                        <b className="text-[#00467F]">解析:</b> {renderRich(d.solution)}
                       </div>
                     )}
                   </div>
