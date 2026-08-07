@@ -87,6 +87,7 @@ export function plainText(text: string | null | undefined): string {
 }
 
 // 将常见非 LaTeX 数学记号转换为 KaTeX 语法(供批量录入使用)
+// 注意执行顺序:简单分数(π/4 等)必须在 π→\pi 之前处理,否则 \pi 中的 i 会被误当变量
 export function latexify(s: string): string {
   return s
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
@@ -94,6 +95,11 @@ export function latexify(s: string): string {
     .replace(/log₁₀/g, "\\log_{10}")
     .replace(/log₂/g, "\\log_2")
     .replace(/log₃/g, "\\log_3")
+    // 简单分数:数字/π/θ/单变量的 A/B(如 3π/4、1/2、x/y、5650/79.5)
+    // A/B 支持 \pi、\theta 命令形式;单字母变量前后不能是字母(避免 \pi 的 i 被误当变量)
+    .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
+    // 括号分子/数字分母:(\sqrt{5} − 1)/2 → \frac{\sqrt{5} − 1}{2}
+    .replace(/\(([^()]+)\)\s*\/\s*([0-9πθ][0-9πθ.]*)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/π/g, "\\pi")
     .replace(/θ/g, "\\theta")
     .replace(/²/g, "^{2}")
@@ -108,6 +114,9 @@ export function latexify(s: string): string {
     .replace(/¹/g, "^{1}")
     .replace(/\^\(([^)]*)\)/g, "^{$1}")
     .replace(/\^([0-9a-zA-Z])/g, "^{$1}")
+    // 合并被拆分的上标数字(如 sin^{1}^{0} → sin^{10},(1/2)^{1}00 → (1/2)^{100})
+    .replace(/\^\{(\d)\}\^\{(\d)\}/g, "^{$1$2}")
+    .replace(/\^\{(\d)\}(\d{2,})/g, "^{$1$2}")
     .replace(/×/g, "\\times")
     .replace(/·/g, "\\cdot")
     .replace(/≤/g, "\\le")
@@ -118,7 +127,7 @@ export function latexify(s: string): string {
     .replace(/∫/g, "\\int")
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母,避免误伤单词)
     .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
-    // 分数:A/(B) 或 (A)/(B) → \frac{A}{B}(容忍分子前/分母括号前的空格,如 "2 / (a + 2b)")
+    // 括号分数:A/(B) 或 (A)/(B) → \frac{A}{B}(容忍空格,如 "2 / (a + 2b)")
     .replace(/([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
     .replace(/\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}");
 }
