@@ -172,7 +172,7 @@ export default function TeacherPage() {
           <button onClick={() => setStatusFilter("PENDING_REVIEW")} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"}`}>
             审核队列
           </button>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
             <option value="">全部状态</option>
             <option value="DRAFT">草稿</option>
             <option value="PENDING_REVIEW">待审核</option>
@@ -311,7 +311,7 @@ export default function TeacherPage() {
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm text-slate-600">科目</label>
-                <select className={input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
+                <select className={`${input} ui-select`} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
                   <option value="TMUA">TMUA</option>
                   <option value="ESAT">ESAT</option>
                 </select>
@@ -331,7 +331,7 @@ export default function TeacherPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm text-slate-600">状态</label>
-                <select className={input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <select className={`${input} ui-select`} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                   <option value="PENDING_REVIEW">待审核(默认)</option>
                   <option value="DRAFT">草稿(暂不提交)</option>
                   <option value="PUBLISHED">发布</option>

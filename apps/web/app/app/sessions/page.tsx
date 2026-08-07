@@ -18,7 +18,7 @@ export default function SessionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">成绩历史</h1>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500">
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 ui-select">
           <option value="">全部模式</option>
           <option value="PRACTICE">练习</option>
           <option value="EXAM">模拟考</option>

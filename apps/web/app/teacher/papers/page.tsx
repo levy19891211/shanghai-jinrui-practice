@@ -73,14 +73,14 @@ export default function TeacherPapersPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-600">科目</label>
-            <select className={input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
+            <select className={`${input} ui-select`} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
               <option value="TMUA">TMUA</option>
               <option value="ESAT">ESAT</option>
             </select>
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-600">模式</label>
-            <select className={input} value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}>
+            <select className={`${input} ui-select`} value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}>
               <option value="PRACTICE">练习(不限时)</option>
               <option value="EXAM">模拟考(限时)</option>
             </select>

@@ -81,7 +81,7 @@ export default function StudentHome() {
         <div className="mt-4 flex flex-wrap items-end gap-4">
           <div>
             <label className="mb-1 block text-sm text-slate-600">模式</label>
-            <select className={input} value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value as "PRACTICE" | "EXAM" })}>
+            <select className={`${input} ui-select`} value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value as "PRACTICE" | "EXAM" })}>
               <option value="PRACTICE">练习(不限时)</option>
               <option value="EXAM">模拟考(限时)</option>
             </select>
@@ -89,7 +89,7 @@ export default function StudentHome() {
           {papers.length > 0 && (
             <div>
               <label className="mb-1 block text-sm text-slate-600">试卷</label>
-              <select className={input} value={form.paperId} onChange={(e) => setForm({ ...form, paperId: e.target.value })}>
+              <select className={`${input} ui-select`} value={form.paperId} onChange={(e) => setForm({ ...form, paperId: e.target.value })}>
                 <option value="">随机组卷</option>
                 {papers.filter((p) => p.mode === form.mode).map((p) => (
                   <option key={p.id} value={p.id}>{p.title}({p.questionCount}题)</option>
@@ -116,7 +116,7 @@ export default function StudentHome() {
           {form.mode === "EXAM" && (
             <div>
               <label className="mb-1 block text-sm text-slate-600">时长</label>
-              <select className={input} value={form.durationMin} onChange={(e) => setForm({ ...form, durationMin: Number(e.target.value) })}>
+              <select className={`${input} ui-select`} value={form.durationMin} onChange={(e) => setForm({ ...form, durationMin: Number(e.target.value) })}>
                 {[25, 40, 60].map((n) => (
                   <option key={n} value={n}>{n} 分钟</option>
                 ))}
