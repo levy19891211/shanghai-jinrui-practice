@@ -63,7 +63,7 @@ async function importRows(req, rows) {
           answer: String(r.answer),
           solution: r.solution || null,
           source: r.source || "批量导入",
-          status: r.status || "PUBLISHED",
+          status: r.status || "PENDING_REVIEW",
           createdBy: req.user.id,
         },
       });
@@ -174,7 +174,7 @@ router.post(
         answer: String(answer),
         solution: solution || null,
         source: source || null,
-        status: status || "DRAFT",
+        status: status || "PENDING_REVIEW",
         createdBy: req.user.id,
       },
     });
@@ -201,6 +201,32 @@ router.put(
     }
     const q = await prisma.question.update({ where: { id: req.params.id }, data });
     ok(res, q, "更新成功");
+  })
+);
+
+// POST /api/questions/:id/review — 老师审核(通过/驳回)
+// body: { action: "approve" | "reject", note?: string }
+//   approve → PUBLISHED(学生可见)
+//   reject  → REJECTED(退回修改)
+router.post(
+  "/:id/review",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const existed = await prisma.question.findUnique({ where: { id: req.params.id } });
+    if (!existed) return fail(res, 404, "题目不存在");
+    const { action, note } = req.body || {};
+    if (action !== "approve" && action !== "reject") {
+      return fail(res, 400, "action 必须是 approve 或 reject");
+    }
+    const data = {
+      status: action === "approve" ? "PUBLISHED" : "REJECTED",
+      reviewNote: note ?? null,
+      reviewedBy: req.user.id,
+      reviewedAt: new Date(),
+    };
+    const q = await prisma.question.update({ where: { id: req.params.id }, data });
+    ok(res, q, action === "approve" ? "已通过审核,题目已发布" : "已驳回,题目退回修改");
   })
 );
 

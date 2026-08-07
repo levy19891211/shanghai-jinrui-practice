@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { toCanonicalText } from "./adapters/sanitize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE = process.argv[2] || "/Users/levi/Downloads/TMUA-2016-Paper-1-Interactive.html";
@@ -64,14 +65,15 @@ function main() {
   });
 
   const questions = QUESTIONS.map((q) => {
-    const options = q.options.map((o) => o.text); // 已是 $...$ 格式
+    const options = q.options.map((o) => toCanonicalText(o.text)); // 走共享清洗(数学/标签归一)
     const ansObj = q.options.find((o) => o.letter === q.answer) || {};
+    const answerText = ansObj.text || q.answer;
     return {
       topic: q.topic || "TMUA 2016",
-      stem: q.stem, // 已是 $...$ 格式、无标签
+      stem: toCanonicalText(q.stem), // 已是 $...$ 格式,再过一道清洗去除 <span>/表格等
       options,
-      answer: ansObj.text || q.answer, // 选项文本(与前端 opt===answer 匹配)
-      solution: q.explanation || "",
+      answer: toCanonicalText(answerText), // 选项文本(与前端 opt===answer 匹配)
+      solution: toCanonicalText(q.explanation || ""),
     };
   });
 
@@ -79,7 +81,8 @@ function main() {
   const header =
     "// 自动生成 — TMUA 2016 Paper 1(真实考年)\n" +
     "// 来源: TMUA-2016-Paper-1-Interactive.html\n" +
-    "// LaTeX 已转 $...$ 格式,HTML 标签已去除。请勿手改,改源 HTML 后重跑 extract_tmua2016.js。\n";
+    "// 经 scripts/adapters/sanitize.js 清洗:LaTeX 转 $...$,HTML 标签/表格转可读文本。\n" +
+    "// 请勿手改,改源 HTML 后重跑 extract_tmua2016.js。\n";
   fs.writeFileSync(DATA_FILE, header + "export default " + JSON.stringify(questions, null, 2) + ";\n");
   console.log(`已写出 ${questions.length} 道题 -> ${DATA_FILE}`);
 

@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
-import { plainText } from "@/lib/rich";
+import { plainText, renderRich } from "@/lib/rich";
 import type { Question, QuestionList } from "@/lib/types";
 
-const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", ARCHIVED: "已下架" };
+const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
+
+// 状态徽章配色
+const STATUS_BADGE: Record<string, string> = {
+  DRAFT: "bg-slate-100 text-slate-500",
+  PENDING_REVIEW: "bg-blue-50 text-blue-600",
+  PUBLISHED: "bg-emerald-50 text-emerald-600",
+  REJECTED: "bg-red-50 text-red-600",
+  ARCHIVED: "bg-slate-100 text-slate-400",
+};
 
 interface FormState {
   id?: string;
@@ -42,6 +51,11 @@ export default function TeacherPage() {
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[] } | null>(null);
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewQ, setReviewQ] = useState<Question | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   async function load() {
     const d = await api.get<QuestionList>(`/questions?pageSize=50${statusFilter ? `&status=${statusFilter}` : ""}`);
@@ -123,6 +137,30 @@ export default function TeacherPage() {
   const input =
     "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
+  function openReview(q: Question) {
+    setReviewQ(q);
+    setReviewNote("");
+    setReviewError("");
+    setReviewOpen(true);
+  }
+
+  async function doReview(action: "approve" | "reject") {
+    if (!reviewQ) return;
+    setReviewing(true);
+    setReviewError("");
+    try {
+      await api.post(`/questions/${reviewQ.id}/review`, { action, note: action === "reject" ? reviewNote : undefined });
+      setReviewOpen(false);
+      setMessage(action === "approve" ? "已通过审核,题目已发布" : "已驳回,题目退回修改");
+      await load();
+      setTimeout(() => setMessage(""), 2500);
+    } catch (e) {
+      setReviewError(e instanceof Error ? e.message : "审核失败");
+    } finally {
+      setReviewing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -131,10 +169,15 @@ export default function TeacherPage() {
           <p className="mt-1 text-sm text-slate-500">共 {total} 道题目</p>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => setStatusFilter("PENDING_REVIEW")} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"}`}>
+            审核队列
+          </button>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500">
             <option value="">全部状态</option>
             <option value="DRAFT">草稿</option>
+            <option value="PENDING_REVIEW">待审核</option>
             <option value="PUBLISHED">已发布</option>
+            <option value="REJECTED">已退回</option>
             <option value="ARCHIVED">已下架</option>
           </select>
           <button onClick={openCreate} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
@@ -176,12 +219,15 @@ export default function TeacherPage() {
                   <td className="max-w-[280px] truncate px-4 py-3 text-slate-600">{plainText(q.stem)}</td>
                   <td className="px-4 py-3">{q.difficulty}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded px-2 py-0.5 text-xs ${q.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600" : q.status === "DRAFT" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                    <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
                       {STATUS_LABEL[q.status]}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">
+                      {(q.status === "PENDING_REVIEW" || q.status === "REJECTED") && (
+                        <button onClick={() => openReview(q)} className="font-medium text-blue-600 hover:underline">审核</button>
+                      )}
                       <button onClick={() => openEdit(q)} className="text-indigo-600 hover:underline">编辑</button>
                       {user?.role === "ADMIN" && (
                         <button onClick={() => remove(q)} className="text-red-500 hover:underline">删除</button>
@@ -285,11 +331,13 @@ export default function TeacherPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm text-slate-600">状态</label>
-                  <select className={input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                    <option value="DRAFT">草稿</option>
-                    <option value="PUBLISHED">发布</option>
-                    <option value="ARCHIVED">下架</option>
-                  </select>
+                <select className={input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <option value="PENDING_REVIEW">待审核(默认)</option>
+                  <option value="DRAFT">草稿(暂不提交)</option>
+                  <option value="PUBLISHED">发布</option>
+                  <option value="REJECTED">已退回</option>
+                  <option value="ARCHIVED">下架</option>
+                </select>
                 </div>
               </div>
             </div>
@@ -317,6 +365,59 @@ export default function TeacherPage() {
               <button onClick={submitForm} disabled={saving} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
                 {saving ? "保存中..." : "保存"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewOpen && reviewQ && (
+        <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">题目审核 · {STATUS_LABEL[reviewQ.status]}</h2>
+              <button onClick={() => setReviewOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+              <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{reviewQ.subject}</span>
+              {reviewQ.paper && <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.paper}</span>}
+              <span className="rounded bg-slate-100 px-2 py-0.5">{reviewQ.topic}</span>
+              <span className="rounded bg-slate-100 px-2 py-0.5">难度 {reviewQ.difficulty}</span>
+              {reviewQ.source && <span className="rounded bg-slate-100 px-2 py-0.5">{reviewQ.source}</span>}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-2 text-xs font-medium text-slate-400">题干</p>
+              <div className="text-sm leading-relaxed text-slate-800">{renderRich(reviewQ.stem)}</div>
+              <div className="mt-3 space-y-1">
+                {(reviewQ.options || []).map((opt, i) => (
+                  <div key={i} className={`flex gap-2 rounded-lg px-3 py-2 text-sm ${opt === reviewQ.answer ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "text-slate-700"}`}>
+                    <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                    <span className="flex-1">{renderRich(opt)}</span>
+                    {opt === reviewQ.answer && <span className="text-xs font-medium text-emerald-600">✓ 正确答案</span>}
+                  </div>
+                ))}
+              </div>
+              {reviewQ.solution && (
+                <div className="mt-3">
+                  <p className="mb-1 text-xs font-medium text-slate-400">解析</p>
+                  <div className="whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">{renderRich(reviewQ.solution)}</div>
+                </div>
+              )}
+            </div>
+
+            {reviewQ.reviewNote && (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">历史审核意见:{reviewQ.reviewNote}</p>
+            )}
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm text-slate-600">驳回意见(可选,驳回时建议填写原因)</label>
+              <textarea className={`${input} h-16`} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="如:公式渲染异常、选项与答案不匹配、题干缺失..." />
+            </div>
+            {reviewError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{reviewError}</p>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setReviewOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">取消</button>
+              <button onClick={() => doReview("reject")} disabled={reviewing} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">驳回</button>
+              <button onClick={() => doReview("approve")} disabled={reviewing} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">{reviewing ? "处理中..." : "通过审核并发布"}</button>
             </div>
           </div>
         </div>

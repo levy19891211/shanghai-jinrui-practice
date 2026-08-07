@@ -14,7 +14,12 @@ datasource db {
 // role 合法值:STUDENT | TEACHER | ADMIN
 // subject 合法值:TMUA | ESAT
 // type 合法值:SINGLE_CHOICE | MULTIPLE_CHOICE | NUMERIC
-// status 合法值:DRAFT | PUBLISHED | ARCHIVED
+// status 合法值:DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | ARCHIVED
+//   DRAFT         草稿(老师自建,未提交)
+//   PENDING_REVIEW 待审核(录入/导入后默认状态,学生不可见)
+//   PUBLISHED     已发布(老师审核通过,学生可见)
+//   REJECTED      已退回(审核未通过,需修改后重新提交)
+//   ARCHIVED      已下架
 // mode 合法值:PRACTICE | EXAM
 
 model User {
@@ -41,8 +46,11 @@ model Question {
   answer     String
   solution   String?
   source     String?
-  status     String        @default("DRAFT")
+  status     String        @default("PENDING_REVIEW")
   createdBy  String?
+  reviewNote String? // 审核意见(驳回原因等)
+  reviewedBy String? // 审核人 id
+  reviewedAt DateTime? // 审核时间
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   records    AnswerRecord[]

@@ -28,7 +28,7 @@ async function main() {
         answer: q.answer,
         solution: q.solution,
         source: SOURCE,
-        status: "PUBLISHED",
+        status: "PENDING_REVIEW",
         createdBy: "official-import-2016",
       },
     });

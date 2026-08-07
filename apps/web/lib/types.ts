@@ -25,7 +25,9 @@ export interface Question {
   answer?: string;
   solution?: string | null;
   source?: string | null;
-  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED" | "ARCHIVED";
+  reviewNote?: string | null;
+  reviewedAt?: string | null;
   createdAt?: string;
 }
 
