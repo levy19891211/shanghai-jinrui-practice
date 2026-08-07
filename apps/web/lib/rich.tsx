@@ -69,7 +69,8 @@ export function renderRich(text: string | null | undefined): React.ReactNode[] {
           />
         );
       default:
-        return <span key={key++}>{t.text}</span>;
+        // 普通文本:智能识别其中的数学片段并渲染为公式
+        return <span key={key++}>{smartMath(t.text!)}</span>;
     }
   });
 }
@@ -114,7 +115,72 @@ export function latexify(s: string): string {
     .replace(/≈/g, "\\approx")
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
-    .replace(/∫/g, "\\int");
+    .replace(/∫/g, "\\int")
+    // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母,避免误伤单词)
+    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
+}
+
+// ===== 智能数学识别:将文本中的数学片段自动渲染为公式 =====
+
+// 运算符 / 数字 / 单字母变量 / 函数名
+const OP_TOKEN = /^[+\-−*/=<>≤≥≈≠×÷±()]$/;
+const NUM_TOKEN = /^[-−]?\d+([.,]\d+)?%?$/;
+const VAR_TOKEN = /^[a-zA-Z]$/;
+const FUNC_TOKEN = /^(log|log₁₀|log₂|log₃|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)$/;
+// 含数学符号的 token
+const MATHY_TOKEN = /[√πθΣ∫≤≥≈≠×÷±²³⁴⁵⁶⁷⁸⁹⁰¹^]/;
+// 数字/符号开头的紧凑表达式(如 3x^2、10^(-y)、2π、(1、5650/79.5、−log₁₀(1)
+const MIXED_TOKEN = /^[0-9√πθ([−\-][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]+$/;
+
+export function isMathToken(token: string): boolean {
+  if (OP_TOKEN.test(token) || NUM_TOKEN.test(token) || FUNC_TOKEN.test(token)) return true;
+  // 单字母变量(a/A/i/I 是英文冠词/代词,不当作数学)
+  if (VAR_TOKEN.test(token) && !["a", "A", "i", "I"].includes(token)) return true;
+  if (MATHY_TOKEN.test(token)) return true;
+  if (MIXED_TOKEN.test(token)) return true;
+  return false;
+}
+
+// 将文本按"数学片段 / 纯文本片段"切分,数学片段用 KaTeX 渲染
+export function smartMath(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const tokens = text.split(/(\s+)/);
+  let mathBuf: string[] = [];
+  let textBuf: string[] = [];
+  let key = 0;
+
+  const flushMath = () => {
+    if (mathBuf.length) {
+      const expr = latexify(mathBuf.join(" "));
+      parts.push(
+        <span key={key++} className="mx-0.5 inline-block align-middle" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
+      );
+      mathBuf = [];
+    }
+  };
+  const flushText = () => {
+    if (textBuf.length) {
+      parts.push(<span key={key++}>{textBuf.join("")}</span>);
+      textBuf = [];
+    }
+  };
+
+  for (const t of tokens) {
+    if (t.trim() === "") {
+      (mathBuf.length ? mathBuf : textBuf).push(t);
+      continue;
+    }
+    if (isMathToken(t.trim())) {
+      flushText();
+      mathBuf.push(t);
+    } else {
+      flushMath();
+      textBuf.push(t);
+    }
+  }
+  flushMath();
+  flushText();
+  return parts;
 }
 
 // 判断是否为"纯数学"文本(适合整体用 $ 包裹渲染)
