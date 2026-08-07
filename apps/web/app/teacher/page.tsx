@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
-import type { AutoFixBatchItem, AutoFixPlan, Question, QuestionList } from "@/lib/types";
+import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
 
@@ -72,6 +72,15 @@ export default function TeacherPage() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchError, setBatchError] = useState("");
   const [genBusy, setGenBusy] = useState<string | null>(null);
+  // AI 按退回原因语义重调(skill)
+  const [aiFixOpen, setAiFixOpen] = useState(false);
+  const [aiFixQ, setAiFixQ] = useState<Question | null>(null);
+  const [aiFixPlan, setAiFixPlan] = useState<AiFixPlan | null>(null);
+  const [aiFixLoading, setAiFixLoading] = useState(false);
+  const [aiFixApplying, setAiFixApplying] = useState(false);
+  const [aiFixError, setAiFixError] = useState("");
+  // 服务端是否配置了 LLM(决定 AI 重调按钮是否可用)
+  const [llmConfigured, setLlmConfigured] = useState<boolean>(false);
 
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ pageSize: "50" });
@@ -94,6 +103,14 @@ export default function TeacherPage() {
   }, []);
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+
+  // 探测服务端是否配置了 LLM,决定「AI 重调」按钮可用性
+  useEffect(() => {
+    api
+      .get<{ llmConfigured: boolean }>(`/health`)
+      .then((d) => setLlmConfigured(!!d.llmConfigured))
+      .catch(() => setLlmConfigured(false));
+  }, []);
 
   function exitPaperMode() {
     setPaperId("");
@@ -252,6 +269,43 @@ export default function TeacherPage() {
     }
   }
 
+  // AI 按退回原因语义重调(skill):先预览 LLM 给出的改写方案,老师确认后再落库
+  async function openAiFix(q: Question) {
+    setAiFixQ(q);
+    setAiFixPlan(null);
+    setAiFixError("");
+    setAiFixOpen(true);
+    setAiFixLoading(true);
+    try {
+      const plan = await api.post<AiFixPlan>(`/questions/${q.id}/fix`, { apply: false });
+      setAiFixPlan(plan);
+    } catch (e) {
+      setAiFixError(e instanceof Error ? e.message : "AI 修正失败");
+    } finally {
+      setAiFixLoading(false);
+    }
+  }
+
+  async function applyAiFix(resubmit: boolean) {
+    if (!aiFixQ) return;
+    setAiFixApplying(true);
+    setAiFixError("");
+    try {
+      const r = await api.post<AiFixPlan>(`/questions/${aiFixQ.id}/fix`, { apply: true, resubmit });
+      setAiFixOpen(false);
+      setMessage(
+        `已应用 AI 修正(模型 ${r.model || "LLM"})${resubmit ? ",题目已重新提交审核" : ",未改变审核状态"}` +
+          (r.remaining.length ? `;仍有 ${r.remaining.length} 项需人工确认` : "")
+      );
+      await load();
+      setTimeout(() => setMessage(""), 4000);
+    } catch (e) {
+      setAiFixError(e instanceof Error ? e.message : "AI 修正失败");
+    } finally {
+      setAiFixApplying(false);
+    }
+  }
+
   // 批量体检:默认扫描全部已退回题目
   async function runBatch(apply: boolean) {
     setBatchBusy(true);
@@ -369,6 +423,16 @@ export default function TeacherPage() {
                       )}
                       {q.status === "REJECTED" && (
                         <button onClick={() => openAutoFix(q)} className="font-medium text-amber-600 hover:underline">一键修正</button>
+                      )}
+                      {q.status === "REJECTED" && (
+                        <button
+                          onClick={() => openAiFix(q)}
+                          disabled={!llmConfigured}
+                          title={llmConfigured ? "用 AI 按退回原因语义重写题目" : "服务端未配置 LLM_API_KEY,暂不可用"}
+                          className="font-medium text-fuchsia-600 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
+                        >
+                          AI 重调
+                        </button>
                       )}
                       <button onClick={() => generateSolution(q)} disabled={genBusy === q.id} className="font-medium text-emerald-600 hover:underline disabled:opacity-50">
                         {genBusy === q.id ? "生成中..." : "AI 生成解析"}
@@ -569,6 +633,16 @@ export default function TeacherPage() {
                   一键修正
                 </button>
               )}
+              {reviewQ.status === "REJECTED" && (
+                <button
+                  onClick={() => { setReviewOpen(false); openAiFix(reviewQ); }}
+                  disabled={!llmConfigured}
+                  title={llmConfigured ? "用 AI 按退回原因语义重写题目" : "服务端未配置 LLM_API_KEY,暂不可用"}
+                  className="rounded-lg border border-fuchsia-300 px-4 py-2 text-sm font-medium text-fuchsia-700 hover:bg-fuchsia-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  AI 重调
+                </button>
+              )}
               <button onClick={() => doReview("reject")} disabled={reviewing} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">驳回</button>
               <button onClick={() => doReview("approve")} disabled={reviewing} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">{reviewing ? "处理中..." : "通过审核并发布"}</button>
             </div>
@@ -703,6 +777,103 @@ export default function TeacherPage() {
                 className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
               >
                 {fixApplying ? "处理中..." : "修正并重新提交审核"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 按退回原因语义重调(skill):预览 LLM 给出的改写方案,确认后再落库 */}
+      {aiFixOpen && aiFixQ && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-fuchsia-700">AI 按原因重调 · 语义重写题目</h2>
+              <button onClick={() => setAiFixOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            {aiFixQ.reviewNote ? (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">退回原因:{aiFixQ.reviewNote}</p>
+            ) : (
+              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">该题没有填写退回原因,AI 将按题目规范全面体检并修正。</p>
+            )}
+
+            {aiFixLoading && <p className="mt-4 text-sm text-slate-400">AI 正在分析题目并生成修正方案...</p>}
+            {aiFixError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{aiFixError}</p>}
+
+            {aiFixPlan && (
+              <>
+                {aiFixPlan.changes.length > 0 && (
+                  <div className="mt-4 rounded-xl bg-violet-50 p-3">
+                    <p className="text-xs font-medium text-violet-700">AI 修改说明(供审核对照)</p>
+                    <ul className="mt-1 space-y-1">
+                      {aiFixPlan.changes.map((c, i) => (
+                        <li key={i} className="text-xs text-violet-700">
+                          <span className="rounded bg-violet-100 px-1.5 py-0.5 font-medium">{c.field}</span> {c.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="mb-2 text-xs font-medium text-slate-400">原题目</p>
+                    <p className="break-words text-sm text-slate-700">{aiFixQ.stem}</p>
+                    <div className="mt-2 space-y-1">
+                      {(typeof aiFixQ.options === "string" ? JSON.parse(aiFixQ.options || "[]") : aiFixQ.options || []).map((opt: string, i: number) => (
+                        <div key={i} className="text-xs text-slate-600">{String.fromCharCode(65 + i)}. {opt}</div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">答案:{aiFixQ.answer}</p>
+                  </div>
+                  <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/40 p-3">
+                    <p className="mb-2 text-xs font-medium text-fuchsia-500">AI 修正后</p>
+                    <p className="break-words text-sm text-slate-800">{aiFixPlan.fixed.stem}</p>
+                    <div className="mt-2 space-y-1">
+                      {aiFixPlan.fixed.options.map((opt, i) => (
+                        <div key={i} className={`text-xs ${opt === aiFixPlan.fixed.answer ? "font-medium text-emerald-700" : "text-slate-700"}`}>{String.fromCharCode(65 + i)}. {opt}</div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600">答案:{aiFixPlan.fixed.answer}</p>
+                  </div>
+                </div>
+
+                {aiFixPlan.fixed.solution && (
+                  <div className="mt-3 rounded-lg bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
+                    <span className="text-xs font-medium text-[#00467F]">解析: </span>{aiFixPlan.fixed.solution}
+                  </div>
+                )}
+
+                {!aiFixPlan.clean && (
+                  <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    体检提示:修正后仍需人工复核 —— {aiFixPlan.remaining.join(";")}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setAiFixOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">取消</button>
+              <button
+                onClick={() => { setAiFixOpen(false); openEdit(aiFixQ); }}
+                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+              >
+                手动编辑
+              </button>
+              <button
+                onClick={() => applyAiFix(false)}
+                disabled={aiFixApplying || !aiFixPlan}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 disabled:opacity-50"
+              >
+                只修正不提交
+              </button>
+              <button
+                onClick={() => applyAiFix(true)}
+                disabled={aiFixApplying || !aiFixPlan}
+                className="rounded-lg bg-fuchsia-600 px-5 py-2 text-sm font-medium text-white hover:bg-fuchsia-700 disabled:opacity-60"
+              >
+                {aiFixApplying ? "处理中..." : "修正并重新提交审核"}
               </button>
             </div>
           </div>

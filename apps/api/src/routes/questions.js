@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/paper-set.js";
 import { planAutoFix } from "../lib/autofix.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
+import { planSkillFix } from "../lib/fix-question.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
@@ -521,6 +522,64 @@ router.post(
     const updated = await prisma.question.update({ where: { id: q.id }, data });
     await recalcPapersOfQuestion(q.id);
     ok(res, { id: q.id, solution: updated.solution, status: updated.status }, "已生成解析,请老师在审核中确认后发布");
+  })
+);
+
+// POST /api/questions/:id/fix — 用 question-fixer skill(LLM)按退回原因语义重调
+// body: { apply?: boolean, resubmit?: boolean }
+//   apply=false(默认) → 只返回 AI 修正预览(前后对比 + changes + 体检结果),不落库
+//   apply=true        → 落库;resubmit=true(默认)时置 PENDING_REVIEW 重新提交审核,写 autoFixLog
+// 未配置 LLM 时返回 400(由前端 AI 按钮禁用兜底)
+router.post(
+  "/:id/fix",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const q = await prisma.question.findUnique({ where: { id: req.params.id } });
+    if (!q) return fail(res, 404, "题目不存在");
+    const apply = req.body?.apply === true;
+    const resubmit = req.body?.resubmit !== false;
+
+    let result;
+    try {
+      result = await planSkillFix(q);
+    } catch (e) {
+      return fail(res, e.code === "LLM_NOT_CONFIGURED" ? 400 : 502, e.message || "AI 修正失败");
+    }
+
+    if (!apply) {
+      return ok(res, { id: q.id, reviewNote: q.reviewNote, applied: false, ...result }, "AI 修正预览,请核对后应用");
+    }
+
+    const data = {
+      stem: result.fixed.stem,
+      options: JSON.stringify(result.fixed.options),
+      answer: result.fixed.answer,
+      solution: result.fixed.solution,
+    };
+    if (resubmit) {
+      data.status = "PENDING_REVIEW";
+      data.reviewNote = null;
+      data.reviewedAt = null;
+      data.reviewedBy = null;
+    }
+    data.autoFixLog = JSON.stringify({
+      at: new Date().toISOString(),
+      by: req.user.id,
+      action: "ai-fix",
+      fromNote: q.reviewNote || null,
+      changes: result.changes,
+      remaining: result.remaining,
+      model: result.model,
+    });
+    const updated = await prisma.question.update({ where: { id: q.id }, data });
+    await recalcPapersOfQuestion(q.id);
+    const tail = result.remaining.length ? `,但仍有 ${result.remaining.length} 处需人工复核` : "";
+    ok(
+      res,
+      { id: updated.id, applied: true, status: updated.status, ...result },
+      `已应用 AI 修正${resubmit ? ",已重新提交审核" : ""}${tail}`
+    );
   })
 );
 

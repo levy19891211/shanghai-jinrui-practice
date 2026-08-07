@@ -230,3 +230,26 @@ export interface AutoFixBatchItem {
   clean: boolean;
   willResubmit: boolean;
 }
+
+// AI 按退回原因语义重调(question-fixer skill)的预览/结果结构
+export interface AiFixChange {
+  field: string;
+  reason: string;
+}
+export interface AiFixPlan {
+  id: string;
+  applied: boolean;
+  reviewNote?: string | null;
+  fixed: {
+    stem: string;
+    options: string[];
+    answer: string;
+    solution: string;
+    difficulty: number;
+  };
+  changes: AiFixChange[];
+  /** 修正后仍待人工复核的问题;为空表示体检通过 */
+  remaining: string[];
+  clean: boolean;
+  model?: string;
+}

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { ok, fail } from "./lib/res.js";
+import { llmConfigured } from "./lib/llm.js";
 import authRouter from "./routes/auth.js";
 import questionsRouter from "./routes/questions.js";
 import sessionsRouter from "./routes/sessions.js";
@@ -15,7 +16,7 @@ export function createApp() {
   app.use(express.json());
 
   app.get("/api/health", (req, res) => {
-    ok(res, { status: "ok", time: new Date().toISOString() });
+    ok(res, { status: "ok", time: new Date().toISOString(), llmConfigured: llmConfigured() });
   });
 
   app.use("/api/auth", authRouter);

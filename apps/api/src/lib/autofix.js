@@ -324,7 +324,7 @@ export function codesFromNote(note) {
 }
 
 // 修完后再体检一遍,如实报告仍存在的问题
-function healthCheck(d) {
+export function healthCheck(d) {
   const issues = [];
   if (!d.stem || !String(d.stem).trim()) issues.push("题干为空");
   const opts = (d.options || []).map((o) => String(o).trim());
