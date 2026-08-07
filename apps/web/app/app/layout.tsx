@@ -25,6 +25,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
   const nav = [
     { href: "/app", label: "刷题练习" },
+    { href: "/app/interview", label: "面试练习" },
     { href: "/app/sessions", label: "成绩历史" },
     { href: "/app/wrongbook", label: "错题本" },
   ];

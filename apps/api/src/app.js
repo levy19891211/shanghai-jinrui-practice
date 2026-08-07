@@ -7,6 +7,7 @@ import sessionsRouter from "./routes/sessions.js";
 import meRouter from "./routes/me.js";
 import teacherRouter from "./routes/teacher.js";
 import papersRouter from "./routes/papers.js";
+import interviewRouter from "./routes/interview.js";
 
 export function createApp() {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp() {
   app.use("/api/me", meRouter);
   app.use("/api/teacher", teacherRouter);
   app.use("/api/papers", papersRouter);
+  app.use("/api/interview", interviewRouter);
 
   // 404 兜底
   app.use((req, res) => fail(res, 404, "not found"));

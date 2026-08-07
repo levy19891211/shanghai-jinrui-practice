@@ -9,6 +9,7 @@
     "db:push": "prisma db push",
     "seed": "node scripts/seed.js",
     "seed:official": "node scripts/import_official.js",
+    "seed:interview": "node scripts/seed_interview.js",
     "latexify": "node scripts/latexify_options.js",
     "smoke": "node scripts/smoke.js",
     "verify:math": "node scripts/verify_math.js",

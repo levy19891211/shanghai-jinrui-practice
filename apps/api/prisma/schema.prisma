@@ -49,6 +49,23 @@ model Question {
   wrongBook  WrongBook[]
 }
 
+// 面试练习题(如剑桥数学面试题):开放式问答,无标准选项
+// steps 存 JSON 数组(逐步解答 HTML 片段)
+// status 合法值:DRAFT | PUBLISHED | ARCHIVED
+model InterviewQuestion {
+  id        String   @id @default(cuid())
+  subject   String // 标签文字,如 "Number Theory"
+  tagClass  String? // 标签配色,如 "nt" | "comb"
+  heading   String // 如 "Question 1 · The Sophie Germain identity"
+  stem      String // 题干 HTML(含 (i)(ii)(iii) 小问)
+  focus     String // "What the interviewer looks for" 提示
+  steps     String // JSON 数组,逐步解答 HTML
+  sortOrder Int      @default(0)
+  status    String   @default("PUBLISHED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Paper {
   id          String   @id @default(cuid())
   title       String
