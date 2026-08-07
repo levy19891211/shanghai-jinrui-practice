@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
 import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
@@ -58,6 +59,62 @@ export default function TeacherPage() {
   const [reviewError, setReviewError] = useState("");
   // 从「试卷管理 → 去审核」跳转过来时,只看这张卷内的题
   const [paperId, setPaperId] = useState("");
+
+  // —— 图片上传:题干 / 选项 / 解析 插入图表 ——
+  const stemRef = useRef<HTMLTextAreaElement>(null);
+  const optionsRef = useRef<HTMLTextAreaElement>(null);
+  const solutionRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTarget, setUploadTarget] = useState<{ field: "stem" | "optionsText" | "solution"; ref: RefObject<HTMLTextAreaElement> } | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const openImagePicker = (field: "stem" | "optionsText" | "solution", ref: RefObject<HTMLTextAreaElement>) => {
+    setUploadTarget({ field, ref });
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !uploadTarget) return;
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
+      const res = await api.post<{ url: string; filename: string }>("/uploads", { filename: file.name, data: dataUrl });
+      const url = res.url;
+      const alt = file.name.replace(/\.[^.]+$/, "");
+      const snippet = `![${alt}](${url})`;
+      const ref = uploadTarget.ref;
+      const cur = form[uploadTarget.field];
+      const el = ref.current;
+      let next = cur;
+      let caret = cur.length;
+      if (el) {
+        const start = el.selectionStart ?? cur.length;
+        const end = el.selectionEnd ?? cur.length;
+        next = cur.slice(0, start) + snippet + cur.slice(end);
+        caret = start + snippet.length;
+      } else {
+        const sep = cur && !cur.endsWith("\n") ? "\n" : "";
+        next = cur + sep + snippet;
+        caret = next.length;
+      }
+      setForm((f) => ({ ...f, [uploadTarget.field]: next }));
+      requestAnimationFrame(() => {
+        if (el) { el.focus(); el.selectionStart = el.selectionEnd = caret; }
+      });
+    } catch (err: any) {
+      alert("图片上传失败:" + (err?.message || err));
+    } finally {
+      setUploading(false);
+      setUploadTarget(null);
+    }
+  };
   const [paperTitle, setPaperTitle] = useState("");
   // 一键自动修正
   const [fixOpen, setFixOpen] = useState(false);
@@ -551,21 +608,32 @@ export default function TeacherPage() {
               </div>
             </div>
             <div className="mt-3">
-              <label className="mb-1 block text-sm text-slate-600">题干(支持公式 `$x^2$`、图片 `![说明](/images/questions/xx.png)`、LaTeX 文本)</label>
-              <textarea className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 公式用 $ 包裹,如 求 $x^2 - 5x + 6 = 0$ 的根" />
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm text-slate-600">题干(支持公式 `$x^2$`、图片 `![说明](url)`、LaTeX 文本)</label>
+                <button type="button" onClick={() => openImagePicker("stem", stemRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传图片</button>
+              </div>
+              <textarea ref={stemRef} className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 公式用 $ 包裹,如 求 $x^2 - 5x + 6 = 0$ 的根" />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm text-slate-600">选项(每行一个,支持公式 $ 与图片)</label>
-                <textarea className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n$\\sqrt{2}$ 或 ![图]( /images/questions/xx.png)"} />
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-sm text-slate-600">选项(每行一个,支持公式 $ 与图片)</label>
+                  <button type="button" onClick={() => openImagePicker("optionsText", optionsRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传</button>
+                </div>
+                <textarea ref={optionsRef} className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n$\\sqrt{2}$ 或 ![图](/uploads/xx.png)"} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">正确答案</label>
                 <input className={input} value={form.answer} onChange={(e) => setForm({ ...form, answer: e.target.value })} placeholder="与某选项内容一致" />
-                <label className="mb-1 mt-3 block text-sm text-slate-600">解析</label>
-                <textarea className={`${input} h-14`} value={form.solution} onChange={(e) => setForm({ ...form, solution: e.target.value })} placeholder="解题思路(可选)" />
+                <div className="mb-1 mt-3 flex items-center justify-between">
+                  <label className="block text-sm text-slate-600">解析</label>
+                  <button type="button" onClick={() => openImagePicker("solution", solutionRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传图片</button>
+                </div>
+                <textarea ref={solutionRef} className={`${input} h-14`} value={form.solution} onChange={(e) => setForm({ ...form, solution: e.target.value })} placeholder="解题思路(可选,支持 ![说明](/uploads/xx.png))" />
               </div>
             </div>
+            {uploading && <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-600">图片上传中…</p>}
+            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleFileChange} />
             {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setShowForm(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">

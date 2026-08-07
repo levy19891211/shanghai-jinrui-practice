@@ -9,11 +9,13 @@ import meRouter from "./routes/me.js";
 import teacherRouter from "./routes/teacher.js";
 import papersRouter from "./routes/papers.js";
 import interviewRouter from "./routes/interview.js";
+import uploadsRouter from "./routes/uploads.js";
 
 export function createApp() {
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  // 提高上限以支撑 base64 图片上传(默认 100kb 会被 413 拦截)
+  app.use(express.json({ limit: "10mb" }));
 
   app.get("/api/health", (req, res) => {
     ok(res, { status: "ok", time: new Date().toISOString(), llmConfigured: llmConfigured() });
@@ -26,6 +28,7 @@ export function createApp() {
   app.use("/api/teacher", teacherRouter);
   app.use("/api/papers", papersRouter);
   app.use("/api/interview", interviewRouter);
+  app.use("/api/uploads", uploadsRouter);
 
   // 404 兜底
   app.use((req, res) => fail(res, 404, "not found"));
