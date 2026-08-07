@@ -9,6 +9,8 @@
     "db:push": "prisma db push",
     "seed": "node scripts/seed.js",
     "seed:official": "node scripts/import_official.js",
+    "latexify": "node scripts/latexify_options.js",
+    "smoke": "node scripts/smoke.js",
     "test": "node --test test/"
   },
   "dependencies": {
