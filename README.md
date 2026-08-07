@@ -22,7 +22,7 @@ npm run dev:api    # 后端 http://localhost:4000
 
 ## 协同规则
 
-两个 AI 助手在此仓库协作,请阅读 [AGENTS.md](./AGENTS.md) 了解分工边界、分支策略与提交规范;任务看板见 [TASKS.md](./TASKS.md)。
+两个 AI 助手在此仓库协作,请阅读 [AGENTS.md](./AGENTS.md) 了解分工边界、分支策略与提交规范;任务看板见 [TASKS.md](./TASKS.md);Vibe Coding 工具接手请先读 [docs/VC_HANDOFF.md](./docs/VC_HANDOFF.md)。
 
 ## 分支策略
 
