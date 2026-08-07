@@ -5,6 +5,7 @@ import "dotenv/config";
 import { prisma } from "../src/lib/db.js";
 
 const SOURCE = "TMUA Specimen 2017 Paper 1";
+const SOURCE_P2 = "TMUA Specimen 2017 Paper 2";
 
 // [题干, 选项数组, 答案内容, 知识点, 难度, 解析]
 const P1 = [
@@ -70,6 +71,61 @@ const P1 = [
     "(1+2x+3x^2)^4 的 x^2 系数为 36,常数项 1;(1+4x^3)^3 常数项 1。中括号内常数项为 0、x^2 系数 36,故 (4−x^2)·B 的 x^2 系数 = 4×36 = 144(按官方答案 312 校对,展开细节以官方 key 为准)。"],
 ];
 
+// Paper 2(17 道;Q4 卡片反例、Q7/Q10 函数图形为图片题,暂未录入)
+const P2 = [
+  ["The radius of the circle 2x^2 + 2y^2 − 8x + 12y + 15 = 0 is",
+    ["√(3/2)", "√(11/2)", "√(41/2)", "√37", "√67"], "√(11/2)", "解析几何", 2,
+    "除以 2 后配方:(x−2)^2 + (y+3)^2 = 11/2,半径 = √(11/2)。"],
+  ["The gradient of the curve y = (3x − 2)^2/(x√x) at the point where x = 2 is",
+    ["(3/2)√2", "3√2", "4√2", "(9/2)√2", "6√2"], "3√2", "微积分", 4,
+    "y = (3x−2)^2·x^(−3/2),求导并代入 x=2,得 6/√2 = 3√2。"],
+  ["Consider the following attempt to solve an equation. The steps have been numbered for reference. √(x+5) = x+3 (1) x+5 = x^2+6x+9 (2) x^2+5x+4 = 0 (3) (x+4)(x+1) = 0, x = −4 or x = −1. Which one of the following statements is true?",
+    ["Both −4 and −1 are solutions of the equation.", "Neither −4 nor −1 are solutions of the equation.", "One solution is correct and the incorrect solution arises as a result of step (1).", "One solution is correct and the incorrect solution arises as a result of step (2).", "One solution is correct and the incorrect solution arises as a result of step (3)."], "One solution is correct and the incorrect solution arises as a result of step (1).", "方程与逻辑", 3,
+    "平方两边会引入增根,验证知 x = −1 成立而 x = −4 不成立,错误源于平方(第 1 步)。"],
+  ["Using the observation that 2^5 ≈ 3^3, it is possible to deduce that log₃ 2 is approximately",
+    ["3/5", "2/3", "3/2", "5/3", "1/2", "2"], "3/5", "对数", 3,
+    "对 2^5 ≈ 3^3 两边取 log₃,得 5·log₃2 ≈ 3,故 log₃2 ≈ 3/5。"],
+  ["The area of a rectangle is measured to be 5600 cm^2 correct to 2 significant figures. The width of the rectangle is measured to be 80 cm correct to the nearest centimetre. Which one of the following expressions gives the greatest possible height of the rectangle?",
+    ["70.5 cm", "75 cm", "5650/85 cm", "5650/80.5 cm", "5650/75 cm", "5650/79.5 cm"], "5650/79.5 cm", "测量误差", 4,
+    "最大高度 = 面积上限/宽度下限 = 5650/79.5。"],
+  ["Consider the following statement about the positive integer n: Statement (*): The sum of the four consecutive integers, the smallest of which is n, is a multiple of 6. Which one of the following is true?",
+    ["Statement (*) is true for all values of n.", "Statement (*) is true for all values of n which are odd, but not for any other values of n.", "Statement (*) is true for all values of n which are multiples of 3, but not for any other values of n.", "Statement (*) is true for all values of n which are multiples of 6, but not for any other values of n.", "Statement (*) is not true for any value of n."], "Statement (*) is true for all values of n which are multiples of 3, but not for any other values of n.", "整除", 2,
+    "和为 n + (n+1) + (n+2) + (n+3) = 4n + 6,是 6 的倍数 ⟺ 4n 是 6 的倍数 ⟺ n 是 3 的倍数。"],
+  ["Consider the statement about Fred: (*) Every day next week, Fred will do at least one maths problem. If statement (*) is not true, which of the following is certainly true?",
+    ["Every day next week, Fred will do more than one maths problem.", "Some day next week, Fred will do more than one maths problem.", "On no day next week will Fred do more than one maths problem.", "Every day next week, Fred will do no maths problems.", "Some day next week, Fred will do no maths problems.", "On no day next week will Fred do no maths problems."], "Some day next week, Fred will do no maths problems.", "逻辑", 1,
+    "「每天至少做一个」为假的否定是「存在某一天一个也没做」。"],
+  ["Which one of the following numbers is largest in value? (All angles are given in radians.)",
+    ["tan(3π/4)", "log₁₀ 100", "sin¹⁰(π/2)", "log₂ 10", "(√2 − 1)^10"], "log₂ 10", "数值比较", 3,
+    "tan(3π/4) = −1,log₁₀100 = 2,sin¹⁰(π/2) = 1,log₂10 ≈ 3.32,√2−1 ≈ 0.414,其 10 次幂更小。"],
+  ["A polynomial p(x) has the property that p(1) = 2. Which one of the following can be deduced from this?",
+    ["p(x) = (x−1)q(x) + 2 for some polynomial q(x).", "p(x) = (x+1)q(x) + 2 for some polynomial q(x).", "p(x) = (x−1)q(x) − 2 for some polynomial q(x).", "p(x) = (x+1)q(x) − 2 for some polynomial q(x).", "p(x) = (x−2)q(x) + 1 for some polynomial q(x).", "p(x) = (x+2)q(x) + 1 for some polynomial q(x).", "p(x) = (x−2)q(x) − 1 for some polynomial q(x).", "p(x) = (x+2)q(x) − 1 for some polynomial q(x)."], "p(x) = (x−1)q(x) + 2 for some polynomial q(x).", "多项式", 2,
+    "由多项式除法,p(x) 除以 (x−1) 的余式为 p(1) = 2。"],
+  ["Five runners competed in a race: Fred, George, Hermione, Lavender, and Ron. Fred beat George. Hermione beat Lavender. Lavender beat George. Ron beat George. Assuming there were no ties, how many possible finishing orders could there have been, given only this information?",
+    ["1", "6", "12", "18", "24", "120"], "12", "逻辑与排列", 3,
+    "George 一定最后;其余四人中 Hermione 必在 Lavender 前,共 4!/2 = 12 种。"],
+  ["The graph of the polynomial function y = ax^5 + bx^4 + cx^3 + dx^2 + ex + f is sketched, where a, b, c, d, e, and f are real constants with a ≠ 0. Which one of the following is not possible? (注:原题含函数图形,此处以文字呈现)",
+    ["The graph has two local minima and two local maxima.", "The graph has one local minimum and two local maxima.", "The graph has one local minimum and one local maximum.", "The graph has no local minima or local maxima."], "The graph has one local minimum and two local maxima.", "函数图像", 4,
+    "五次多项式导数为四次,极值点交替出现,局部极小值比极大值至多多一个;选项 B 两个极大值一个极小值不可能。"],
+  ["For any real numbers a, b, and c where a ≥ b, consider these three statements: 1. −b ≥ −a; 2. a^2 + b^2 ≥ 2ab; 3. ac ≥ bc. Which of the statements 1, 2, and 3 must be true?",
+    ["none", "1 only", "2 only", "3 only", "1 and 2 only", "1 and 3 only", "2 and 3 only", "1, 2 and 3"], "1 and 2 only", "不等式", 2,
+    "1 正确(不等式同乘 −1 变号);2 正确((a−b)^2 ≥ 0);3 不一定(c 为负时变号)。"],
+  ["The sequence aₙ is given by the rule: a₁ = 2, aₙ₊₁ = aₙ + (−1)ⁿ for n ≥ 1. What is Σ(n=1..100) aₙ?",
+    ["150", "250", "−4750", "5150", "4(1 − (1/2)^100)", "4((3/2)^100 − 1)"], "150", "数列", 3,
+    "序列为 2, 1, 2, 1, ... 交替,100 项含 50 个 2 和 50 个 1,和为 150。"],
+  ["Let S be a set of positive integers, for example S could consist of 3, 4, and 8. A positive integer n is called an S-number if and only if for every factor m of n with m > 1, the number m is a multiple of some number in S. Positive integer n is therefore not an S-number if and only if",
+    ["for every (positive) factor m of n with m > 1, there is a number in S which is not a factor of m.", "for every (positive) factor m of n with m > 1, there is no number in S which is a factor of m.", "for every (positive) factor m of n with m > 1, every number in S is a factor of m.", "for some (positive) factor m of n with m > 1, there is a number in S which is not a factor of m.", "for some (positive) factor m of n with m > 1, there is no number in S which is a factor of m.", "for some (positive) factor m of n with m > 1, every number in S is a factor of m."], "for some (positive) factor m of n with m > 1, there is no number in S which is a factor of m.", "逻辑与数论", 4,
+    "不是 S-number ⟺ 存在因子 m > 1 使得 m 不是 S 中任何数的倍数。"],
+  ["A group of five numbers are such that: their mean is 0; their range is 20. What is the largest possible median of the five numbers?",
+    ["0", "4", "4(1/2)", "6(1/2)", "8", "20"], "8", "统计", 4,
+    "设中位数为 m,取两端 x₁ = x₂ = m−20, x₄ = x₅ = m,均值 0 得 5m = 40,m = 8。"],
+  ["The positive real numbers a, b, and c are such that the equation x^3 + ax^2 = bx + c has three real roots, one positive and two negative. Which one of the following correctly describes the real roots of the equation x^3 + c = ax^2 + bx?",
+    ["It has three real roots, one positive and two negative.", "It has three real roots, two positive and one negative.", "It has three real roots, but their signs differ depending on a, b, and c.", "It has exactly one real root, which is positive.", "It has exactly one real root, which is negative.", "It has exactly one real root, whose sign differs depending on a, b, and c.", "The number of real roots can be one or three, but the number of roots differs depending on a, b, and c."], "It has three real roots, two positive and one negative.", "多项式与方程", 5,
+    "第二个方程等价于 −f(−x) = 0(f 为第一个方程的多项式),根为第一个方程根的相反数,故两根正一根负。"],
+  ["Five logicians each make a statement, as follows: Mr P: Of these five statements, an odd number are true. Ms Q: Both statements made by women are true. Mr R: My first name is Robert and Mr P's statement is true. Ms S: Exactly one statement made by a man is true. Mr T: Neither statement made by a woman is true. How many of the five statements can be simultaneously true?",
+    ["none", "1 only", "2 only", "3 only", "4 only", "none or 1 only", "1 or 2 only", "2 or 3 only"], "3 only", "逻辑", 5,
+    "逐一分析真值组合(官方答案:恰有 3 句可同时为真)。"],
+];
+
 async function main() {
   const existing = await prisma.question.count({ where: { source: SOURCE } });
   if (existing > 0) {
@@ -85,6 +141,22 @@ async function main() {
       });
     }
     console.log(`[ok] 导入 ${SOURCE} ${P1.length} 道题`);
+  }
+
+  const existingP2 = await prisma.question.count({ where: { source: SOURCE_P2 } });
+  if (existingP2 > 0) {
+    console.log(`[skip] ${SOURCE_P2} 已有 ${existingP2} 道题`);
+  } else {
+    for (const [stem, options, answer, topic, difficulty, solution] of P2) {
+      await prisma.question.create({
+        data: {
+          subject: "TMUA", paper: "Paper 2", topic, difficulty,
+          type: "SINGLE_CHOICE", stem, options: JSON.stringify(options),
+          answer, solution, source: SOURCE_P2, status: "PUBLISHED", createdBy: "official-import",
+        },
+      });
+    }
+    console.log(`[ok] 导入 ${SOURCE_P2} ${P2.length} 道题`);
   }
   await prisma.$disconnect();
   console.log(`题库总数: ${await prisma.question.count()}`);
