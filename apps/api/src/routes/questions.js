@@ -50,12 +50,13 @@ async function resolveTopics(topicIds) {
 
 // 归一化题目携带的知识点:支持 topicIds(数组) 或 topic(字符串,自动匹配)
 // 返回 { topicIds, topic }
+// 注意:topicIds 是前端按"题目学科映射的知识点学科"加载的(如 TMUA→数学),后端直接信任,
+//       不要再用题目 subject 过滤(题目学科 TMUA 下没有知识点,会误清空)。
 async function normalizeTopicInput({ subject, topic, topicIds }) {
   if (Array.isArray(topicIds) && topicIds.length) {
-    const kps = await prisma.knowledgePoint.findMany({ where: { id: { in: topicIds } }, select: { id: true, subject: true, name: true } });
-    const valid = kps.filter((k) => !subject || k.subject === subject);
-    const ids = valid.map((k) => k.id);
-    return { topicIds: ids, topic: (valid[0]?.name) || String(topic || "").trim() };
+    const kps = await prisma.knowledgePoint.findMany({ where: { id: { in: topicIds } }, select: { id: true, name: true } });
+    const ids = kps.map((k) => k.id);
+    return { topicIds: ids, topic: kps[0]?.name || String(topic || "").trim() };
   }
   const matched = await matchKnowledgePoints(subject, topic);
   return { topicIds: matched.map((k) => k.id), topic: matched[0]?.name || String(topic || "").trim() };
@@ -186,7 +187,7 @@ async function importRows(req, rows) {
       let topicIds = [];
       let topic = String(r.topic || "").trim();
       if (Array.isArray(r.topicIds) && r.topicIds.length) {
-        const valid = allKps.filter((k) => r.topicIds.includes(k.id) && k.subject === r.subject);
+        const valid = allKps.filter((k) => r.topicIds.includes(k.id));
         topicIds = valid.map((k) => k.id);
         if (valid[0]) topic = valid[0].name;
       } else {
