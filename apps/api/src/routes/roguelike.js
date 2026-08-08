@@ -291,10 +291,12 @@ router.post(
     const difficulty = req.body?.difficulty ? Number(req.body.difficulty) : 3;
     const test = !!req.body?.test;
 
-    const existing = await prisma.roguelikeRun.findFirst({
+    // 续局需与请求模式(test 标志)一致:测试模式续测试局,普通模式续普通局,互不干扰、各自保留进度
+    const activeRuns = await prisma.roguelikeRun.findMany({
       where: { studentId: req.user.id, status: "ACTIVE" },
       orderBy: { updatedAt: "desc" },
     });
+    const existing = activeRuns.find((r) => !!parseItems(r.items).test === test) || null;
     if (existing) {
       const node = await nextNode(existing);
       if (node.nodeType !== "reward" && !node.question) {
