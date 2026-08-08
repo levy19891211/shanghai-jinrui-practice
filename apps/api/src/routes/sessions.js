@@ -50,13 +50,15 @@ router.post(
     }
     if (questionIds.length === 0) return fail(res, 400, "题库为空,暂无可作答题目");
 
-    // 限时:EXAM 模式必须有时长(整数分钟),优先取 body,其次取试卷配置
+    // 限时:EXAM 模式必须有时长(整数分钟)。
+    // 指定了试卷 → 强制用试卷配置的时长(学生不能改,前端也不传);随机组卷 → 用学生选的时长。
     let durationMin = null;
     if (mode === "EXAM") {
-      durationMin = Math.round(Number(req.body?.durationMin));
-      if (!durationMin && req.body?.paperId) {
+      if (req.body?.paperId) {
         const paper = await prisma.paper.findUnique({ where: { id: req.body.paperId } });
         durationMin = paper?.durationMin ?? null;
+      } else {
+        durationMin = Math.round(Number(req.body?.durationMin));
       }
       if (!durationMin || durationMin <= 0) return fail(res, 400, "模拟考必须指定时长(分钟)");
     }

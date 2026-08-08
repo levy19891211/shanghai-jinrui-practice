@@ -42,7 +42,8 @@ export default function StudentHome() {
         subject: form.subject || undefined,
         knowledgePointId: form.knowledgePointId || undefined,
         difficulty: form.difficulty || undefined,
-        durationMin: form.mode === "EXAM" ? form.durationMin : undefined,
+        // 指定试卷的模拟考:时长用试卷设定(不传,后端强制取试卷时长)
+        durationMin: form.mode === "EXAM" && !form.paperId ? form.durationMin : undefined,
         paperId: form.paperId || undefined,
       });
       sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
@@ -163,7 +164,7 @@ export default function StudentHome() {
               ))}
             </select>
           </div>
-          {form.mode === "EXAM" && (
+          {form.mode === "EXAM" && !form.paperId && (
             <div>
               <label className="mb-1 block text-sm text-slate-600">时长</label>
               <select className={`${input} ui-select`} value={form.durationMin} onChange={(e) => setForm({ ...form, durationMin: Number(e.target.value) })}>
@@ -173,10 +174,15 @@ export default function StudentHome() {
               </select>
             </div>
           )}
+          {form.mode === "EXAM" && form.paperId && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+              时长跟随所选试卷设定,不可修改
+            </div>
+          )}
           <button
             onClick={start}
             disabled={loading}
-            className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
+            className="h-9 rounded-lg bg-indigo-600 px-6 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
           >
             {loading ? "组卷中..." : form.mode === "EXAM" ? "开始模拟考" : "开始练习"}
           </button>
