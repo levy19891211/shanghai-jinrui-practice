@@ -57,13 +57,18 @@ export default function RoguelikePage() {
     api.get<{ run: Run | null }>("/roguelike/active").then((d) => setHasActive(!!d.run)).catch(() => {});
   }, []);
 
-  function applyNode(res: NodeResp) {
-    setNodeType(res.nodeType);
-    if (res.question) setQuestion(res.question);
-    else setQuestion(null);
+  function applyNode(res: {
+    nodeType?: "normal" | "boss" | "reward" | null;
+    question?: Q | null;
+    run?: Run;
+    hp?: number; layer?: number; score?: number; coins?: number; combo?: number; maxCombo?: number;
+    status?: string; drops?: string[] | null;
+  }) {
+    setNodeType(res.nodeType ?? null);
+    setQuestion(res.question ?? null);
     if (res.run) {
       setRun(res.run);
-      setInventory((res.run as unknown as RunDetail & { inventory?: string[] }).inventory || []);
+      setInventory((res.run as unknown as { inventory?: string[] }).inventory || []);
     }
     if (res.hp !== undefined && run) {
       setRun((r) => (r ? { ...r, hp: res.hp!, layer: res.layer!, score: res.score!, coins: res.coins!, combo: res.combo!, maxCombo: res.maxCombo!, status: res.status! } : r));
