@@ -79,6 +79,12 @@ function safeParseOptions(raw) {
   return [];
 }
 
+// 清洗选项正文:去掉 PDF 视觉模型误带出的字母前缀(如 "A 1/25"、"A. 1/25"、"(A) 1/25"),
+// 选项 A./B./C. 标签由系统自动添加。prompt 已禁止前缀,这里是兜底。
+function cleanOptionPrefix(o) {
+  return String(o ?? "").replace(/^[\(\[【（]?[A-Ja-j][\.\s:、)）\]】」、\]】]*/, "").trimStart();
+}
+
 // 组装发给 LLM 的题目信息
 function buildSolutionPrompt({ stem, options, answer, topic }) {
   const optText = Array.isArray(options) && options.length
@@ -213,7 +219,7 @@ async function importRows(req, rows) {
           difficulty: Number(r.difficulty) || 3,
           type: r.type || "SINGLE_CHOICE",
           stem: normalizeNewlines(r.stem),
-          options: JSON.stringify(options.map((o) => normalizeNewlines(o))),
+          options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(o)))),
           answer: r.answer ? normalizeNewlines(String(r.answer)) : "",
           solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
@@ -434,7 +440,7 @@ router.post(
         difficulty: difficulty || 3,
         type: type || "SINGLE_CHOICE",
         stem: normalizeNewlines(stem),
-        options: JSON.stringify(options.map((o) => normalizeNewlines(o))),
+        options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(o)))),
         answer: normalizeNewlines(String(answer)),
         solution: solution ? normalizeNewlines(solution) : null,
         source: source || null,
@@ -471,7 +477,7 @@ router.put(
     }
     if (b.options !== undefined) {
       if (!Array.isArray(b.options) || b.options.length < 2) return fail(res, 400, "options 至少 2 个选项");
-      data.options = JSON.stringify(b.options.map((o) => normalizeNewlines(o)));
+      data.options = JSON.stringify(b.options.map((o) => normalizeNewlines(cleanOptionPrefix(o))));
     }
     // 知识点:传了 topicIds 数组则按库归类并同步 topic;只传 topic 则自动匹配(可清空:传空数组)
     if (b.topicIds !== undefined) {
