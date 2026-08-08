@@ -4,12 +4,23 @@
 > 根因、修复与**预防规则**。任何对 `lib/rich.tsx`(latexify / smartMath / renderRich)的修改,
 > 必须:① 阅读本库;② 修改后运行 `npm run verify:math` 全题库回归;③ 更新本库。
 
+## 〇、登记流程(强制)
+
+**任何显示类问题(斜体/字号/红框/缺字/公式错乱等)被定位并修复后,必须在同一轮工作中登记到本库**:
+
+1. 在「已修复 Bug 清单」表格**最顶部**(按时间倒序)新增一行,填:现象 / 根因 / 修复 / 提交号;
+2. 若引出了新的预防规则或回归样本,同步更新「预防规则」与「验证用例集」;
+3. 修复+登记完成后,`git add docs/MATH_RENDERING_BUGS.md` 一起提交(与代码提交同 commit 或紧随其后)。
+
+> 这条规则本身也适用于后续所有渲染/显示类修复——"发现问题→修复→登记"是闭环,不允许只修不记。
+> 对应项目长期约定见 `.workbuddy/memory/MEMORY.md`。
+
 ## 一、已修复 Bug 清单(按时间倒序)
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
-| 16 | 选项/题干出现红框 `mol~^{-1}`,KaTeX 报 **Double superscript**;`mol⁻¹`、`dm⁻³` 等单位大量报错 | 数据清洗把 `^{-1}` 转成 **Unicode 上标 `⁻¹`**(想让单位用正文字体),但 latexify 把 Unicode 上标 `¹` **单字符**转回 `^{1}`,与前面的 `⁻` 拼成 `⁻^{1}` → KaTeX 双上标报错;且 `isMathToken` 把含 Unicode 上标的 `mol⁻¹` 误判为数学 token | ① latexify **先合并连续 Unicode 上标/下标序列**(`⁻¹`→`^{-1}`、`cm³`→`cm^{3}`),再单字符转换;② `MATHY_TOKEN` 移除 Unicode 上标字符,`mol⁻¹`/`cm³` 作文本显示(正文字体);③ `^\circ`→`°`;④ `renderMathExpr` 渲染失败 **fallback 显示原文**(escapeHtml),彻底消除红框。前后端两份 latexify(rich.tsx / text-clean.js)同步 | 6d74a86 76b5df6 |
 | 17 | **选项首字母被吞**——`Covalent`→`ovalent`、`It has`→`t has`、`gains`→`ains`;扫库 72 个选项中招,本质是导入时清洗函数 | `cleanOptionPrefix` 正则 `[\(\[【（]?[A-Ja-j][\.\s:、)）\]】」、\]】]*` 用 `*`(零或多个),允许**零个分隔符**,等价于"删开头的单个字母":任何 `[A-Ja-j]` 开头的选项(几乎所有选项)都被误删首字母 | `*` 改为 `+`(一个或多个),要求字母后**至少一个分隔符**(`.`/` `/`:`/`)`/`]`等)。`Covalent bonds` 中 `C` 后是 `o`(字母,非分隔符)→ 不匹配 → 不删 ✓;"A 1/25" 中 `A` 后是 ` `(分隔符)→ 删 `A ` ✓ | this |
+| 16 | 选项/题干出现红框 `mol~^{-1}`,KaTeX 报 **Double superscript**;`mol⁻¹`、`dm⁻³` 等单位大量报错;以及 `AgNO₃`/`C₃H₇OH` 化学式斜体、`is/are` 英文词斜体 | ① 数据清洗把 `^{-1}` 转成 **Unicode 上标 `⁻¹`**,但 latexify 把 Unicode 上标 `¹` **单字符**转回 `^{1}`,与 `⁻` 拼成 `⁻^{1}` → KaTeX 双上标;② `isMathToken` 把含 Unicode 上下标的 `mol⁻¹`/`AgNO₃` 误判数学(化学式字母变斜体);③ `is/are` 等含 `/` 英文组合被 `/`(OP_TOKEN)带进数学模式 | ① latexify **先合并连续 Unicode 上下标序列**(`⁻¹`→`^{-1}`、`cm³`→`cm^{3}`);② `isMathToken` 开头 `HAS_UNI_SUP_SUB` 命中→文本;`MIXED_LET/MIXED_NUM` 特征类移除 Unicode 上下标;③ `^[a-z]+(/[a-z]+)+$`(is/are、and/or)→文本;④ `^\circ`→`°`;⑤ `renderMathExpr` 渲染失败 **fallback 原文**;前后端两份 latexify 同步 | 6d74a86 76b5df6 a04bd9a d14d4f1 |
 | 15 | 题干/解析大量**英文单词莫名变斜体**(如 `radius.`、`Thus,`、`points.`、`-coordinate`) | `MIXED_LET` 把 `.` `,` 当"数学特征"→ 英文单词带句号/逗号("radius.")被判数学;`MIXED_NUM` 开头类含 ASCII `-`,把 "-coordinate" 整词判数学;KaTeX 数学模式默认斜体 | ① `MIXED_LET` 数学特征类去掉 `.` `,`;② `MIXED_NUM` 开头类去掉 ASCII `-`/`+`/`[`(负号由 OP_TOKEN 处理,不破坏 "(n"、"-5x" 等真数学) | bc8d7ec 2a9a283 |
 | 14 | `log`/`sin`/`\frac` 前**露出反斜杠**、排版错乱换行;且反复出现于导入题 | ① 视觉模型/录入常写 `$ f(x) $`(`$` 后带空格),行内公式正则 `\$([^\s$][^$]*)\$` 要求 `$` 后非空白 → 整段被降级为普通文本;② smartMath 不认反斜杠开头的裸命令(`\log`)→ 按纯文本字面显示反斜杠 | **三层修复**:① `rich.tsx` 行内公式正则改 `\$([^$]+?)\$`(允许 `$` 后空格);② smartMath 识别含 `\` 的裸命令(`\\[a-zA-Z]+`,覆盖 `3\pi`),latexify 函数名 lookbehind 加 `\\` 防 `\log`→`\\log`;③ 导入层 `text-clean.js` 新增 `normalizeInlineFormula`(`$ x $`→`$x$`,并入 `normalizeNewlines`/`toCanonicalText`),存量数据全库清洗 | 865a4f8 5f4e126 479a527 |
 | 13 | `log₁₀(2/(a+2b+3c))` 分数显示斜杠 | KaTeX 数学模式**不推断语义**,`/` 必须显式 `\frac`;而 `$...$` 数学分支**跳过了 latexify** | math 分支渲染前也调 `latexify(t.expr)`(幂等) | 02b4baf |
@@ -42,6 +53,9 @@
 12. **数学特征判定(MIXED_LET/MIXED_NUM)必须用"真数学特征"**:`.`/`,`(英文标点)、ASCII 连字符 `-` 不是数学特征,否则 `radius.`、`Thus,`、`-coordinate` 等英文词会被误判为数学而渲染成**斜体**(见 #15)。判定"是数学"的特征应是:数字、`^`、`√πθ`、`−`(U+2212)、下划线、括号等。
 13. **latexify 处理 Unicode 上下标必须先"合并连续序列"再"单字符转换"**:`⁻¹` 等必须整体转 `^{-1}`,禁止拆成 `⁻`+`^{1}`(会 Double superscript 报错,见 #16)。`MATHY_TOKEN` **不要**包含 Unicode 上下标字符(²³⁴⁵⁶⁷⁸⁹⁰¹⁻₀₁₂₃...),它们多出现在单位/化学式(`mol⁻¹`、`cm³`)中,应按普通文本显示而非数学渲染。
 14. **任何 KaTeX 渲染失败必须 fallback 显示原文**(escapeHtml 后输出),禁止把 `katex-error` 红框留给用户;同时保留数据层清洗(把 `^{-1}`→`⁻¹`、`^\circ`→`°` 等)让单位用正文字体。
+15. **含 Unicode 上下标的 token 一律判文本**(`HAS_UNI_SUP_SUB` 命中即 false),化学式/单位(`AgNO₃`、`mol⁻¹`、`cm³`)不得进数学模式。
+16. **纯小写英文用 `/` 连接的组合**(`is/are`、`and/or`、`either/or`)一律判文本,防止 `/`(OP_TOKEN)把英文词带进数学模式变斜体。
+17. **清洗正则里的量词要审查**:允许"零个"的量词(`*`、`?`)常导致误删(见 #17:`[A-Ja-j][分隔符]*` 变成"删任意单字母")。凡"必须要有 X 才删"的规则,分隔符量词用 `+`。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -89,6 +103,15 @@ x-coordinate, y-coordinate, -coordinate           (连字符开头也不得整�
 115 kJ mol⁻¹    0.40 mol dm⁻³    4 J g⁻¹ °C⁻¹    20 cm³
 AgNO₃(aq)       C₃H₇OH           mol⁻¹            g⁻¹
 -150 kJ mol⁻¹   $x^2 + \frac{1}{2}$               (真公式仍须 KaTeX 正常渲染)
+```
+
+**#16 延伸回归样本(is/are 与化学式不得斜体;Covalent 不得缺首字母):**
+
+```
+Which of the following statements is/are correct?   (is/are 正文,不斜体)
+Covalent bonds are broken on melting.               (C 不得丢)
+It has strong intermolecular forces.                (I 不得丢)
+AgNO₃(aq) + KCl(aq) → AgCl(s) + KNO₃(aq)           (化学式全正文字体)
 ```
 
 ## 四、运行验证
