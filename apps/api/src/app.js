@@ -16,7 +16,8 @@ export function createApp() {
   const app = express();
   app.use(cors());
   // 提高上限以支撑 base64 图片/文件上传(默认 100kb 会被 413 拦截;文件 base64 膨胀约 1.33 倍)
-  app.use(express.json({ limit: "25mb" }));
+  // 需与 nginx client_max_body_size(50m) 对齐
+  app.use(express.json({ limit: "50mb" }));
 
   app.get("/api/health", (req, res) => {
     ok(res, { status: "ok", time: new Date().toISOString(), llmConfigured: llmConfigured() });
