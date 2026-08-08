@@ -516,14 +516,14 @@ export default function TeacherPage() {
                       {STATUS_LABEL[q.status]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {q.importedAt ? (
-                      <span className="font-medium text-slate-600" title={`导入于 ${fmtTime(q.importedAt)}`}>
-                        {fmtTime(q.importedAt)}
-                      </span>
-                    ) : (
-                      <span title={`创建于 ${fmtTime(q.createdAt)}`}>创建 {fmtTime(q.createdAt)}</span>
-                    )}
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+                    <span
+                      className={q.importedAt ? "font-medium text-slate-600" : "text-slate-400"}
+                      title={`${q.importedAt ? "导入于" : "创建于"} ${fmtTime(q.importedAt || q.createdAt)}`}
+                    >
+                      {q.importedAt ? "导入 " : "创建 "}
+                      {fmtTime(q.importedAt || q.createdAt)}
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <div className="flex flex-nowrap items-center gap-x-3">
