@@ -20,7 +20,7 @@ const RULES = [
   { subject: "数学", re: /向量|vector/i, kp: "Vectors" },
   { subject: "数学", re: /概率|probability/i, kp: "Probability" },
   { subject: "数学", re: /统计|statistics/i, kp: "Statistics" },
-  { subject: "数学", re: /不等式|inequalit|代数|方程|多项式|factor|algebra|函数/i, kp: "Algebra and Functions" },
+  { subject: "数学", re: /不等式|inequalit|代数|方程|多项式|factor|algebra|函数|root/i, kp: "Algebra and Functions" },
   { subject: "数学", re: /力学|mechanic/i, kp: "Mechanics" },
   { subject: "物理", re: /运动|kinematic|motion/i, kp: "Kinematics" },
   { subject: "物理", re: /能量|energy|work|power/i, kp: "Work, Energy and Power" },
