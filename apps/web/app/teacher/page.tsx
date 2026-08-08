@@ -78,8 +78,10 @@ export default function TeacherPage() {
 
   useEffect(() => {
     if (!showForm) return;
+    // 题目学科 → 知识点学科:TMUA/ESAT 归类到数学(ESAT 主要为数学与物理,按数学加载)
+    const kpSubject = form.subject === "TMUA" || form.subject === "ESAT" ? "数学" : form.subject;
     api
-      .get<{ list: { id: string; name: string }[] }>(`/knowledge-points?subject=${encodeURIComponent(form.subject)}`)
+      .get<{ list: { id: string; name: string }[] }>(`/knowledge-points?subject=${encodeURIComponent(kpSubject)}`)
       .then((d) => setKps(d.list || []))
       .catch(() => setKps([]));
   }, [form.subject, showForm]);
@@ -717,30 +719,47 @@ Answer: B
                 <input className={input} value={form.paper} onChange={(e) => setForm({ ...form, paper: e.target.value })} placeholder="Paper 1 / Maths 1" />
               </div>
               <div className="col-span-2">
-                <label className="mb-1 block text-sm text-slate-600">知识点(可多选)</label>
-                {kps.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">
-                    该学科暂无知识点,请先到「知识点管理」页添加
-                  </div>
-                ) : (
-                  <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 p-2">
-                    {kps.map((kp) => {
-                      const on = form.topicIds.includes(kp.id);
+                <label className="mb-1 block text-sm text-slate-600">知识点(可多选,从下拉添加)</label>
+                {form.topicIds.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {form.topicIds.map((id) => {
+                      const kp = kps.find((k) => k.id === id);
+                      if (!kp) return null;
                       return (
-                        <button
-                          key={kp.id}
-                          type="button"
-                          onClick={() => setForm({ ...form, topicIds: on ? form.topicIds.filter((x) => x !== kp.id) : [...form.topicIds, kp.id] })}
-                          className={`rounded-full px-2.5 py-1 text-xs transition ${on ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                        >
+                        <span key={id} className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-1 text-xs text-white">
                           {kp.name}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setForm({ ...form, topicIds: form.topicIds.filter((x) => x !== id) })}
+                            className="text-white/70 hover:text-white"
+                            aria-label="移除"
+                          >
+                            ×
+                          </button>
+                        </span>
                       );
                     })}
                   </div>
                 )}
+                <select
+                  className={`${input} ui-select`}
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id && !form.topicIds.includes(id)) setForm({ ...form, topicIds: [...form.topicIds, id] });
+                    e.target.value = "";
+                  }}
+                >
+                  <option value="">选择知识点添加…</option>
+                  {kps.filter((kp) => !form.topicIds.includes(kp.id)).map((kp) => (
+                    <option key={kp.id} value={kp.id}>{kp.name}</option>
+                  ))}
+                </select>
+                {kps.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-500">该学科暂无知识点,请先到「知识点管理」页添加</p>
+                )}
                 {form.topic && !form.topicIds.length && (
-                  <p className="mt-1 text-xs text-amber-500" title="题库中原有的知识点文本">原知识点「{form.topic}」未匹配到库内标签,请选择标签或留空待归类</p>
+                  <p className="mt-1 text-xs text-slate-400" title="题库中原有的知识点文本">原知识点「{form.topic}」— 若未选新标签将保留原值</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
