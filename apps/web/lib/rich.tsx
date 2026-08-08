@@ -162,16 +162,23 @@ const MATHY_TOKEN = /[√πθΣ∫≤≥≈≠×÷±^]/;
 const PURE_WORD = /^[a-z]{2,}$/;
 // 数字/数学符号开头的紧凑表达式(如 3x^2、10^(-y)、2π、5650/79.5、−log₁₀(1)
 // 开头类不含 ASCII 连字符/加号/方括号:它们多是英文标点("-coordinate"),负号由 OP_TOKEN 单独处理,避免整个英文词被误判斜体(#15)
-const MIXED_NUM = /^[0-9√πθ(−][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
-// 字母开头,内部必须含数学特征(数字/^/()/减号等)(如 x^2、x、(c+1)²、ab^2c^3)
+// 内部 Unicode 上下标排除:`AgNO₃` 等化学式/单位含 ₀₁₂₃ 不应被判数学(单位/化学式按正文字体显示)
+const MIXED_NUM = /^[0-9√πθ(−][a-zA-Z0-9√πθ−^(){}[\]/.,]*$/;
+// 字母开头,内部必须含数学特征(数字/^/()/减号等)(如 x^2、x、(c+1)²、)
 // 注意:句号/逗号(英文标点)不是数学特征,否则 "radius."、"Thus," 会被误判为数学渲染成斜体(#15)
-const MIXED_LET = /^[a-zA-Z][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*[0-9₁₀₂₃^√πθ()\[\]/−][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
+// Unicode 上下标 ₀₁₂₃⁰¹²³ 也不是数学特征(`AgNO₃` 应作文本)
+const MIXED_LET = /^[a-zA-Z][a-zA-Z0-9√πθ−^(){}[\]/.,]*[0-9^√πθ()\[\]/−][a-zA-Z0-9√πθ−^(){}[\]/.,]*$/;
 function isMixedMath(token: string): boolean {
   return MIXED_NUM.test(token) || MIXED_LET.test(token);
 }
 
+// 含 Unicode 上下标的 token 一律当文本:化学式(AgNO₃)、单位(mol⁻¹、cm³)等
+// 不应进入 KaTeX 数学模式(否则字母变斜体、显示为数学字体)。见 #16。
+const HAS_UNI_SUP_SUB = /[⁰¹²³⁴⁵⁶⁷⁸⁹⁻₀₁₂₃₄₅₆₇₈⁹]/;
+
 export function isMathToken(token: string): boolean {
-  // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt、3\pi,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
+  if (HAS_UNI_SUP_SUB.test(token)) return false;
+  // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
   if (/\\[a-zA-Z]+/.test(token)) return true;
   // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
   if (PURE_WORD.test(token) && !FUNC_TOKEN.test(token)) return false;
