@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
+import { playSfx } from "@/lib/sfx";
+import Particles, { type Burst } from "./Particles";
 
 interface Run {
   id: string; subject: string; difficulty: number; layer: number; hp: number; maxHp: number;
@@ -51,6 +53,14 @@ export default function RoguelikePage() {
   const [hasActive, setHasActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Phase A 特效状态
+  const [burst, setBurst] = useState<Burst | null>(null);
+  const [shake, setShake] = useState(0);
+  const [comboPop, setComboPop] = useState(0);
+
+  const burstCenter = useCallback((kind: Burst["kind"]) => {
+    setBurst({ x: window.innerWidth / 2, y: window.innerHeight * 0.45, kind });
+  }, []);
 
   // 进入页面检测是否有进行中的冒险
   useEffect(() => {
@@ -79,6 +89,7 @@ export default function RoguelikePage() {
   async function start() {
     setError("");
     setLoading(true);
+    playSfx("click");
     try {
       const d = await api.post<StartResp>("/roguelike/start", { subject, difficulty });
       setRun(d.run!);
@@ -99,6 +110,25 @@ export default function RoguelikePage() {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected });
       setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed });
       if (d.reward) setToast(`🎁 ${d.reward}`);
+      // ---- Phase A 特效 ----
+      if (d.correct) {
+        playSfx("correct");
+        burstCenter("gold");
+        if ((d.combo ?? 0) >= 3) {
+          playSfx("combo", d.combo ?? 0);
+          setComboPop(Date.now());
+        }
+        if (nodeType === "boss") {
+          playSfx("boss");
+          burstCenter("confetti");
+        }
+      } else {
+        if (d.shieldUsed) playSfx("shield");
+        else playSfx("wrong");
+        setShake(Date.now());
+        burstCenter("red");
+      }
+      if (d.runOver && d.status === "DEAD") playSfx("death");
       setRun((r) =>
         r ? { ...r, hp: d.hp ?? r.hp, layer: d.layer ?? r.layer, combo: d.combo ?? r.combo, maxCombo: d.maxCombo ?? r.maxCombo, score: d.score ?? r.score, coins: d.coins ?? r.coins, status: d.status ?? r.status } : r
       );
@@ -126,6 +156,8 @@ export default function RoguelikePage() {
     try {
       const d = await api.post<NodeResp>(`/roguelike/${run.id}/claim`);
       setToast(d.reward || "奖励已领取");
+      playSfx("reward");
+      burstCenter("coins");
       setRun((r) => (r ? { ...r, hp: d.hp!, layer: d.layer!, score: d.score!, coins: d.coins!, status: d.status! } : r));
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
@@ -148,6 +180,7 @@ export default function RoguelikePage() {
       const d = await api.post<NodeResp>(`/roguelike/${run.id}/use-item`, { item, questionId: question.id });
       setInventory(d.inventory || inventory.filter((x) => x !== item));
       if (d.message) setToast(d.message);
+      playSfx(item === "hint" ? "click" : "pick");
       if (d.hintExclude) setHintExclude(d.hintExclude);
       if (item === "heal") setRun((r) => (r ? { ...r, hp: d.hp! } : r));
       if (item === "skip") {
@@ -178,6 +211,7 @@ export default function RoguelikePage() {
 
   return (
     <div className="space-y-4">
+      <Particles burst={burst} onDone={() => setBurst(null)} />
       {phase === "setup" && (
         <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-xl font-bold">冒险模式</h1>
@@ -217,24 +251,27 @@ export default function RoguelikePage() {
       )}
 
       {phase === "playing" && run && (
-        <div className="mx-auto max-w-2xl space-y-4">
+        <div key={shake} className="roguelike-bg mx-auto max-w-2xl space-y-4 rounded-2xl p-4">
           {/* 状态栏 */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-white/10 bg-white/95 p-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${nodeType === "boss" ? "bg-red-600 text-white" : "bg-indigo-50 text-indigo-600"}`}>
+                <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${nodeType === "boss" ? "bg-red-600 text-white" : "bg-indigo-600/15 text-indigo-600"}`}>
                   {nodeType === "boss" ? `⚔ BOSS 第 ${run.layer} 层` : `第 ${run.layer} 层`}
                 </span>
                 <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm text-slate-600">{run.subject}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <span title="连续正确">🔥 连对 <b className={run.combo >= 3 ? "text-amber-600" : "text-slate-800"}>{run.combo}</b></span>
+                <span key={comboPop} title="连续正确" className={run.combo >= 3 ? "combo-pop" : ""}>
+                  {run.combo >= 3 ? <span className="combo-fire mr-0.5">🔥</span> : "🔥 "}
+                  连对 <b className={run.combo >= 3 ? "text-amber-600" : "text-slate-800"}>{run.combo}</b>
+                </span>
                 <span title="得分">⭐ <b className="text-slate-800">{run.score}</b></span>
                 <span title="金币">🪙 <b className="text-slate-800">{run.coins}</b></span>
                 <button onClick={quit} className="rounded-lg border border-slate-200 px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-50">结算</button>
               </div>
             </div>
-            <div className="mt-3">
+            <div className={`mt-3 rounded-full ${run.hp <= 2 ? "low-hp" : ""}`}>
               <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
                 {Array.from({ length: maxHp }).map((_, i) => (
                   <div key={i} className={`mx-0.5 my-0.5 flex-1 rounded-full transition ${i < run.hp ? "bg-red-500" : "bg-slate-200"}`} />
@@ -255,13 +292,13 @@ export default function RoguelikePage() {
             )}
           </div>
 
-          {toast && <div className="rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">{toast}</div>}
+          {toast && <div className="pop-in rounded-xl bg-amber-50/95 px-4 py-2.5 text-sm text-amber-700 shadow">{toast}</div>}
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
           {/* 奖励节点 */}
           {nodeType === "reward" && (
-            <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/60 p-8 text-center shadow-sm">
-              <div className="text-4xl">🎁</div>
+            <div className="rounded-2xl border-2 border-dashed border-amber-300/70 bg-amber-50/95 p-8 text-center shadow-lg">
+              <div className="gift-bounce text-5xl">🎁</div>
               <h2 className="mt-2 text-lg font-bold text-amber-700">奖励节点</h2>
               <p className="mt-1 text-sm text-amber-600">休息一下,领取金币奖励!</p>
               <button onClick={claim} disabled={loading} className="mt-4 h-10 rounded-lg bg-amber-500 px-6 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
@@ -272,7 +309,7 @@ export default function RoguelikePage() {
 
           {/* 题目节点 */}
           {nodeType !== "reward" && (question ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="pop-in rounded-2xl border border-white/10 bg-white p-6 shadow-lg">
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
                 <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
@@ -298,7 +335,7 @@ export default function RoguelikePage() {
                 })}
               </div>
               {feedback && (
-                <div className={`mt-4 flex items-center justify-between rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                <div className={`pop-in mt-4 flex items-center justify-between rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
                   <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
                 </div>
               )}
@@ -308,13 +345,13 @@ export default function RoguelikePage() {
               </button>
             </div>
           ) : (
-            <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">加载题目中...</p>
+            <p className="rounded-2xl border border-white/10 bg-white p-8 text-center text-sm text-slate-400 shadow">加载题目中...</p>
           ))}
         </div>
       )}
 
       {phase === "result" && run && (
-        <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="roguelike-bg mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/95 p-8 text-center shadow-lg">
           <div className="text-5xl">{run.status === "WON" ? "🏆" : "💀"}</div>
           <h1 className="mt-3 text-xl font-bold">{run.status === "WON" ? "通关!" : "冒险结束"}</h1>
           <p className="mt-1 text-sm text-slate-500">{run.status === "WON" ? "你完成了整场冒险,太强了!" : "生命耗尽,下次再来!"}</p>

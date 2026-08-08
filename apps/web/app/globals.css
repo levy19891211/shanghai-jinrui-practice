@@ -22,6 +22,86 @@ body {
   }
 }
 
+/* ===== 冒险模式 Phase A 特效 ===== */
+
+/* 深色氛围背景:渐变 + 流动光 + 星空 */
+.roguelike-bg {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+    radial-gradient(1000px 500px at 90% 110%, rgba(34, 211, 238, 0.12), transparent 60%),
+    radial-gradient(2px 2px at 12% 22%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(2px 2px at 34% 68%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(2px 2px at 58% 15%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 76% 42%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(2px 2px at 88% 75%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 45% 90%, rgba(255, 255, 255, 0.4), transparent),
+    linear-gradient(160deg, #0f172a 0%, #1e1b4b 55%, #172554 100%);
+  animation: rogue-bg-shift 18s ease-in-out infinite alternate;
+}
+@keyframes rogue-bg-shift {
+  0% { background-position: 0 0, 0 0, 12% 22%, 34% 68%, 58% 15%, 76% 42%, 88% 75%, 45% 90%, 0 0; }
+  100% { background-position: 0 0, 0 0, 13% 23%, 35% 67%, 57% 14%, 77% 43%, 87% 74%, 46% 91%, 0 0; }
+}
+
+/* 屏幕震动(答错) */
+.shake {
+  animation: rogue-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes rogue-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-6px); }
+  40%, 60% { transform: translateX(6px); }
+}
+
+/* 连击数字脉冲 */
+.combo-pop {
+  animation: rogue-combo-pop 0.45s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+@keyframes rogue-combo-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+/* 连击火焰(≥3 连) */
+.combo-fire {
+  display: inline-block;
+  animation: rogue-fire 0.5s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+}
+@keyframes rogue-fire {
+  0% { transform: scale(1) rotate(-4deg); }
+  100% { transform: scale(1.22) rotate(4deg); }
+}
+
+/* 卡片弹跳(答题反馈) */
+.pop-in {
+  animation: rogue-pop-in 0.32s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+@keyframes rogue-pop-in {
+  0% { transform: scale(0.92); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 奖励节点礼物盒弹跳 */
+.gift-bounce {
+  animation: rogue-gift 1.1s ease-in-out infinite;
+}
+@keyframes rogue-gift {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-10px) scale(1.06); }
+}
+
+/* 低血量警示 */
+.low-hp {
+  animation: rogue-lowhp 1s ease-in-out infinite;
+}
+@keyframes rogue-lowhp {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(239, 68, 68, 0.55); }
+}
+
 /* 行内公式:KaTeX 默认 1.21em 会导致与正文大小不一,统一为与正文一致 */
 .math-inline .katex,
 .math-inline .katex-display {
