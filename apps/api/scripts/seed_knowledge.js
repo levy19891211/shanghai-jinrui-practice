@@ -30,11 +30,17 @@ const KNOWLEDGE = {
 };
 
 let added = 0;
+let totalPlanned = 0;
 for (const [subject, names] of Object.entries(KNOWLEDGE)) {
-  const rows = names.map((name, i) => ({ subject, name, sortOrder: i + 1 }));
-  const res = await prisma.knowledgePoint.createMany({ data: rows, skipDuplicates: true });
-  added += res.count;
+  totalPlanned += names.length;
+  const existing = await prisma.knowledgePoint.findMany({ where: { subject }, select: { name: true } });
+  const have = new Set(existing.map((e) => e.name));
+  const toAdd = names.filter((n) => !have.has(n)).map((name, i) => ({ subject, name, sortOrder: i + 1 }));
+  if (toAdd.length) {
+    const res = await prisma.knowledgePoint.createMany({ data: toAdd });
+    added += res.count;
+  }
 }
 const total = await prisma.knowledgePoint.count();
-console.log(`预置完成:新增 ${added} 个,跳过(已存在) ${Object.values(KNOWLEDGE).reduce((a, n) => a + n.length, 0) - added} 个,库内共 ${total} 个知识点`);
+console.log(`预置完成:新增 ${added} 个,跳过(已存在) ${totalPlanned - added} 个,库内共 ${total} 个知识点`);
 await prisma.$disconnect();
