@@ -93,7 +93,7 @@ interface NodeResp {
   timedOut?: boolean;
 }
 interface StartResp extends NodeResp {}
-interface AnsResp extends NodeResp { correct: boolean; nextQuestion: Q | null; damage?: number; heal?: number; shieldUsed?: boolean }
+interface AnsResp extends NodeResp { correct: boolean; nextQuestion: Q | null; damage?: number; heal?: number; shieldUsed?: boolean; correctAnswer?: string }
 interface RunDetail { run: Run; nodeType: string | null; question: Q | null; inventory?: string[] }
 
 const SUBJECTS = ["数学", "物理", "化学", "生物", "TMUA"];
@@ -189,7 +189,7 @@ export default function RoguelikePage() {
   const [nodeType, setNodeType] = useState<"normal" | "boss" | "reward" | null>(null);
   const [question, setQuestion] = useState<Q | null>(null);
   const [selected, setSelected] = useState("");
-  const [feedback, setFeedback] = useState<null | { correct: boolean; shieldUsed?: boolean; damage?: number; heal?: number }>(null);
+  const [feedback, setFeedback] = useState<null | { correct: boolean; shieldUsed?: boolean; damage?: number; heal?: number; correctAnswer?: string }>(null);
   // 浮动战斗数字(伤害红 / 回复绿)
   const [combatNum, setCombatNum] = useState<null | { key: number; text: string; kind: "dmg" | "heal" }>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -546,7 +546,7 @@ export default function RoguelikePage() {
     setToast(null);
     try {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected: val });
-      setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed, damage: d.damage, heal: d.heal });
+      setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed, damage: d.damage, heal: d.heal, correctAnswer: d.correctAnswer });
       feedbackRef.current = true;
       // 应用最新战斗视图(新一波敌人 / 新计时窗口)
       applyCombatView(d);
@@ -1199,22 +1199,39 @@ export default function RoguelikePage() {
           <div className="battle-right">
             {question && nodeType !== "reward" && (
               <div className={`battle-panel pop-in ${nodeType === "boss" ? "is-boss" : ""}`}>
-                <p className="q-hint mb-2 text-xs text-slate-400">点击选项即作答{autoArmed ? "(本次必中 ✨)" : ""}</p>
+                <p className="q-hint mb-2 text-xs text-slate-400">{feedback ? "已作答，换题中…" : `点击选项即作答${autoArmed ? "(本次必中 ✨)" : ""}`}</p>
                 <div className="space-y-2">
                   {(question.options || []).map((opt, i) => {
+                    const optStr = String(opt);
                     const excluded = hintExclude.includes(i);
-                    const isSel = selected === String(opt);
+                    const isSel = selected === optStr;
+                    // 反馈窗口:在本选项上直接显示对错,让"第一下点击"的效果立刻可见,避免误以为没反应
+                    const isCorrectOpt = !!feedback && feedback.correctAnswer === optStr;
+                    const isChosenWrong = !!feedback && !feedback.correct && isSel;
+                    const isDim = !!feedback && !isCorrectOpt && !isChosenWrong;
                     return (
                       <button key={i}
-                        onClick={() => submit(String(opt))}
+                        onClick={() => submit(optStr)}
                         disabled={loading || excluded || !!feedback}
                         className={`flex w-full items-start gap-2 rounded-xl border px-4 py-2.5 text-left text-sm transition ${
-                          excluded ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 line-through"
-                            : isSel ? "border-indigo-500 bg-indigo-50 text-slate-800"
-                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          excluded
+                            ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 line-through"
+                            : feedback
+                              ? isCorrectOpt
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                                : isChosenWrong
+                                  ? "border-red-400 bg-red-50 text-red-700"
+                                  : isDim
+                                    ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                                    : "border-slate-200 bg-white text-slate-700"
+                              : isSel
+                                ? "border-indigo-500 bg-indigo-50 text-slate-800"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                         }`}>
                         <span className="mt-0.5 shrink-0 font-bold text-slate-400">{String.fromCharCode(65 + i)}.</span>
-                        <span className="leading-relaxed">{renderRich(String(opt))}</span>
+                        <span className="leading-relaxed flex-1">{renderRich(optStr)}</span>
+                        {feedback && isCorrectOpt && <span className="shrink-0 font-bold text-emerald-600">✓ 正确</span>}
+                        {feedback && isChosenWrong && <span className="shrink-0 font-bold text-red-500">✗ 你的选择</span>}
                       </button>
                     );
                   })}

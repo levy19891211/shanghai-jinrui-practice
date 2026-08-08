@@ -630,6 +630,7 @@ router.post(
 
     ok(res, {
       correct,
+      correctAnswer: question.answer, // 作答后回传正确答案文本,供前端在选项上做对错着色
       forcedByItem,
       overtime,
       combo, maxCombo, hp, maxHp: run.maxHp, layer, score, coins,
