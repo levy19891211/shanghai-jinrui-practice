@@ -472,6 +472,30 @@ body {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 .rogue-question.is-boss { border: 1px solid rgba(220, 38, 38, 0.4); }
+/* 答题区两栏：题干在左 / 选项在右（点击选项即自动提交） */
+.rogue-question.q-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.rogue-question.q-split .q-stem-col { min-width: 0; }
+.rogue-question.q-split .q-options-col {
+  min-width: 0;
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  padding-left: 20px;
+}
+.rogue-question.q-split .q-hint { letter-spacing: 0.02em; }
+/* 窄屏：上下堆叠，题干在上、选项在下 */
+@media (max-width: 760px) {
+  .rogue-question.q-split { grid-template-columns: 1fr; gap: 14px; }
+  .rogue-question.q-split .q-options-col {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    padding-top: 14px;
+  }
+}
 .rogue-toast {
   margin-top: 12px;
   border-radius: 0.75rem;

@@ -256,12 +256,14 @@ export default function RoguelikePage() {
     }
   }
 
-  async function submit() {
-    if (!run || !question || !selected) return;
+  async function submit(sel?: string) {
+    const val = sel ?? selected;
+    if (!run || !question || !val) return;
+    setSelected(val);
     setLoading(true);
     setToast(null);
     try {
-      const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected });
+      const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected: val });
       setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed });
       if (d.reward) setToast(`🎁 ${d.reward}`);
       // ---- Phase A 特效 ----
@@ -662,40 +664,44 @@ export default function RoguelikePage() {
               </button>
             </div>
           ) : question ? (
-            <div className={`rogue-question pop-in ${nodeType === "boss" ? "is-boss" : ""}`}>
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
-                <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
-                <span>难度 {DIFF_LABEL[question.difficulty] ?? question.difficulty}</span>
-              </div>
-              <div className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(question.stem)}</div>
-              <div className="mt-4 space-y-2">
-                {(question.options || []).map((opt, i) => {
-                  const excluded = hintExclude.includes(i);
-                  return (
-                    <button key={i}
-                      onClick={() => setSelected(String(opt))}
-                      disabled={loading || excluded}
-                      className={`flex w-full items-start gap-2 rounded-xl border px-4 py-2.5 text-left text-sm transition ${
-                        excluded ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 line-through"
-                          : selected === String(opt) ? "border-indigo-500 bg-indigo-50 text-slate-800"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                      }`}>
-                      <span className="mt-0.5 shrink-0 font-bold text-slate-400">{String.fromCharCode(65 + i)}.</span>
-                      <span className="leading-relaxed">{renderRich(String(opt))}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {feedback && (
-                <div className={`pop-in mt-4 flex items-center justify-between rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                  <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
+            <div className={`rogue-question pop-in q-split ${nodeType === "boss" ? "is-boss" : ""}`}>
+              {/* 左侧：题干 */}
+              <div className="q-stem-col">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
+                  <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
+                  <span>难度 {DIFF_LABEL[question.difficulty] ?? question.difficulty}</span>
                 </div>
-              )}
-              <button onClick={submit} disabled={!selected || loading}
-                className="rogue-submit-btn">
-                {loading ? "判分中..." : autoArmed ? "提交(必中)" : "提交答案"}{autoArmed ? " ✨" : ""}
-              </button>
+                <div className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(question.stem)}</div>
+                {feedback && (
+                  <div className={`pop-in mt-4 flex items-center rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                    <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
+                  </div>
+                )}
+              </div>
+              {/* 右侧：选项（点击即提交） */}
+              <div className="q-options-col">
+                <p className="q-hint mb-2 text-xs text-slate-400">点击选项即作答{autoArmed ? "(本次必中 ✨)" : ""}</p>
+                <div className="space-y-2">
+                  {(question.options || []).map((opt, i) => {
+                    const excluded = hintExclude.includes(i);
+                    const isSel = selected === String(opt);
+                    return (
+                      <button key={i}
+                        onClick={() => submit(String(opt))}
+                        disabled={loading || excluded || !!feedback}
+                        className={`flex w-full items-start gap-2 rounded-xl border px-4 py-2.5 text-left text-sm transition ${
+                          excluded ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 line-through"
+                            : isSel ? "border-indigo-500 bg-indigo-50 text-slate-800"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                        }`}>
+                        <span className="mt-0.5 shrink-0 font-bold text-slate-400">{String.fromCharCode(65 + i)}.</span>
+                        <span className="leading-relaxed">{renderRich(String(opt))}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="rogue-question text-center">
