@@ -29,5 +29,8 @@ export function cleanUnits(s) {
     .replace(/(?<![a-zA-Z0-9\\}])m\^(\d)/gi, (_a, n) => `m${toSup(n)}`)
     .replace(/(?<![a-zA-Z0-9\\}])s\^(\d)/gi, (_a, n) => `s${toSup(n)}`)
     // 裸文本单位负幂次:kJ mol^{-1} → kJ mol⁻¹
-    .replace(/\b(mol|kg|g|cm|dm|mm|m|s|min|h|K|J|kJ|Pa|Hz|V|A)\s*\^\{(-?\d+)\}/g, (_a, u, n) => `${u}${toSup(n)}`);
+    .replace(/\b(mol|kg|g|cm|dm|mm|m|s|min|h|K|J|kJ|Pa|Hz|V|A)\s*\^\{(-?\d+)\}/g, (_a, u, n) => `${u}${toSup(n)}`)
+    // LaTeX 度符号:^\circ → °(如 4 J g⁻¹ ^\circ C⁻¹ → 4 J g⁻¹ °C⁻¹)
+    .replace(/\^\\circ\b/gi, "°")
+    .replace(/\^\{?\\circ\}?/g, "°");
 }

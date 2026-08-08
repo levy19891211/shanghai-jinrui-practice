@@ -10,11 +10,17 @@ import katex from "katex";
 // 行内公式允许 $ 后紧跟空白(如 "$ f(x) $",常见于模型/录入数据),只要内容非空且不成对 $ 就不算
 const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g;
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function renderMathExpr(expr: string, displayMode: boolean): string {
   try {
-    return katex.renderToString(expr, { throwOnError: false, displayMode });
+    const html = katex.renderToString(expr, { throwOnError: false, displayMode });
+    // KaTeX 渲染失败时返回的 HTML 含 katex-error(红框),此时退回显示原文,避免刺眼报错
+    return html.includes("katex-error") ? escapeHtml(expr) : html;
   } catch {
-    return expr;
+    return escapeHtml(expr);
   }
 }
 
