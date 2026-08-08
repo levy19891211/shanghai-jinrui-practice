@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/paper-set.js";
 import { planAutoFix } from "../lib/autofix.js";
 import { KNOWLEDGE_RULES } from "../lib/knowledge-rules.js";
+import { cleanUnits } from "../lib/text-normalize.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
@@ -231,9 +232,15 @@ async function importRows(req, rows) {
         : String(r.options || "").split(/[;；]/).map((s) => s.trim()).filter(Boolean);
       // 学科归一化(视觉模型可能输出 Chemistry/Physics 等英文,映射到中文学科)
       r.subject = normalizeSubject(r.subject);
-      if (!r.subject || !r.topic || !r.stem || options.length < 2) {
+      // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
+      const stem = cleanUnits(String(r.stem || ""));
+      const cleanOpts = options.map((o) => cleanUnits(String(o)));
+      if (!r.subject || !r.topic || !stem || cleanOpts.length < 2) {
         throw new Error("字段不完整(需要 subject/topic/stem/options≥2)");
       }
+      r.stem = stem;
+      options.length = 0;
+      options.push(...cleanOpts);
       // PDF 导入若图片中无答案 key,允许 answer 为空,教师在审核页补充
       if (!r.answer && r.source !== "PDF 导入") {
         throw new Error("字段不完整:answer 必填");
@@ -258,8 +265,8 @@ async function importRows(req, rows) {
           topicIds: JSON.stringify(topicIds),
           difficulty: Number(r.difficulty) || 3,
           type: r.type || "SINGLE_CHOICE",
-          stem: normalizeNewlines(r.stem),
-          options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(o)))),
+          stem: normalizeNewlines(cleanUnits(r.stem)),
+          options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))))),
           answer: r.answer ? normalizeNewlines(String(r.answer)) : "",
           solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
@@ -479,8 +486,8 @@ router.post(
         topicIds: JSON.stringify(kp.topicIds),
         difficulty: difficulty || 3,
         type: type || "SINGLE_CHOICE",
-        stem: normalizeNewlines(stem),
-        options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(o)))),
+        stem: normalizeNewlines(cleanUnits(stem)),
+        options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))))),
         answer: normalizeNewlines(String(answer)),
         solution: solution ? normalizeNewlines(solution) : null,
         source: source || null,
