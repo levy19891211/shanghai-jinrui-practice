@@ -16,7 +16,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RASTER_SCRIPT = path.join(__dirname, "..", "..", "scripts", "pdf_rasterize.py");
 
-async function rasterize(pdfBuf) {
+export async function rasterize(pdfBuf) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pdfimp-"));
   try {
     const pdfPath = path.join(tmpDir, "input.pdf");
