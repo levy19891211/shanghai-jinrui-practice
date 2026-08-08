@@ -5,33 +5,7 @@
 // 运行:npm run classify:existing 或 node scripts/classify_existing.js
 import "dotenv/config";
 import { prisma } from "../src/lib/db.js";
-
-// —— 中文/关键词 → 知识点 规则(优先级从上到下;可多命中=多标签;英文大小写不敏感) ——
-const RULES = [
-  { subject: "数学", re: /二次|quadratic/i, kp: "Quadratics" },
-  { subject: "数学", re: /二项式|binomial/i, kp: "Binomial Expansion" },
-  { subject: "数学", re: /坐标|几何|geometry/i, kp: "Coordinate Geometry" },
-  { subject: "数学", re: /数列|级数|递推|sequence|series/i, kp: "Sequences and Series" },
-  { subject: "数学", re: /指数|对数|log|exponential/i, kp: "Exponentials and Logarithms" },
-  { subject: "数学", re: /三角|trig|sin|cos|tan/i, kp: "Trigonometry" },
-  { subject: "数学", re: /微分|导数|单调|differenti|gradient|normal|tangent|optimis|rate of change/i, kp: "Differentiation" },
-  { subject: "数学", re: /积分|integral|integration|area/i, kp: "Integration" },
-  { subject: "数学", re: /数值|numerical|trapezium/i, kp: "Numerical Methods" },
-  { subject: "数学", re: /向量|vector/i, kp: "Vectors" },
-  { subject: "数学", re: /概率|probability/i, kp: "Probability" },
-  { subject: "数学", re: /统计|statistics/i, kp: "Statistics" },
-  { subject: "数学", re: /不等式|inequalit|代数|方程|多项式|factor|algebra|函数|root/i, kp: "Algebra and Functions" },
-  { subject: "数学", re: /力学|mechanic/i, kp: "Mechanics" },
-  { subject: "物理", re: /运动|kinematic|motion/i, kp: "Kinematics" },
-  { subject: "物理", re: /能量|energy|work|power/i, kp: "Work, Energy and Power" },
-  { subject: "物理", re: /电路|circuit|current|voltage/i, kp: "Electric Circuits" },
-  { subject: "化学", re: /键|bonding/i, kp: "Chemical Bonding" },
-  { subject: "化学", re: /平衡|equilibrium/i, kp: "Chemical Equilibrium" },
-  { subject: "化学", re: /有机|organic|hydrocarbon/i, kp: "Organic Chemistry Basics" },
-  { subject: "生物", re: /细胞|cell/i, kp: "Cell Structure" },
-  { subject: "生物", re: /酶|enzyme/i, kp: "Enzymes" },
-  { subject: "生物", re: /遗传|gene|genetic/i, kp: "Genetics and Variation" },
-];
+import { KNOWLEDGE_RULES } from "../src/lib/knowledge-rules.js";
 
 // 题目 subject → 可归类的知识点学科池
 const SUBJECT_POOL = {
@@ -80,7 +54,7 @@ for (const q of qs) {
   const pool = (SUBJECT_POOL[q.subject] || []).flatMap((s) => kpBySubject.get(s) || []);
   const hitKps = [];
   // 规则匹配
-  for (const r of RULES) {
+  for (const r of KNOWLEDGE_RULES) {
     if (!(SUBJECT_POOL[q.subject] || []).includes(r.subject)) continue;
     if (r.re.test(topic)) {
       const kp = pool.find((k) => k.name === r.kp);

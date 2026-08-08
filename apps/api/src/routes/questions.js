@@ -4,6 +4,7 @@ import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/paper-set.js";
 import { planAutoFix } from "../lib/autofix.js";
+import { KNOWLEDGE_RULES } from "../lib/knowledge-rules.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
@@ -41,7 +42,18 @@ async function matchKnowledgePoints(subject, topicStr) {
   const kps = subs.length ? await prisma.knowledgePoint.findMany({ where: { subject: { in: subs } } }) : [];
   const hits = [];
   for (const n of names) {
-    const hit = kps.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+    // 1) 名称匹配(相等/互相包含)
+    let hit = kps.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+    // 2) 中文关键词规则兜底(视觉模型 topic 常输出中文,如"三角"→Trigonometry)
+    if (!hit) {
+      for (const r of KNOWLEDGE_RULES) {
+        if (!subs.includes(r.subject)) continue;
+        if (r.re.test(n)) {
+          hit = kps.find((k) => k.name === r.kp);
+          if (hit) break;
+        }
+      }
+    }
     if (hit && !hits.some((h) => h.id === hit.id)) hits.push(hit);
   }
   return hits;
@@ -177,10 +189,21 @@ async function importRows(req, rows) {
       .map((s) => s.trim())
       .filter(Boolean);
     // 题目学科映射到知识点学科池(TMUA→数学,ESAT→数学+物理),保证 TMUA 题也能自动归类
-    const pool = knowledgeSubjectsFor(subject).flatMap((s) => kpBySubject.get(s) || []);
+    const subs = knowledgeSubjectsFor(subject);
+    const pool = subs.flatMap((s) => kpBySubject.get(s) || []);
     const hits = [];
     for (const n of names) {
-      const hit = pool.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+      // 1) 名称匹配;2) 中文关键词规则兜底(视觉模型 topic 常输出中文)
+      let hit = pool.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+      if (!hit) {
+        for (const r of KNOWLEDGE_RULES) {
+          if (!subs.includes(r.subject)) continue;
+          if (r.re.test(n)) {
+            hit = pool.find((k) => k.name === r.kp);
+            if (hit) break;
+          }
+        }
+      }
       if (hit && !hits.some((h) => h.id === hit.id)) hits.push(hit);
     }
     return hits;

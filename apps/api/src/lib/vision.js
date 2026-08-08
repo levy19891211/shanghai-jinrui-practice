@@ -30,7 +30,7 @@ const SYSTEM_PROMPT = `你是一个考试题库录入助手。用户会给你一
   {
     "subject": "TMUA 或 ESAT 或 学科名",
     "paper": "试卷名/场次(可选,没有则空字符串)",
-    "topic": "知识点,如 代数/函数/几何/概率/数列/微积分/三角",
+    "topic": "知识点,优先用英文 A Level 术语(如 Differentiation / Trigonometry / Sequences and Series / Integration / Algebra and Functions);也可用中文关键词",
     "difficulty": 1到5的整数(可选,默认3),
     "type": "SINGLE_CHOICE 或 MULTIPLE_CHOICE 或 TRUE_FALSE",
     "stem": "题干全文。所有数学用 LaTeX 书写:行内公式用 $...$,独立成行的公式用 $$...$$。务必让每个定界符成对闭合。",
