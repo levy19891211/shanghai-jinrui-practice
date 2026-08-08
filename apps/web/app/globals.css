@@ -717,6 +717,188 @@ body {
 .sc-tier { grid-area: cost; font-size: 0.7rem; color: #c4b5fd; }
 .sc-desc { grid-area: desc; font-size: 0.74rem; color: #cbd5e1; }
 
+/* ===== V2.0 即时制战斗 UI ===== */
+
+/* 答题倒计时条:三档区间(绿=完美 / 橙=迅捷 / 红=普通),标记线随已用时间左→右推进 */
+.combat-timer {
+  position: relative;
+  z-index: 3;
+  margin: 0 12px;
+  padding-top: 8px;
+}
+.timer-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: visible;
+  background: linear-gradient(90deg,
+    #22c55e 0%, #22c55e 30%,
+    #f59e0b 30%, #f59e0b 60%,
+    #ef4444 60%, #ef4444 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+.timer-marker {
+  position: absolute;
+  top: -4px;
+  width: 4px;
+  height: 18px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+  transform: translateX(-50%);
+  transition: left 0.1s linear;
+}
+.timer-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #e2e8f0;
+}
+.timer-sec { font-weight: 700; color: #fde68a; }
+.timer-tier { font-weight: 700; }
+.timer-note { color: #cbd5e1; opacity: 0.85; }
+
+/* 多敌人同屏 */
+.enemy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 14px 10px;
+  width: 100%;
+  padding: 0 8px;
+}
+.enemy-row.solo { gap: 0; }
+.enemy-card {
+  flex: 1 1 96px;
+  max-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.enemy-card.is-boss { flex-basis: 200px; max-width: 340px; }
+.enemy-row.solo .enemy-card { flex: 0 1 auto; max-width: 60%; }
+
+.enemy-sprite-wrap {
+  position: relative;
+  line-height: 0;
+}
+.enemy-sprite-wrap::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: -3%;
+  transform: translateX(-50%);
+  width: 64%; height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.5), transparent 70%);
+}
+.enemy-sprite {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: inline-block;
+  filter: drop-shadow(0 12px 14px rgba(0, 0, 0, 0.6));
+  animation: stage-bob 3s ease-in-out infinite;
+}
+.enemy-sprite-normal { width: 100%; max-width: 130px; }
+.enemy-sprite-boss {
+  width: 100%;
+  max-width: 320px;
+  filter: drop-shadow(0 0 22px rgba(239, 68, 68, 0.7)) drop-shadow(0 12px 14px rgba(0, 0, 0, 0.6));
+}
+.enemy-hit { animation: enemy-hit-flash 0.22s ease-out !important; }
+@keyframes enemy-hit-flash {
+  0% { filter: brightness(2.4) drop-shadow(0 0 10px #fff); }
+  100% { filter: none; }
+}
+
+/* 攻击蓄力预警环(本地推算) */
+.windup-ring {
+  position: absolute;
+  top: -6px; left: 50%;
+  transform: translateX(-50%);
+  width: 40px; height: 40px;
+  pointer-events: none;
+  z-index: 2;
+}
+.wr-bg { fill: none; stroke: rgba(255, 255, 255, 0.22); stroke-width: 3; }
+.wr-fg {
+  fill: none;
+  stroke: #38bdf8;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 0.1s linear, stroke 0.2s;
+}
+.windup-ring.danger .wr-fg { stroke: #ef4444; }
+.windup-ring.danger { animation: windup-pulse 0.6s ease-in-out infinite; }
+@keyframes windup-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* 敌人血条 */
+.enemy-meta { width: 100%; max-width: 140px; text-align: center; }
+.enemy-name { font-size: 0.66rem; color: #cbd5e1; margin-bottom: 2px; white-space: nowrap; }
+.enemy-hp {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.enemy-hp-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444, #f97316);
+  transition: width 0.25s;
+}
+.enemy-card.is-boss .enemy-hp-fill { background: linear-gradient(90deg, #dc2626, #f59e0b); }
+.enemy-hp-num {
+  position: absolute;
+  inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.58rem; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* 敌人飘字(命中/格挡/受伤) */
+.enemy-float {
+  position: absolute;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  font-weight: 800; font-size: 1rem; line-height: 1;
+  pointer-events: none; z-index: 4;
+  animation: enemy-float 0.95s ease-out forwards;
+}
+.enemy-float.hit { color: #fde047; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.enemy-float.dmg { color: #fca5a5; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.enemy-float.block { color: #93c5fd; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+@keyframes enemy-float {
+  0% { opacity: 0; transform: translate(-50%, 4px) scale(0.9); }
+  18% { opacity: 1; transform: translate(-50%, -2px) scale(1.08); }
+  100% { opacity: 0; transform: translate(-50%, -26px) scale(1); }
+}
+
+/* 超时红屏闪烁 */
+.timeout-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(239, 68, 68, 0.05), rgba(239, 68, 68, 0.4));
+  animation: timeout-flash 0.5s ease-out forwards;
+}
+@keyframes timeout-flash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* ===== Phase C 降级与性能 ===== */
 
 /* 「减少动效」手动开关:禁用常驻动画(粒子/横幅/幕布由 JS 控制不渲染) */
@@ -734,7 +916,11 @@ body {
   .fx-reduced .stage-boss::before,
   .fx-reduced .stage-danger::before,
   .fx-reduced .stage-weapon,
-  .fx-reduced .enemy-attack {
+  .fx-reduced .enemy-attack,
+  .fx-reduced .enemy-hit,
+  .fx-reduced .enemy-float,
+  .fx-reduced .timeout-flash,
+  .fx-reduced .windup-ring.danger {
     animation: none !important;
   }
 .fx-reduced .coin-rain {
@@ -758,6 +944,10 @@ body {
   .stage-danger::before,
   .stage-weapon,
   .enemy-attack,
+  .enemy-hit,
+  .enemy-float,
+  .timeout-flash,
+  .windup-ring.danger,
   .combat-float {
     animation: none !important;
   }
@@ -781,6 +971,13 @@ body {
   }
   .stage-sprite-enemy { width: 62%; }
   .stage-sprite-boss { width: 76%; }
+  .enemy-sprite-normal { max-width: 96px; }
+  .enemy-sprite-boss { max-width: 240px; }
+  .enemy-row { gap: 10px 6px; }
+  .enemy-card { flex-basis: 80px; }
+  .enemy-card.is-boss { flex-basis: 160px; max-width: 240px; }
+  .windup-ring { width: 32px; height: 32px; }
+  .combat-timer { margin: 0 8px; }
   .stage-top { font-size: 0.72rem; gap: 6px; padding: 8px 10px; }
   .stage-deco { width: 64px; height: 64px; }
   .stage-weapon { width: 34%; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
@@ -12,6 +12,17 @@ interface Run {
   combo: number; maxCombo: number; score: number; coins: number; status: string;
 }
 interface Q { id: string; topic?: string; type: string; stem: string; options: string[]; difficulty: number }
+// 即时制战斗视图（来自后端 combatView）
+interface EnemyView {
+  eid: string; name: string; kind: "normal" | "boss"; sprite: number;
+  hp: number; maxHp: number; interval: number; nextAtkBeat: number; windup: number;
+}
+interface CombatView {
+  layer: number; nodeType: string;
+  totalBeat: number; qStartBeat: number;
+  qLimitMs: number; qRemainMs: number; beatMs: number;
+  enemies: EnemyView[];
+}
 interface NodeResp {
   run?: Run;
   nodeType: "normal" | "boss" | "reward" | null;
@@ -33,6 +44,15 @@ interface NodeResp {
   pendingSkills?: any[] | null;
   autoCorrect?: boolean;
   message?: string;
+  combat?: CombatView | null;
+  // 答题结算/心跳事件
+  events?: any[];
+  attack?: { dmg: number; killed: boolean; eid: string; name: string; speed: string; speedText: string; mult: number } | null;
+  counter?: { dmg: number; blocked: boolean; name: string; timeout: boolean } | null;
+  kills?: { eid: string; name: string; kind: string }[];
+  cleared?: boolean;
+  overtime?: boolean;
+  timedOut?: boolean;
 }
 interface StartResp extends NodeResp {}
 interface AnsResp extends NodeResp { correct: boolean; nextQuestion: Q | null; damage?: number; heal?: number; shieldUsed?: boolean }
@@ -63,6 +83,17 @@ const ENEMY_IMG = [
   "/images/rogue/enemy_e.png",
 ];
 function enemyImg(layer: number) { return ENEMY_IMG[(layer - 1) % ENEMY_IMG.length]; }
+// 即时制：按敌人实体（kind/sprite）选图，支持多敌人同屏
+function enemySpriteFor(e: EnemyView): string {
+  if (e.kind === "boss") return bossImg(e.sprite >= 0 ? [5, 10, 15, 20][e.sprite] || 5 : 5);
+  return ENEMY_IMG[((e.sprite % ENEMY_IMG.length) + ENEMY_IMG.length) % ENEMY_IMG.length];
+}
+// 速度倍率档位（与后端 speedTier 一致）：按「本题已用时间比例」换算
+function speedTierOf(ratio: number): { mult: number; label: string; text: string; color: string } {
+  if (ratio <= 0.3) return { mult: 1.5, label: "perfect", text: "完美出手 ×1.5", color: "#22c55e" };
+  if (ratio <= 0.6) return { mult: 1.25, label: "good", text: "迅捷出手 ×1.25", color: "#f59e0b" };
+  return { mult: 1.0, label: "slow", text: "普通出手 ×1.0", color: "#ef4444" };
+}
 
 // 分区:按层切换背景色调与装饰素材(森林/海洋/山地/熔岩)
 type Zone = { key: string; cls: string; deco: string[] };
@@ -153,8 +184,20 @@ export default function RoguelikePage() {
   const [mana, setMana] = useState(10);
   const [maxMana, setMaxMana] = useState(10);
   const [level, setLevel] = useState(1);
-  const [enemyAttackKey, setEnemyAttackKey] = useState(0);
   const [autoArmed, setAutoArmed] = useState(false);
+  // ===== V2.0 即时制实时战斗状态 =====
+  const [combat, setCombat] = useState<CombatView | null>(null);
+  const [remainMs, setRemainMs] = useState(0);          // 本地倒计时(每 100ms 递减,平滑显示)
+  const [enemyFloats, setEnemyFloats] = useState<Record<string, { key: number; text: string; kind: "dmg" | "block" | "hit" }[]>>({}); // 敌人飘字
+  const [attackingIds, setAttackingIds] = useState<Record<string, boolean>>({}); // 敌人前扑动画
+  const [hitFlashIds, setHitFlashIds] = useState<Record<string, boolean>>({});   // 敌人受击闪白
+  const [timeoutFlash, setTimeoutFlash] = useState(false); // 超时红屏
+  const combatRef = useRef<CombatView | null>(null);
+  const tickTimer = useRef<number | null>(null);
+  const renderTimer = useRef<number | null>(null);
+  const loadingRef = useRef(false);
+  const feedbackRef = useRef(false);
+  const questionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setSfxMuted(sfxMuted);
@@ -174,6 +217,70 @@ export default function RoguelikePage() {
       return nv;
     });
   }
+
+  // ===== V2.0 即时制：每秒心跳 + 每 100ms 本地渲染循环 =====
+  // 心跳把真实流逝时间上报服务端,结算敌人自动攻击与超时;本地循环只负责平滑倒计时与蓄力环。
+  async function sendTick() {
+    if (!run || !run.id) return;
+    if (nodeType === "reward" || !combatRef.current) return;
+    if (loadingRef.current || feedbackRef.current) return; // 答题/反馈期间跳过,避免双重换题
+    try {
+      const d = await api.post<AnsResp>(`/roguelike/${run.id}/tick`, {});
+      if (d.status === "DEAD" || d.runOver) {
+        setRun((r) => (r ? { ...r, hp: typeof d.hp === "number" ? d.hp : r.hp, status: d.status ?? r.status } : r));
+        applyCombatView(d);
+        setTimeout(() => setPhase("result"), 900);
+        return;
+      }
+      if (typeof d.hp === "number") setRun((r) => (r ? { ...r, hp: d.hp!, combo: d.combo ?? r.combo } : r));
+      applyCombat(d);
+      applyCombatView(d);
+      for (const ev of d.events || []) {
+        if (ev.type === "enemy_hit") {
+          pushEnemyFloat(ev.eid, ev.blocked ? "格挡" : `${ev.dmg}`, ev.blocked ? "block" : "dmg");
+          setAttackingIds((prev) => ({ ...prev, [ev.eid]: true }));
+          setTimeout(() => setAttackingIds((prev) => ({ ...prev, [ev.eid]: false })), 450);
+          if (!fxReduced) setShake(Date.now());
+          playSfx("wrong");
+        } else if (ev.type === "timeout") {
+          pushEnemyFloat(ev.eid, ev.blocked ? "格挡" : `${ev.dmg}`, ev.blocked ? "block" : "dmg");
+          if (!fxReduced) setShake(Date.now());
+          playSfx("wrong");
+        }
+      }
+      if (d.timedOut) {
+        setTimeoutFlash(true);
+        setTimeout(() => setTimeoutFlash(false), 500);
+        setToast("⏰ 超时!敌人重击,已换新题");
+        setRun((r) => (r ? { ...r, combo: d.combo ?? 0 } : r));
+        setSelected("");
+        setFeedback(null);
+        if (d.nextQuestion) applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
+      }
+    } catch {
+      /* 网络抖动忽略,下次心跳重试 */
+    }
+  }
+
+  useEffect(() => {
+    if (phase !== "playing" || !run) return;
+    if (nodeType === "reward") return; // 奖励节点无战斗,不启动心跳
+    renderTimer.current = window.setInterval(() => {
+      setRemainMs((prev) => {
+        if (feedbackRef.current || loadingRef.current) return prev; // 反馈/请求中冻结显示
+        const next = prev - 100;
+        return next < 0 ? 0 : next;
+      });
+    }, 100);
+    tickTimer.current = window.setInterval(() => { void sendTick(); }, 1000);
+    return () => {
+      if (renderTimer.current) clearInterval(renderTimer.current);
+      if (tickTimer.current) clearInterval(tickTimer.current);
+      renderTimer.current = null;
+      tickTimer.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, run?.id, nodeType]);
 
   const burstCenter = useCallback((kind: Burst["kind"]) => {
     if (fxReduced) return; // 减少动效:跳过粒子
@@ -224,6 +331,42 @@ export default function RoguelikePage() {
     if (res.level !== undefined) setLevel(res.level);
     if (res.autoCorrect !== undefined) setAutoArmed(!!res.autoCorrect);
   }
+  // 应用后端战斗视图：同步敌人/计时窗口，并重置本地倒计时
+  function applyCombatView(res: any) {
+    if (res.combat) {
+      combatRef.current = res.combat;
+      setCombat(res.combat);
+      if (typeof res.combat.qRemainMs === "number") setRemainMs(res.combat.qRemainMs);
+    } else {
+      combatRef.current = null;
+      setCombat(null);
+    }
+  }
+  // 敌人飘字（命中/格挡/受伤）
+  function pushEnemyFloat(eid: string, text: string, kind: "dmg" | "block" | "hit") {
+    if (fxReduced && kind !== "dmg") return;
+    const key = Date.now() + Math.random();
+    setEnemyFloats((prev) => {
+      const arr = prev[eid] ? [...prev[eid], { key, text, kind }] : [{ key, text, kind }];
+      return { ...prev, [eid]: arr.slice(-3) };
+    });
+    setTimeout(() => {
+      setEnemyFloats((prev) => {
+        const arr = (prev[eid] || []).filter((f) => f.key !== key);
+        const np = { ...prev };
+        if (arr.length) np[eid] = arr; else delete np[eid];
+        return np;
+      });
+    }, 950);
+  }
+  // 本地推算敌人蓄力进度(0-1)：根据剩余时间反推当前累计节拍
+  function windupOf(e: EnemyView, c: CombatView | null, remain: number): number {
+    if (!c || c.beatMs <= 0) return 0;
+    const elapsedReal = Math.max(0, c.qLimitMs - remain);
+    const curTotal = c.qStartBeat + elapsedReal / c.beatMs;
+    const w = 1 - (e.nextAtkBeat - curTotal) / e.interval;
+    return Math.max(0, Math.min(1, w));
+  }
   function applyNode(res: {
     nodeType?: "normal" | "boss" | "reward" | null;
     question?: Q | null;
@@ -233,12 +376,14 @@ export default function RoguelikePage() {
   }) {
     setNodeType(res.nodeType ?? null);
     setQuestion(res.question ?? null);
+    questionIdRef.current = res.question?.id ?? null;
     if (res.inventory !== undefined) setInventory(res.inventory || []);
     if (res.run) setRun(res.run);
     if (res.hp !== undefined) {
       setRun((r) => (r ? { ...r, hp: res.hp!, layer: res.layer!, score: res.score!, coins: res.coins!, combo: res.combo!, maxCombo: res.maxCombo!, status: res.status! } : r));
     }
     applyCombat(res);
+    applyCombatView(res);
     if (res.drops && res.drops.length) setToast(`🎁 击败怪物,掉落:${res.drops.map((d: any) => `${d.icon}${d.name}`).join("、")}`);
   }
 
@@ -263,14 +408,31 @@ export default function RoguelikePage() {
     if (!run || !question || !val) return;
     setSelected(val);
     setLoading(true);
+    loadingRef.current = true;
     setToast(null);
     try {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected: val });
       setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed, damage: d.damage, heal: d.heal });
+      feedbackRef.current = true;
+      // 应用最新战斗视图(新一波敌人 / 新计时窗口)
+      applyCombatView(d);
       // 浮动战斗数字(减少动效时跳过)
       if (!fxReduced) {
         if (d.correct && d.heal) setCombatNum({ key: Date.now(), text: `+${d.heal}`, kind: "heal" });
         else if (!d.correct && !d.shieldUsed && d.damage) setCombatNum({ key: Date.now(), text: `-${d.damage}`, kind: "dmg" });
+      }
+      // 敌人飘字 + 受击/前扑动画
+      if (d.correct && d.attack) {
+        pushEnemyFloat(d.attack.eid, `${d.attack.dmg}`, "hit");
+        setHitFlashIds((prev) => ({ ...prev, [d.attack!.eid]: true }));
+        setTimeout(() => setHitFlashIds((prev) => ({ ...prev, [d.attack!.eid]: false })), 220);
+      } else if (!d.correct && d.counter) {
+        const fe = combatRef.current?.enemies.find((e) => e.hp > 0)?.eid;
+        if (fe) {
+          pushEnemyFloat(fe, d.shieldUsed ? "格挡" : `${d.counter.dmg}`, d.shieldUsed ? "block" : "dmg");
+          setAttackingIds((prev) => ({ ...prev, [fe]: true }));
+          setTimeout(() => setAttackingIds((prev) => ({ ...prev, [fe]: false })), 450);
+        }
       }
       if (d.reward) setToast(`🎁 ${d.reward}`);
       // ---- Phase A 特效 ----
@@ -289,7 +451,7 @@ export default function RoguelikePage() {
       } else {
         if (d.shieldUsed) playSfx("shield");
         else playSfx("wrong");
-        if (!fxReduced) { setShake(Date.now()); setEnemyAttackKey(Date.now()); }
+        if (!fxReduced) { setShake(Date.now()); }
         burstCenter("red");
       }
       if (d.runOver && d.status === "DEAD") playSfx("death");
@@ -303,6 +465,7 @@ export default function RoguelikePage() {
       } else {
         setTimeout(() => {
           setFeedback(null);
+          feedbackRef.current = false;
           setCombatNum(null);
           setSelected("");
           applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
@@ -312,6 +475,7 @@ export default function RoguelikePage() {
       setError(e instanceof Error ? e.message : "提交失败");
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }
 
@@ -434,6 +598,13 @@ export default function RoguelikePage() {
     setInventory([]);
     setNodeType(null);
     setError("");
+    setCombat(null);
+    combatRef.current = null;
+    setRemainMs(0);
+    setEnemyFloats({});
+    setAttackingIds({});
+    setHitFlashIds({});
+    setTimeoutFlash(false);
     setBossAppearKey(0);
     setBossDefeatKey(0);
     setRewardClaimKey(0);
@@ -561,6 +732,10 @@ export default function RoguelikePage() {
           {(() => {
             const zone = zoneOf(run.layer);
             const wpn = weaponImg(equipped);
+            const alive = combat ? combat.enemies.filter((e) => e.hp > 0) : [];
+            const ratio = combat && combat.qLimitMs > 0 ? 1 - remainMs / combat.qLimitMs : 1; // 已用时间比例
+            const tier = speedTierOf(ratio);
+            const secLeft = Math.max(0, Math.ceil(remainMs / 1000));
             return (
           <div key={shake} className={`rogue-stage ${zone.cls} ${shake ? "shake" : ""} ${nodeType === "boss" ? "stage-boss" : ""} ${run.hp <= 2 ? "stage-danger" : ""}`}>
             {/* 环境装饰素材 */}
@@ -583,7 +758,21 @@ export default function RoguelikePage() {
               <button onClick={quit} className="stage-quit">结算</button>
             </div>
 
-            {/* 敌人 / 奖励 显示区(第一视角) */}
+            {/* 答题倒计时条(即时制核心):已用时间比例推进,绿/橙/红三档对应完美/迅捷/普通出手 */}
+            {combat && nodeType !== "reward" && (
+              <div className="combat-timer">
+                <div className="timer-track">
+                  <div className="timer-marker" style={{ left: `${Math.min(100, ratio * 100)}%` }} />
+                </div>
+                <div className="timer-info">
+                  <span className="timer-sec">⏱ {secLeft}s</span>
+                  <span className="timer-tier" style={{ color: tier.color }}>{tier.text}</span>
+                  {feedback && <span className="timer-note">{feedback.correct ? "✓ 命中" : "✗ 落空"}</span>}
+                </div>
+              </div>
+            )}
+
+            {/* 敌人 / 奖励 显示区(第一视角,支持多敌人同屏) */}
             <div className="stage-center">
               {nodeType === "reward" ? (
                 <div className="reward-stage">
@@ -592,15 +781,48 @@ export default function RoguelikePage() {
                   <p className="reward-slide mt-2 text-base font-bold text-amber-200">奖励节点</p>
                 </div>
               ) : (
-                <div className="stage-sprite-wrap">
-                  {nodeType === "boss" ? (
-                    <img src={bossImg(run.layer)} className={`stage-sprite stage-sprite-boss ${enemyAttackKey ? "enemy-attack" : ""}`} alt="Boss" />
-                  ) : (
-                    <img src={enemyImg(run.layer)} className={`stage-sprite stage-sprite-enemy ${enemyAttackKey ? "enemy-attack" : ""}`} alt="敌人" />
-                  )}
+                <div className={`enemy-row ${alive.length === 1 ? "solo" : ""}`}>
+                  {alive.map((e) => {
+                    const w = windupOf(e, combat, remainMs);
+                    const floats = enemyFloats[e.eid] || [];
+                    return (
+                      <div key={e.eid} className={`enemy-card ${e.kind === "boss" ? "is-boss" : ""}`}>
+                        <div className="enemy-sprite-wrap">
+                          <img
+                            src={enemySpriteFor(e)}
+                            className={`enemy-sprite ${e.kind === "boss" ? "enemy-sprite-boss" : "enemy-sprite-normal"} ${attackingIds[e.eid] ? "enemy-attack" : ""} ${hitFlashIds[e.eid] ? "enemy-hit" : ""}`}
+                            alt={e.name}
+                          />
+                          {/* 攻击蓄力预警环(本地推算平滑) */}
+                          <svg className={`windup-ring ${w >= 0.85 ? "danger" : ""}`} viewBox="0 0 36 36" aria-hidden>
+                            <circle className="wr-bg" cx="18" cy="18" r="15.5" />
+                            <circle
+                              className="wr-fg"
+                              cx="18" cy="18" r="15.5"
+                              style={{ strokeDasharray: 2 * Math.PI * 15.5, strokeDashoffset: 2 * Math.PI * 15.5 * (1 - w) }}
+                            />
+                          </svg>
+                          {/* 敌人飘字(命中/格挡/受伤) */}
+                          {floats.map((f) => (
+                            <span key={f.key} className={`enemy-float ${f.kind}`}>{f.text}</span>
+                          ))}
+                        </div>
+                        <div className="enemy-meta">
+                          {e.kind !== "boss" && <div className="enemy-name">{e.name}</div>}
+                          <div className="enemy-hp">
+                            <div className="enemy-hp-fill" style={{ width: `${Math.max(0, Math.min(100, (e.hp / e.maxHp) * 100))}%` }} />
+                            <span className="enemy-hp-num">{e.hp}/{e.maxHp}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
+
+            {/* 超时红屏闪烁 */}
+            {timeoutFlash && !fxReduced && <div className="timeout-flash" aria-hidden />}
 
             {/* 玩家第一视角手持武器 */}
             {nodeType !== "reward" && (

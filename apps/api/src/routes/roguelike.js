@@ -10,6 +10,20 @@ import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth } from "../middleware/auth.js";
 import { isAnswerCorrect } from "../lib/grading.js";
+import {
+  ANSWER_GRACE_MS,
+  aliveEnemies,
+  beginQuestionWindow,
+  combatView,
+  damageEnemy,
+  damagePlayer,
+  isTimedOut,
+  playerAtk,
+  simulate,
+  speedTier,
+  syncCombat,
+  timeoutStrike,
+} from "../lib/rogue-combat.js";
 
 const router = Router();
 
@@ -84,6 +98,7 @@ function defaultItems() {
     equipped: {}, skills: [], pendingSkills: null, pendingCount: 0,
     autoCorrect: false, pendingScoreBonus: 0, shield: false, shieldCount: 0, berserk: false,
     test: false,
+    combat: null, // V2.0 即时制战斗状态（敌人 / 节拍时钟 / 本题窗口）
   };
 }
 function parseItems(raw) {
@@ -109,6 +124,7 @@ function parseItems(raw) {
       shieldCount: typeof v.shieldCount === "number" ? v.shieldCount : 0,
       berserk: !!v.berserk,
       test: !!v.test,
+      combat: v.combat && typeof v.combat === "object" ? v.combat : null,
     };
   } catch {
     return defaultItems();
@@ -120,6 +136,7 @@ function extraState(items) {
     mana: items.mana, maxMana: items.maxMana, level: items.level,
     equipped: items.equipped, skills: items.skills, pendingSkills: items.pendingSkills,
     inventory: items.inventory, autoCorrect: items.autoCorrect,
+    combat: combatView(items),
   };
 }
 
@@ -315,7 +332,11 @@ router.post(
       if (node.nodeType !== "reward" && !node.question) {
         return fail(res, 400, "当前进行中的冒险暂无可用题目,请结算或更换学科");
       }
-      return ok(res, { run: existing, ...extraState(parseItems(existing.items)), ...node }, "继续上次冒险");
+      // 续局:重开本题窗口(不让玩家一回来就因为离线时长被判超时/暴毙)
+      const exItems = parseItems(existing.items);
+      syncCombat(exItems, existing.layer, node.nodeType, node.question, { test: exItems.test });
+      await prisma.roguelikeRun.update({ where: { id: existing.id }, data: { items: JSON.stringify(exItems) } });
+      return ok(res, { run: existing, ...extraState(exItems), ...node }, "继续上次冒险");
     }
 
     const runItems = defaultItems();
@@ -336,7 +357,10 @@ router.post(
       const mapped = subject === "数学" ? "数学/TMUA" : subject === "ESAT" ? "ESAT/数学/物理" : subject;
       return fail(res, 400, `该学科/难度暂无可用题目,请选择其他学科(当前匹配题库:${mapped})`);
     }
-    ok(res, { run, ...extraState(parseItems(run.items)), ...node }, "冒险开始");
+    // 生成第一波敌人并开启第一题的计时窗口
+    syncCombat(runItems, run.layer, node.nodeType, node.question, { test });
+    await prisma.roguelikeRun.update({ where: { id: run.id }, data: { items: JSON.stringify(runItems) } });
+    ok(res, { run, ...extraState(runItems), ...node }, "冒险开始");
   })
 );
 
@@ -362,6 +386,21 @@ router.post(
       if (!question || question.status !== "PUBLISHED") return fail(res, 404, "题目不存在");
     }
 
+    const now = Date.now();
+    let { layer, hp, combo, maxCombo, score, coins, status } = run;
+    const events = [];
+
+    // 先把心跳空档期补算掉:防止玩家靠「不发心跳」白嫖时间
+    {
+      const sim = simulate(items, hp, now);
+      hp = sim.hp;
+      events.push(...sim.events);
+    }
+
+    const c = items.combat;
+    const elapsed = c ? now - c.qStartMs : 0;
+    const overtime = !!(c && elapsed > c.qLimitMs + ANSWER_GRACE_MS);
+
     let correct = isAnswerCorrect(question, selected);
     // 攻击道具/技能：下次作答必中
     let forcedByItem = false;
@@ -370,68 +409,89 @@ router.post(
       forcedByItem = true;
       items.autoCorrect = false;
     }
+    // 超时提交一律判落空(即时制的核心约束:慢就是错)
+    if (overtime) {
+      correct = false;
+      forcedByItem = false;
+    }
 
     if (!items.answered.includes(questionId)) items.answered.push(questionId);
 
-    let { layer, hp, combo, maxCombo, score, coins, status } = run;
     const drops = [];
     let reward = { message: "", coins: 0, heal: 0, items: [] };
     let shieldUsed = false;
     let leveled = false;
-    let resDamage = 0; // 本题受到的伤害(答错时)
-    let resHeal = 0;   // 本题回复的生命(答对时)
+    let resHeal = 0;      // 本次回复的生命
+    let attack = null;    // 玩家这一击的结算
+    let counter = null;   // 敌人的反击
+    const kills = [];
+    let cleared = false;
 
-    if (correct) {
+    if (hp <= 0) {
+      // 心跳补算阶段就被打死了
+      status = "DEAD";
+    } else if (correct) {
       combo += 1;
       maxCombo = Math.max(maxCombo, combo);
-      let gain = 10 + combo * 2 + weaponBonus(items);
+      const ratio = c && c.qLimitMs ? Math.min(1, elapsed / c.qLimitMs) : 1;
+      const tier = speedTier(ratio);
+      const base = playerAtk(items, items.level);
+      let raw = base * tier.mult * (0.9 + Math.random() * 0.2);
+      if (items.berserk) raw *= 2;
+
+      const target = c ? aliveEnemies(c)[0] : null;
+      if (target) {
+        const d = damageEnemy(target, raw);
+        attack = {
+          dmg: d.dealt, killed: d.killed, eid: target.eid, name: target.name,
+          speed: tier.label, speedText: tier.text, mult: tier.mult,
+        };
+        if (d.killed) {
+          kills.push({ eid: target.eid, name: target.name, kind: target.kind });
+          items.xp += target.kind === "boss" ? 5 : 2;
+          coins += target.kind === "boss" ? 5 : 1;
+          const dd = rollDrop(items, target.kind === "boss");
+          if (dd.length) drops.push(...dd);
+        }
+      }
+
+      // 得分同样吃速度倍率:又快又准才是高分
+      let gain = Math.round((10 + combo * 2 + weaponBonus(items)) * tier.mult);
       if (items.berserk) gain *= 2;
       if (items.pendingScoreBonus) gain += items.pendingScoreBonus;
       score += gain;
       items.pendingScoreBonus = 0;
       items.berserk = false;
-      // 蓝条回复
       items.mana = Math.min(items.maxMana, items.mana + 1 + trinketRegen(items));
-      // 经验与升级
-      items.xp += nodeType === "boss" ? 3 : 1;
+      items.xp += 1;
       leveled = checkLevelUp(items);
 
       reward = comboReward(combo);
-      coins += 1 + reward.coins;
+      coins += reward.coins;
       if (reward.heal > 0) hp = Math.min(run.maxHp, hp + reward.heal);
-      // 答对随机回复生命
-      const heal = randInt(5, 10);
+      const heal = randInt(3, 7);
       resHeal = heal;
       hp = Math.min(run.maxHp, hp + heal);
       reward.items.forEach((ref) => items.inventory.push(mkItemEntry(ref)));
 
-      if (nodeType === "boss") {
+      cleared = c ? aliveEnemies(c).length === 0 : true;
+      if (cleared && nodeType === "boss") {
         coins += 5;
         items.inventory.push(mkItemEntry("i_heal"));
         reward.message = reward.message ? `${reward.message} · 击败 Boss!金币+5、药水×1` : "击败 Boss!金币+5、药水×1";
       }
-      // 消灭怪物掉落装备/物品
-      const d = rollDrop(items, nodeType === "boss");
-      if (d.length) drops.push(...d);
-
-      layer += 1;
     } else {
-      // 护盾抵挡
-      if (items.shieldCount > 0) {
-        items.shieldCount -= 1;
-        if (items.shieldCount <= 0) items.shield = false;
-        shieldUsed = true;
-      } else {
-        const dmg = randInt(12, 22);
-        hp -= dmg;
-        resDamage = dmg;
-      }
+      // 落空:敌人立刻反击一次(超时则是 1.5 倍重击)
       combo = 0;
       items.berserk = false;
       items.pendingScoreBonus = 0;
-      if (hp <= 0) {
-        hp = 0;
-        status = "DEAD";
+      const target = c ? aliveEnemies(c)[0] : null;
+      if (target) {
+        const raw = target.atk * (1 + Math.random() * 0.2) * (overtime ? 1.5 : 1);
+        const r = damagePlayer(items, hp, raw);
+        hp = r.hp;
+        shieldUsed = r.blocked;
+        counter = { dmg: r.dealt, blocked: r.blocked, name: target.name, timeout: overtime };
       }
       // 测试模式(固定题 TEST_Q 不存在于 question 表)跳过错题本写入,避免外键报错
       if (!items.test) {
@@ -443,15 +503,31 @@ router.post(
       }
     }
 
+    if (hp <= 0) {
+      hp = 0;
+      status = "DEAD";
+    }
     let runOver = status !== "ACTIVE";
     let nextNodeInfo = { nodeType: null, question: null };
-    if (!runOver && layer > MAX_LAYER) {
-      status = "WON";
-      runOver = true;
-    }
+
     if (!runOver) {
-      const updatedRun = { ...run, layer, hp, combo, maxCombo, score, coins, status };
-      nextNodeInfo = await nextNode(updatedRun);
+      if (cleared) {
+        // 清空本层敌人才推进层数
+        layer += 1;
+        if (layer > MAX_LAYER) {
+          status = "WON";
+          runOver = true;
+        } else {
+          const updatedRun = { ...run, layer, hp, combo, maxCombo, score, coins, status, items: JSON.stringify(items) };
+          nextNodeInfo = await nextNode(updatedRun);
+          syncCombat(items, layer, nextNodeInfo.nodeType, nextNodeInfo.question, { test: items.test });
+        }
+      } else {
+        // 本层还有敌人:同一批敌人继续,换下一题
+        const q = await pickQuestion({ ...run, layer, items: JSON.stringify(items) }, { boss: nodeType === "boss" });
+        nextNodeInfo = { nodeType, question: q };
+        if (q && items.combat) beginQuestionWindow(items.combat, q, { test: items.test });
+      }
     }
 
     await prisma.roguelikeRun.update({
@@ -463,20 +539,84 @@ router.post(
     });
 
     ok(res, {
-      correct: correct || forcedByItem,
+      correct,
       forcedByItem,
+      overtime,
       combo, maxCombo, hp, maxHp: run.maxHp, layer, score, coins,
       reward: reward.message || null,
       drops: drops.length ? drops : null,
       shieldUsed,
-      damage: resDamage,
+      attack, counter, kills, cleared, events,
+      damage: counter ? counter.dmg : 0,
       heal: resHeal,
       leveled,
       runOver, status: status,
       nodeType: nextNodeInfo.nodeType,
       nextQuestion: nextNodeInfo.question,
       ...extraState(items),
-    }, correct ? "回答正确" : shieldUsed ? "回答错误(护盾抵挡)" : "回答错误");
+    }, correct
+      ? `回答正确 · ${attack?.speedText || "出手"}`
+      : overtime ? "超时!敌人重击" : shieldUsed ? "回答错误(护盾抵挡)" : "回答错误");
+  })
+);
+
+// POST /api/roguelike/:runId/tick — 即时制心跳
+// 前端每秒调用一次；服务端按真实流逝时间（钳制 3 秒）推进战斗节拍，
+// 结算敌人自动攻击与超时判定。所有伤害都在这里产生，客户端只负责播放。
+router.post(
+  "/:runId/tick",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const run = await prisma.roguelikeRun.findUnique({ where: { id: req.params.runId } });
+    if (!run || run.studentId !== req.user.id) return fail(res, 404, "冒险不存在");
+    if (run.status !== "ACTIVE") return fail(res, 400, "冒险已结束");
+
+    const items = parseItems(run.items);
+    const now = Date.now();
+    let { layer, hp, combo, score, coins, status } = run;
+    const nodeType = items.map[layer - 1] || "normal";
+    const events = [];
+    let timedOut = false;
+    let nextNodeInfo = { nodeType: null, question: null };
+
+    if (items.combat) {
+      const sim = simulate(items, hp, now);
+      hp = sim.hp;
+      events.push(...sim.events);
+
+      if (hp > 0 && isTimedOut(items.combat, now)) {
+        timedOut = true;
+        combo = 0;
+        const t = timeoutStrike(items, hp);
+        hp = t.hp;
+        events.push({ type: "timeout", dmg: t.dmg, blocked: t.blocked, name: t.name });
+        if (hp > 0) {
+          const q = await pickQuestion({ ...run, layer, items: JSON.stringify(items) }, { boss: nodeType === "boss" });
+          nextNodeInfo = { nodeType, question: q };
+          if (q) beginQuestionWindow(items.combat, q, { test: items.test });
+        }
+      }
+    }
+
+    let runOver = false;
+    if (hp <= 0) {
+      hp = 0;
+      status = "DEAD";
+      runOver = true;
+    }
+
+    await prisma.roguelikeRun.update({
+      where: { id: run.id },
+      data: { hp, combo, status, items: JSON.stringify(items) },
+    });
+
+    ok(res, {
+      hp, maxHp: run.maxHp, layer, combo, score, coins,
+      events, timedOut, runOver, status,
+      nodeType: nextNodeInfo.nodeType,
+      nextQuestion: nextNodeInfo.question,
+      ...extraState(items),
+    });
   })
 );
 
@@ -503,8 +643,10 @@ router.post(
     let nextNodeInfo = { nodeType: null, question: null };
     if (layer > MAX_LAYER) { status = "WON"; runOver = true; }
     else {
-      const updatedRun = { ...run, layer, hp, score, coins, status };
+      const updatedRun = { ...run, layer, hp, score, coins, status, items: JSON.stringify(items) };
       nextNodeInfo = await nextNode(updatedRun);
+      // 离开奖励节点 → 生成下一层敌人并开启计时窗口
+      syncCombat(items, layer, nextNodeInfo.nodeType, nextNodeInfo.question, { test: items.test });
     }
 
     await prisma.roguelikeRun.update({
@@ -545,6 +687,13 @@ router.post(
     let payload = {};
     let runOver = false;
     let nextNodeInfo = { nodeType: null, question: null };
+    // 即时制:用道具也要走时间,先补算这段时间里敌人的攻击
+    const tickEvents = [];
+    {
+      const sim = simulate(items, hp, Date.now());
+      hp = sim.hp;
+      tickEvents.push(...sim.events);
+    }
 
     if (meta.type === "heal") {
       const healAmt = meta.heal >= 999 ? run.maxHp : rollHeal(meta.heal || 1);
@@ -574,12 +723,14 @@ router.post(
       payload = { message: "提示已使用:排除 2 个错误选项", hintExclude: wrongIdx.sort(() => Math.random() - 0.5).slice(0, 2) };
     }
 
+    if (hp <= 0) { hp = 0; status = "DEAD"; runOver = true; }
+
     await prisma.roguelikeRun.update({
       where: { id: run.id },
       data: { layer, hp, combo, score, coins, status, items: JSON.stringify(items) },
     });
 
-    ok(res, { ...payload, hp, layer, combo, score, coins, runOver, status: status, nodeType: nextNodeInfo.nodeType, nextQuestion: nextNodeInfo.question, ...extraState(items) }, "物品已使用");
+    ok(res, { ...payload, hp, layer, combo, score, coins, events: tickEvents, runOver, status: status, nodeType: nextNodeInfo.nodeType, nextQuestion: nextNodeInfo.question, ...extraState(items) }, "物品已使用");
   })
 );
 
@@ -641,6 +792,13 @@ router.post(
     let { layer, hp, combo, score, coins, status } = run;
     let payload = {};
     let hintExclude = null;
+    // 即时制:放技能同样消耗真实时间
+    const tickEvents = [];
+    {
+      const sim = simulate(items, hp, Date.now());
+      hp = sim.hp;
+      tickEvents.push(...sim.events);
+    }
 
     if (meta.type === "attack") {
       items.autoCorrect = true;
@@ -676,12 +834,15 @@ router.post(
       }
     }
 
+    let runOver = false;
+    if (hp <= 0) { hp = 0; status = "DEAD"; runOver = true; }
+
     await prisma.roguelikeRun.update({
       where: { id: run.id },
       data: { layer, hp, combo, score, coins, status, items: JSON.stringify(items) },
     });
 
-    ok(res, { ...payload, hp, layer, combo, score, coins, hintExclude, ...extraState(items) }, "技能已发动");
+    ok(res, { ...payload, hp, layer, combo, score, coins, hintExclude, events: tickEvents, runOver, status, ...extraState(items) }, "技能已发动");
   })
 );
 
