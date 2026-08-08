@@ -130,8 +130,8 @@ export const PASSIVES = [
   },
   {
     id: "p_extra_armor", tree: "defense", rarity: "common", stackable: true,
-    name: "额外护甲", icon: "🪖", desc: "获得 25 点护甲，减免 incoming 伤害",
-    playerArmor: 25,
+    name: "额外护甲", icon: "🪖", desc: "获得 6 点护甲，减免固定伤害（叠加上限 12）",
+    playerArmor: 6,
   },
   {
     id: "p_dodge", tree: "defense", rarity: "common", stackable: true,
@@ -307,6 +307,7 @@ export function computeStats(passives) {
   acc.critChance = Math.min(0.75, acc.critChance);
   acc.cdMult = Math.max(0.2, acc.cdMult);
   acc.dodge = Math.min(0.5, acc.dodge);
+  acc.playerArmor = Math.min(12, acc.playerArmor); // 固定护甲封顶：避免把后期敌人伤害全减到 1 而成「必赢」被动
   acc.dmgReduce = Math.min(0.75, acc.dmgReduce);
   acc.reflect = Math.min(0.5, acc.reflect);
   return acc;
