@@ -72,6 +72,14 @@ async function pickQuestion(run, opts = {}) {
   const subs = run.subject === "数学" ? ["数学", "TMUA"] : run.subject === "ESAT" ? ["ESAT", "数学", "物理"] : [run.subject];
   const subjectWhere = subs.length === 1 ? subs[0] : { in: subs };
 
+  // 难度回退:优先 exact,然后 ±1、±2…直到全难度,避免某难度无题时卡死
+  async function findPool(diffWhere) {
+    const all = await prisma.question.findMany({ where: { status: "PUBLISHED", subject: subjectWhere, difficulty: diffWhere }, select: { id: true } });
+    if (!all.length) return [];
+    const fresh = all.filter((q) => !exclude.has(q.id));
+    return fresh.length ? fresh : all;
+  }
+
   let pool = [];
   if (opts.boss) {
     // Boss:优先错题本(薄弱点),随机挑 10 道候选
@@ -85,15 +93,22 @@ async function pickQuestion(run, opts = {}) {
       pool = qs.length ? qs : [];
     }
     if (!pool.length) {
-      // 无薄弱点 → 随机难题
-      const all = await prisma.question.findMany({ where: { status: "PUBLISHED", subject: subjectWhere, difficulty: { gte: Math.min(run.difficulty + 1, 5) } }, select: { id: true } });
-      pool = all.filter((q) => !exclude.has(q.id));
-      if (!pool.length) pool = all;
+      // 无薄弱点 → 随机难题(允许难度回退)
+      for (let d = Math.min(run.difficulty + 1, 5); d >= 1; d--) {
+        pool = await findPool(d);
+        if (pool.length) break;
+      }
+      if (!pool.length) pool = await findPool(undefined);
     }
   } else {
-    const all = await prisma.question.findMany({ where: { status: "PUBLISHED", subject: subjectWhere, difficulty: run.difficulty }, select: { id: true } });
-    pool = all.filter((q) => !exclude.has(q.id));
-    if (!pool.length) pool = all;
+    pool = await findPool(run.difficulty);
+    if (!pool.length) {
+      for (let delta = 1; delta <= 4; delta++) {
+        if (run.difficulty + delta <= 5) { pool = await findPool(run.difficulty + delta); if (pool.length) break; }
+        if (run.difficulty - delta >= 1) { pool = await findPool(run.difficulty - delta); if (pool.length) break; }
+      }
+    }
+    if (!pool.length) pool = await findPool(undefined);
   }
   if (!pool.length) return null;
   const picked = pool[Math.floor(Math.random() * pool.length)];
@@ -167,6 +182,9 @@ router.post(
     });
     if (existing) {
       const node = await nextNode(existing);
+      if (node.nodeType !== "reward" && !node.question) {
+        return fail(res, 400, "当前进行中的冒险暂无可用题目,请结算或更换学科");
+      }
       return ok(res, { run: existing, ...node }, "继续上次冒险");
     }
 
@@ -179,6 +197,11 @@ router.post(
       },
     });
     const node = await nextNode(run);
+    if (node.nodeType !== "reward" && !node.question) {
+      await prisma.roguelikeRun.delete({ where: { id: run.id } });
+      const mapped = subject === "数学" ? "数学/TMUA" : subject === "ESAT" ? "ESAT/数学/物理" : subject;
+      return fail(res, 400, `该学科/难度暂无可用题目,请选择其他学科(当前匹配题库:${mapped})`);
+    }
     ok(res, { run, ...node }, "冒险开始");
   })
 );

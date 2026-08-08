@@ -289,6 +289,40 @@ export default function RoguelikePage() {
     api.post(`/roguelike/${run.id}/quit`).then(() => setPhase("result")).catch((e) => setError(e.message));
   }
 
+  function resetToSetup() {
+    setPhase("setup");
+    setRun(null);
+    setQuestion(null);
+    setFeedback(null);
+    setSelected("");
+    setToast(null);
+    setHintExclude([]);
+    setInventory([]);
+    setNodeType(null);
+    setError("");
+    setBossAppearKey(0);
+    setBossDefeatKey(0);
+    setRewardClaimKey(0);
+    setVictoryOn(false);
+    setDeathOn(false);
+  }
+
+  async function abandonActiveRun() {
+    try {
+      setLoading(true);
+      const d = await api.get<{ run: Run | null }>("/roguelike/active");
+      if (d.run?.id) {
+        await api.post(`/roguelike/${d.run.id}/quit`);
+      }
+      setHasActive(false);
+      setError("");
+    } catch (e: any) {
+      setError(e?.message || "放弃失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const maxHp = run ? run.maxHp : 5;
 
   return (
@@ -308,9 +342,15 @@ export default function RoguelikePage() {
         <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-xl font-bold">冒险模式</h1>
           <p className="mt-1 text-sm text-slate-500">连续答对推进层数,答错扣生命;每 5 层有 Boss,每 3 层有奖励!</p>
-          {hasActive && (
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">你有进行中的冒险,点「开始冒险」将继续上次进度</p>
-          )}
+            {hasActive && (
+              <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                <p>你有进行中的冒险,点「开始冒险」将继续上次进度</p>
+                <button onClick={abandonActiveRun} disabled={loading}
+                  className="mt-2 text-xs font-medium text-amber-800 underline decoration-amber-400 underline-offset-2 hover:text-amber-900 disabled:opacity-50">
+                  放弃当前冒险
+                </button>
+              </div>
+            )}
           <div className="mt-6 space-y-4">
             <div>
               <label className="mb-1 block text-sm text-slate-600">学科</label>
@@ -458,7 +498,15 @@ export default function RoguelikePage() {
               </button>
             </div>
           ) : (
-            <p className="rounded-2xl border border-white/10 bg-white p-8 text-center text-sm text-slate-400 shadow">加载题目中...</p>
+            <div className="rounded-2xl border border-white/10 bg-white p-8 text-center shadow">
+              <p className="text-sm text-slate-500">该学科/难度暂无可用题目,请更换学科或结算后重试。</p>
+              <div className="mt-4 flex gap-3">
+                <button onClick={resetToSetup} className="h-10 flex-1 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50">返回设置</button>
+                {run && (
+                  <button onClick={() => { quit(); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">结算本次冒险</button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -488,7 +536,7 @@ export default function RoguelikePage() {
           </div>
           <div className="mt-6 flex gap-3">
             <button onClick={() => router.push("/app")} className="h-10 flex-1 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50">返回</button>
-            <button onClick={() => { setPhase("setup"); setRun(null); setQuestion(null); setFeedback(null); setSelected(""); setToast(null); setHintExclude([]); setInventory([]); setNodeType(null); setBossAppearKey(0); setBossDefeatKey(0); setRewardClaimKey(0); setVictoryOn(false); setDeathOn(false); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">再来一次</button>
+            <button onClick={resetToSetup} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">再来一次</button>
           </div>
         </div>
         </>
