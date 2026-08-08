@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
 | 17 | **选项首字母被吞**——`Covalent`→`ovalent`、`It has`→`t has`、`gains`→`ains`;扫库 72 个选项中招,本质是导入时清洗函数 | `cleanOptionPrefix` 正则 `[\(\[【（]?[A-Ja-j][\.\s:、)）\]】」、\]】]*` 用 `*`(零或多个),允许**零个分隔符**,等价于"删开头的单个字母":任何 `[A-Ja-j]` 开头的选项(几乎所有选项)都被误删首字母 | `*` 改为 `+`(一个或多个),要求字母后**至少一个分隔符**(`.`/` `/`:`/`)`/`]`等)。`Covalent bonds` 中 `C` 后是 `o`(字母,非分隔符)→ 不匹配 → 不删 ✓;"A 1/25" 中 `A` 后是 ` `(分隔符)→ 删 `A ` ✓ | this |
 | 16 | 选项/题干出现红框 `mol~^{-1}`,KaTeX 报 **Double superscript**;`mol⁻¹`、`dm⁻³` 等单位大量报错;以及 `AgNO₃`/`C₃H₇OH` 化学式斜体、`is/are` 英文词斜体 | ① 数据清洗把 `^{-1}` 转成 **Unicode 上标 `⁻¹`**,但 latexify 把 Unicode 上标 `¹` **单字符**转回 `^{1}`,与 `⁻` 拼成 `⁻^{1}` → KaTeX 双上标;② `isMathToken` 把含 Unicode 上下标的 `mol⁻¹`/`AgNO₃` 误判数学(化学式字母变斜体);③ `is/are` 等含 `/` 英文组合被 `/`(OP_TOKEN)带进数学模式 | ① latexify **先合并连续 Unicode 上下标序列**(`⁻¹`→`^{-1}`、`cm³`→`cm^{3}`);② `isMathToken` 开头 `HAS_UNI_SUP_SUB` 命中→文本;`MIXED_LET/MIXED_NUM` 特征类移除 Unicode 上下标;③ `^[a-z]+(/[a-z]+)+$`(is/are、and/or)→文本;④ `^\circ`→`°`;⑤ `renderMathExpr` 渲染失败 **fallback 原文**;前后端两份 latexify 同步 | 6d74a86 76b5df6 a04bd9a d14d4f1 |
 | 15 | 题干/解析大量**英文单词莫名变斜体**(如 `radius.`、`Thus,`、`points.`、`-coordinate`) | `MIXED_LET` 把 `.` `,` 当"数学特征"→ 英文单词带句号/逗号("radius.")被判数学;`MIXED_NUM` 开头类含 ASCII `-`,把 "-coordinate" 整词判数学;KaTeX 数学模式默认斜体 | ① `MIXED_LET` 数学特征类去掉 `.` `,`;② `MIXED_NUM` 开头类去掉 ASCII `-`/`+`/`[`(负号由 OP_TOKEN 处理,不破坏 "(n"、"-5x" 等真数学) | bc8d7ec 2a9a283 |
@@ -56,6 +57,7 @@
 15. **含 Unicode 上下标的 token 一律判文本**(`HAS_UNI_SUP_SUB` 命中即 false),化学式/单位(`AgNO₃`、`mol⁻¹`、`cm³`)不得进数学模式。
 16. **纯小写英文用 `/` 连接的组合**(`is/are`、`and/or`、`either/or`)一律判文本,防止 `/`(OP_TOKEN)把英文词带进数学模式变斜体。
 17. **清洗正则里的量词要审查**:允许"零个"的量词(`*`、`?`)常导致误删(见 #17:`[A-Ja-j][分隔符]*` 变成"删任意单字母")。凡"必须要有 X 才删"的规则,分隔符量词用 `+`。
+18. **括号内的化学状态/罗马数字判文本**(见 #18):smartMath 把 `(` `)` 当 OP_TOKEN,容易把 `(aq)` `(II)` 这类带进数学模式。`isMathToken` 增加:`/^\(([a-z]{2,}|[IVX]+)\)$/i` → 文本。单字母 `(x)` 不命中,保留数学。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -112,6 +114,15 @@ Which of the following statements is/are correct?   (is/are 正文,不斜体)
 Covalent bonds are broken on melting.               (C 不得丢)
 It has strong intermolecular forces.                (I 不得丢)
 AgNO₃(aq) + KCl(aq) → AgCl(s) + KNO₃(aq)           (化学式全正文字体)
+```
+
+**#18 回归样本(化学式括号不得斜体):**
+
+```
+NaCl(aq) + AgNO₃(aq) → AgCl(s) + NaNO₃(aq)          (aq)/(s) 不得斜体
+copper(II) sulfate, Fe(III) chloride                (II)/(III) 罗马数字不得斜体
+Tin(IV) oxide, sodium chloride(IV)                   (IV) 不得斜体
+f(x) = x² + 1                                         (单字母 (x) 仍为数学)
 ```
 
 ## 四、运行验证
