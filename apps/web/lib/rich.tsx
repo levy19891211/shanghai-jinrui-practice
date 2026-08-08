@@ -7,7 +7,8 @@ import katex from "katex";
 // - $...$        行内公式(KaTeX)
 // 其余按文本展示。用于题干与选项。
 
-const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|\$\$([\s\S]+?)\$\$|\$([^\s$][^$]*)\$/g;
+// 行内公式允许 $ 后紧跟空白(如 "$ f(x) $",常见于模型/录入数据),只要内容非空且不成对 $ 就不算
+const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g;
 
 function renderMathExpr(expr: string, displayMode: boolean): string {
   try {
@@ -120,8 +121,8 @@ export function latexify(s: string): string {
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
-    // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母,避免误伤单词)
-    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
+    // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母或已有反斜杠,避免 \log 变成 \\log)
+    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
     // 简单分数:数字/π/θ/单变量的 A/B(如 3π/4、1/2、x/y、5650/79.5;分母至少 1 字符)
     // 此时 π/上标已转(\pi、^{3} 形式);单字母变量前后不能是字母(避免 \pi 的 i 被误当变量)
     .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
@@ -154,6 +155,8 @@ function isMixedMath(token: string): boolean {
 }
 
 export function isMathToken(token: string): boolean {
+  // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
+  if (/^\\[a-zA-Z]+/.test(token)) return true;
   // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
   if (PURE_WORD.test(token) && !FUNC_TOKEN.test(token)) return false;
   if (OP_TOKEN.test(token) || NUM_TOKEN.test(token) || FUNC_TOKEN.test(token)) return true;
