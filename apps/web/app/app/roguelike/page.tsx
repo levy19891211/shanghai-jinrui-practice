@@ -94,7 +94,9 @@ export default function RoguelikePage() {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected });
       setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed });
       if (d.reward) setToast(`🎁 ${d.reward}`);
-      setRun((r) => (r ? { ...r, hp: d.hp, layer: d.layer, combo: d.combo, maxCombo: d.maxCombo, score: d.score, coins: d.coins, status: d.status } : r));
+      setRun((r) =>
+        r ? { ...r, hp: d.hp ?? r.hp, layer: d.layer ?? r.layer, combo: d.combo ?? r.combo, maxCombo: d.maxCombo ?? r.maxCombo, score: d.score ?? r.score, coins: d.coins ?? r.coins, status: d.status ?? r.status } : r
+      );
       setHintExclude([]);
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
