@@ -23,6 +23,13 @@ function parseJsonIds(s) {
 }
 
 // 依据 subject + topic 字符串,从知识点库自动匹配知识点(名称相等或互相包含)。
+// 题目学科 → 可归类的知识点学科池(TMUA 是数学思维考试 → 数学;ESAT → 数学+物理)
+function knowledgeSubjectsFor(subject) {
+  if (subject === "TMUA") return ["数学"];
+  if (subject === "ESAT") return ["数学", "物理"];
+  return [subject];
+}
+
 // 匹配不到返回 []——题目留白,由老师后续归类。
 async function matchKnowledgePoints(subject, topicStr) {
   const names = String(topicStr || "")
@@ -30,7 +37,8 @@ async function matchKnowledgePoints(subject, topicStr) {
     .map((s) => s.trim())
     .filter(Boolean);
   if (!names.length) return [];
-  const kps = await prisma.knowledgePoint.findMany({ where: subject ? { subject } : {} });
+  const subs = knowledgeSubjectsFor(subject);
+  const kps = subs.length ? await prisma.knowledgePoint.findMany({ where: { subject: { in: subs } } }) : [];
   const hits = [];
   for (const n of names) {
     const hit = kps.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
@@ -162,7 +170,8 @@ async function importRows(req, rows) {
       .split(/[,、;；\s]+/)
       .map((s) => s.trim())
       .filter(Boolean);
-    const pool = kpBySubject.get(subject) || [];
+    // 题目学科映射到知识点学科池(TMUA→数学,ESAT→数学+物理),保证 TMUA 题也能自动归类
+    const pool = knowledgeSubjectsFor(subject).flatMap((s) => kpBySubject.get(s) || []);
     const hits = [];
     for (const n of names) {
       const hit = pool.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
