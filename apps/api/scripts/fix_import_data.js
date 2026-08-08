@@ -12,17 +12,29 @@ const dry = process.argv.includes("--dry");
 const SUBJECT_NORM = { Chemistry: "化学", Physics: "物理", Biology: "生物", Math: "数学", Maths: "数学", Mathematics: "数学" };
 const SUBJECT_POOL = { TMUA: ["数学"], ESAT: ["数学", "物理"], 数学: ["数学"], 物理: ["物理"], 化学: ["化学"], 生物: ["生物"] };
 
-// 纯单位/数字公式 → 普通文本:只允许 数字/点/空格/\mathrm{...}/\,/\ 
-const UNIT_RE = /\$((?:[\d.,\s]|\\mathrm\{[^}]*\}|\\,|\\ )+)\$/g;
+// 纯单位/数字公式 → 普通文本:只允许 数字/点/空格/字母/\mathrm{...}/上标/\,/\ 
+// 上标还原为 Unicode(⁻³ 等),使 mol dm⁻³ 这类单位用正文字体,避免 KaTeX 数学字体混排
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺", ".": "˙" };
+const toSup = (s) => String(s).split("").map((c) => SUP[c] || c).join("");
+const UNIT_RE = /\$((?:[\d.,\s]|\\mathrm\{[^}]*\}|\\text\{[^}]*\}|\\,|\\ |\^\{[^}]*\}|^[a-zA-Z])+)\$/g;
 function cleanUnits(s) {
-  return String(s || "").replace(UNIT_RE, (_all, inner) =>
-    inner
-      .replace(/\\mathrm\{([^}]*)\}/g, "$1")
-      .replace(/\\,/g, " ")
-      .replace(/\\ /g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  );
+  return String(s || "")
+    .replace(UNIT_RE, (_all, inner) =>
+      inner
+        .replace(/\^\{([^}]*)\}/g, (_a, n) => toSup(n))
+        .replace(/\^([a-zA-Z0-9])/g, (_a, c) => toSup(c))
+        .replace(/\\mathrm\{([^}]*)\}/g, "$1")
+        .replace(/\\text\{([^}]*)\}/g, "$1")
+        .replace(/\\,/g, " ")
+        .replace(/\\ /g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    // 裸文本里的单位上标(如 cm^3 → cm³),避免被当数学公式渲染成斜体
+    .replace(/(?<![a-zA-Z0-9\\}])cm\^(\d)/gi, (_a, n) => `cm${toSup(n)}`)
+    .replace(/(?<![a-zA-Z0-9\\}])dm\^(\d)/gi, (_a, n) => `dm${toSup(n)}`)
+    .replace(/(?<![a-zA-Z0-9\\}])m\^(\d)/gi, (_a, n) => `m${toSup(n)}`)
+    .replace(/(?<![a-zA-Z0-9\\}])s\^(\d)/gi, (_a, n) => `s${toSup(n)}`);
 }
 
 const kps = await prisma.knowledgePoint.findMany({ select: { id: true, subject: true, name: true } });
