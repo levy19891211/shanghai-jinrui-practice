@@ -330,6 +330,7 @@ function buildWhere(query, user) {
   if (query.topic) where.topic = { contains: query.topic };
   if (query.difficulty) where.difficulty = Number(query.difficulty);
   if (query.paper) where.paper = query.paper;
+  if (query.knowledgePointId) where.topicIds = { contains: String(query.knowledgePointId) };
   // 学生只能看到已发布题目;老师/管理员可指定 status
   if (user.role === "STUDENT" || !query.status) {
     where.status = "PUBLISHED";

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
+import { plainText } from "@/lib/rich";
+import type { Question } from "@/lib/types";
 
 interface KnowledgePoint {
   id: string;
@@ -19,6 +21,14 @@ const SUBJECT_COLOR: Record<string, string> = {
   化学: "bg-amber-50 text-amber-600",
   生物: "bg-rose-50 text-rose-600",
 };
+const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
+const STATUS_BADGE: Record<string, string> = {
+  DRAFT: "bg-slate-100 text-slate-500",
+  PENDING_REVIEW: "bg-blue-50 text-blue-600",
+  PUBLISHED: "bg-emerald-50 text-emerald-600",
+  REJECTED: "bg-red-50 text-red-600",
+  ARCHIVED: "bg-slate-100 text-slate-400",
+};
 
 export default function KnowledgePage() {
   const user = getUser();
@@ -31,6 +41,25 @@ export default function KnowledgePage() {
   // 行内编辑状态
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  // 查看知识点下题目
+  const [viewKp, setViewKp] = useState<KnowledgePoint | null>(null);
+  const [viewList, setViewList] = useState<Question[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  async function openView(kp: KnowledgePoint) {
+    setViewKp(kp);
+    setViewList([]);
+    setViewLoading(true);
+    setError("");
+    try {
+      const d = await api.get<{ list: Question[] }>(`/questions?knowledgePointId=${kp.id}&pageSize=50`);
+      setViewList(d.list || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "加载题目失败");
+    } finally {
+      setViewLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -167,9 +196,13 @@ export default function KnowledgePage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded px-2 py-0.5 text-xs ${kp.questionCount > 0 ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-400"}`}>
+                    <button
+                      onClick={() => openView(kp)}
+                      title={`查看「${kp.name}」下的题目`}
+                      className={`rounded px-2 py-0.5 text-xs transition ${kp.questionCount > 0 ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
+                    >
                       {kp.questionCount} 题
-                    </span>
+                    </button>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     {editingId === kp.id ? (
@@ -179,7 +212,8 @@ export default function KnowledgePage() {
                       </>
                     ) : (
                       <>
-                        <button onClick={() => { setEditingId(kp.id); setEditName(kp.name); }} className="font-medium text-indigo-600 hover:underline">编辑</button>
+                        <button onClick={() => openView(kp)} className="font-medium text-emerald-600 hover:underline">查看题目</button>
+                        <button onClick={() => { setEditingId(kp.id); setEditName(kp.name); }} className="ml-3 font-medium text-indigo-600 hover:underline">编辑</button>
                         <button onClick={() => remove(kp)} className="ml-3 text-red-500 hover:underline">删除</button>
                       </>
                     )}
@@ -192,6 +226,40 @@ export default function KnowledgePage() {
       )}
 
       <p className="text-xs text-slate-400">老师身份: {user?.name}</p>
+
+      {/* 查看知识点下的题目 */}
+      {viewKp && (
+        <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">
+                知识点「{viewKp.name}」下的题目
+                <span className="ml-2 text-sm font-normal text-slate-400">{viewList.length} 题</span>
+              </h2>
+              <button onClick={() => setViewKp(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            {viewLoading ? (
+              <p className="py-8 text-center text-sm text-slate-400">加载中...</p>
+            ) : viewList.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">该知识点下暂无题目</p>
+            ) : (
+              <div className="mt-4 max-h-[60vh] space-y-2 overflow-y-auto">
+                {viewList.map((q) => (
+                  <div key={q.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`rounded px-1.5 py-0.5 font-medium ${SUBJECT_COLOR[q.subject] || "bg-slate-100 text-slate-600"}`}>{q.subject}</span>
+                      <span className={`rounded px-1.5 py-0.5 ${STATUS_BADGE[q.status] || "bg-slate-100 text-slate-500"}`}>{STATUS_LABEL[q.status] || q.status}</span>
+                      <span className="text-slate-400">难度 {q.difficulty}</span>
+                      {q.paper && <span className="truncate text-slate-400">{q.paper}</span>}
+                    </div>
+                    <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{plainText(q.stem)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
