@@ -289,8 +289,10 @@ body {
   100% { transform: translateX(0); opacity: 1; }
 }
 
-/* 行内公式:KaTeX 默认 1.21em 会导致与正文大小不一,统一为与正文一致;
-   同时必须保持 inline + baseline,不能用 inline-block/overflow:auto 包裹,否则基线会被改到块底部,导致 x/公式与正文上下错位 */
+/* 行内公式:必须保持 inline + baseline + overflow:visible,不能用 inline-block 加 overflow:auto
+   等会改变基线的容器包裹,否则基线会落到块底部,导致 x/公式与正文上下错位(#21)。
+   KaTeX 默认 font-size:1.21em 是数学与正文的协调比例,不要对 .katex 强制 1em,
+   否则公式/字母/数字会比正文小,并波及题库、练习、错题本等所有使用 renderRich 的页面(#22)。 */
 .math-inline {
   display: inline;
   vertical-align: baseline;
@@ -299,13 +301,6 @@ body {
 .math-inline .katex {
   display: inline;
   vertical-align: baseline;
-}
-.math-inline .katex,
-.math-inline .katex-display {
-  font-size: 1em !important;
-}
-.math-inline .katex-display {
-  margin: 0.25em 0;
 }
 
 /* ===== 冒险模式 三段式布局(顶部舞台 / 中下 HUD / 底部答题) ===== */

@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.2.6 (2026-08-08) — 修复题库/练习等页面行内公式偏小
+- **现象**:题库、练习、错题本等页面中,大量题目的行内公式、字母、数字(如 `$x^2 - 5x + 6 = 0$`、`$3$`)比 surrounding text 小一截;同一句话中 `$3$` 与正文 `4` 大小不一,视觉上忽大忽小/对不齐。
+- **根因**:V2.2.5 修复 #21 基线对齐时,在 `apps/web/app/globals.css` 中给 `.math-inline .katex` 加了 `font-size: 1em !important`。KaTeX 数学字形本是按 1.21em 设计的,强制 1em 后公式视觉大小比正文小;且 `.math-inline` 是全局样式,所有走 `renderRich` 的页面(题库、练习、错题本、教师审核)均受影响。
+- **修复**:移除 `.math-inline .katex { font-size: 1em !important }`,恢复 KaTeX 默认 1.21em;保留 `.math-inline { display:inline; vertical-align:baseline; overflow:visible }` 与内部 `.katex` 的 `display:inline; vertical-align:baseline`,继续保证基线对齐(#21)。
+- **影响范围**:所有使用 `renderRich`/`smartMath` 的页面(冒险模式题干、题库、练习、错题本、教师审核弹窗)。
+- **验证**:Playwright 复现题库真实题干,修复前 katex/正文字号比例 1.0(公式偏小),修复后 1.21(KaTeX 标准比例,与正文视觉大小协调);基线 deltaTop≈0 保持对齐;`tsc --noEmit` 通过;`npm run verify:math` 全题库扫描通过;登记 `docs/MATH_RENDERING_BUGS.md` #22。
+
 ## V2.2.5 (2026-08-08) — 行内公式基线再次修复
 - **现象**：题干中单独的 `x` 变量和行内公式（如 `x - 3y + 1 = 0`、`3x² - 7xy = 5`）与 surrounding text 上下不齐，`x` 看起来像上标，公式整体偏高/偏低。
 - **根因**：V2.2.4 的裸数字规则只解决了一部分问题；真正的 CSS 问题是 `.math-inline` 被包成 `inline-block` 并加了 `overflow-x-auto`。当 `overflow` 不为 `visible` 时，inline-block 的基线会落到块底部，导致 KaTeX 行内数学与正文基线错位，表现为 `x` 和公式上浮/下沉。

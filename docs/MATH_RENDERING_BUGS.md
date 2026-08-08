@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 22 | **行内公式/字母/数字比正文小**:题库、练习、错题本中 `$x^2 - 5x + 6 = 0$`、`$3$` 等行内公式/数字比 surrounding text 小一截;同一句中 `$3$` 与正文 `4` 大小不一 | V2.2.5 修复 #21 对齐时,在 `globals.css` 给 `.math-inline .katex` 加了 `font-size: 1em !important`;KaTeX 字形本按 1.21em 设计,强制 1em 后视觉上比正文小,且该规则是全局样式,所有走 `renderRich` 的页面均中招 | `apps/web/app/globals.css`:移除 `.math-inline .katex { font-size: 1em !important }`,恢复 KaTeX 默认 1.21em;保留 `.math-inline { display:inline; vertical-align:baseline; overflow:visible }` 保证基线对齐 | this |
 | 21 | **行内数学 `x`/公式与正文上下不齐**:题干中 `x`、`x - 3y + 1 = 0`、`3x² - 7xy = 5` 等行内公式相对 surrounding text 明显上浮/下沉,单字母 `x` 看起来像上标 | `.math-inline` 外层被设为 `inline-block` 并加 `overflow-x:auto`;当 inline-block 的 `overflow` 不为 `visible` 时,其基线会落到块底部,导致 KaTeX 数学片段与正文基线错位 | `rich.tsx` 行内数学包裹层只保留 `className="math-inline"`,去掉 `inline-block`/`overflow-x-auto` 等工具类;`globals.css` 显式设置 `.math-inline { display:inline; vertical-align:baseline; overflow:visible; }`,内部 `.katex` 同样 `display:inline; vertical-align:baseline;` | this |
 | 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
 | 20 | **化学式裸下标显示 `X_n` 而非 `X₃`**:`HNO_3`、`CuNO_3`、`H_2O`、`NO_2` 等下标全部保留为 LaTeX `_n` 字面 | `cleanUnits` 只处理了**裸上标**(负幂次 `mol^{-1}`、`cm^3`)和 `$...$` 内的内容,**没有处理裸文本下标** `([A-Z][a-z]?)_(\d+)` 形式;视觉模型常输出 `HNO_3`/`CuNO_3` 等 | `cleanUnits` 新增:`.replace(/([A-Z][a-z]?)_(\d+)/g, (_, formula, n) => `${formula}${toSub(n)}`)`。`HNO_3`→`HNO₃`、`H_2O`→`H₂O`、`CuNO_3`→`CuNO₃`、`NO_2`→`NO₂` ✓。配合 #16 的 `HAS_UNI_SUP_SUB` 规则,清洗后判文本(正文字体)。**注意**:`x_n` 数学变量下标不误伤(`x` 不匹配 `[A-Z]`) | this |
@@ -64,6 +65,7 @@
 19. **句子末尾括号注释也容易整体被吞**(见 #19):`(Ignore ions produced by dissociation of water.)` 因末尾 `water.)` 含 `)` 被 `MIXED_LET` 判数学,整段渲染走样。`isMathToken` 增加:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` → 文本(英文开头 + 末尾 `)`)。
 20. **化学式裸下标要清洗**(见 #20):视觉模型输出 `HNO_3`/`CuNO_3`/`H_2O`/`NO_2`,前端渲染显示 `X_n` 字面。`cleanUnits` 增加:`/([A-Z][a-z]?)_(\d+)/g` → Unicode 下标(`HNO₃` 等);`x_n` 数学变量不误伤(`x` 不匹配 `[A-Z]`)。
 21. **行内 KaTeX 必须用 `display:inline` + `vertical-align:baseline` 包裹,不能用 `inline-block` 加 `overflow:auto` 等会改变基线的容器**(见 #21)。行内公式需要滚动时,优先改用 `$$...$$` 块级公式;若坚持行内滚动,也必须在 CSS 中避免破坏基线(如给 `.katex` 自身加 `overflow-x:auto` 而非外层 inline-block)。
+22. **禁止对 `.math-inline .katex` 强制 `font-size: 1em` 或更小**(见 #22):KaTeX 默认 `font-size: 1.21em` 是数学公式与 surrounding text 协调的正确比例;强行压成 1em 会让公式/字母/数字看起来比正文小。若需统一字号,应调整外层容器字号,而不是压扁数学公式,否则题库、练习、错题本等所有使用 `renderRich` 的页面都会看到公式偏小。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -145,6 +147,14 @@ Calculate the rate (in mol dm⁻³ s⁻¹) at t = 10s.        (英文短语 (in 
 HNO_3 + NaOH → NaNO_3 + H_2O          →  HNO₃ + NaOH → NaNO₃ + H₂O   (清洗为下标)
 Cu + 2HNO_3 → CuNO_3 + NO_2 + H_2O   →  Cu + 2HNO₃ → CuNO₃ + NO₂ + H₂O
 x_n + 1 = 0                              (数学变量下标不变,仍为数学)
+```
+
+**#22 回归样本(行内公式不得比 surrounding text 小,相邻数字大小需协调):**
+
+```
+方程 $x^{2} - 5x + 6 = 0 $ 的两个实数根之和是多少?                   (整段公式大小与正文协调)
+一个直角三角形的两条直角边分别为 $3 $ 和 4,其面积是多少?            ($3$ 与旁边 4 不得明显一小一大)
+Find the value of x where f(x) = 2x gives f(3) = 6.                  (smartMath 自动识别的数学片段大小与正文协调)
 ```
 
 ## 四、运行验证
