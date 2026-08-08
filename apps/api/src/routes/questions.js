@@ -179,8 +179,9 @@ router.post(
   })
 );
 
-// POST /api/questions/import-file — 上传文件批量导入(Excel/Word)
+// POST /api/questions/import-file — 上传文件批量导入(Excel/Word/PDF)
 // 接收 { filename, data }(data 为 base64,可带 data: 前缀),服务端解析后复用 importRows。
+// PDF 经 PyMuPDF 栅格化 + 视觉模型读取公式,需要配置 VISION_API_KEY。
 router.post(
   "/import-file",
   requireAuth,
@@ -202,6 +203,13 @@ router.post(
     try {
       rows = await parseImportFile(filename, buf);
     } catch (e) {
+      if (e.message === "VISION_NOT_CONFIGURED") {
+        return fail(
+          res,
+          400,
+          "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API"
+        );
+      }
       return fail(res, 400, "解析失败:" + e.message);
     }
     if (!rows.length) return fail(res, 400, "未从文件中解析出任何题目(请检查模板/表头)");

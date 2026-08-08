@@ -583,7 +583,7 @@ export default function TeacherPage() {
                   <input
                     ref={fileImportRef}
                     type="file"
-                    accept=".xlsx,.xls,.docx"
+                    accept=".xlsx,.xls,.docx,.pdf"
                     className="hidden"
                     onChange={doImportFile}
                   />
@@ -593,7 +593,7 @@ export default function TeacherPage() {
                     disabled={importUploading}
                     className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                   >
-                    {importUploading ? "解析中..." : "选择文件 (.xlsx / .xls / .docx)"}
+                    {importUploading ? "解析中..." : "选择文件 (.xlsx / .xls / .docx / .pdf)"}
                   </button>
                   {importFileName && !importUploading && (
                     <p className="mt-3 text-xs text-slate-500">已选:{importFileName}</p>
@@ -621,6 +621,8 @@ Answer: B
 
 解析内容(可选)。`}</pre>
                   <p>answer 写字母(A/B/C/D)或选项文本均可,系统会自动对齐。</p>
+                  <p className="mt-2 font-semibold text-slate-700">PDF 导入:</p>
+                  <p>系统会把 PDF 逐页渲染成图片,交给视觉模型读取渲染后的数学公式并自动转成题目(公式不需手敲 LaTeX)。PDF 导入需在服务器配置视觉模型(VISION_API_KEY 等),未配置时会提示。</p>
                 </div>
               </>
             )}

@@ -35,14 +35,13 @@ function mapAnswerToOptionText(answer, options) {
     : String(options).split(/[;；]/).map((s) => s.trim()).filter(Boolean);
   if (opts.length === 0) return answer;
   const a = String(answer).trim();
-  // 多选题:逗号/空格分隔的多个字母,如 "A, C"
-  if (/^[A-Ha-h]([ ,、][A-Ha-h])+$/.test(a)) {
-    const mapped = a
-      .split(/[ ,、]+/)
-      .map((t) => t.trim())
+  // 多选:按 逗号/空格/顿号 拆成多个 token,若全部是单字母 A-H 则映射
+  const tokens = a.split(/[ ,、]+/).filter(Boolean);
+  if (tokens.length >= 2 && tokens.every((t) => /^[A-Ha-h]$/.test(t))) {
+    const mapped = tokens
       .map((letter) => opts[letter.toUpperCase().charCodeAt(0) - 65])
       .filter(Boolean);
-    return mapped.join("; ");
+    if (mapped.length) return mapped.join("; ");
   }
   // 单选字母
   if (/^[A-Ha-h]$/.test(a)) {
@@ -53,7 +52,7 @@ function mapAnswerToOptionText(answer, options) {
 }
 
 // 统一收尾:拆分选项 + 答案字母映射 + 换行清洗 + 字段归一
-function finalizeRow(raw) {
+export function finalizeRow(raw) {
   const options = Array.isArray(raw.options)
     ? raw.options.map((o) => normalizeNewlines(String(o)))
     : String(raw.options || "")
@@ -242,5 +241,10 @@ export async function parseImportFile(filename, buffer) {
   const ext = String(filename || "").toLowerCase().split(".").pop();
   if (ext === "xlsx" || ext === "xls") return parseXlsx(buffer);
   if (ext === "docx") return await parseDocx(buffer);
-  throw new Error(`不支持的文件类型: .${ext || "?"} (仅支持 .xlsx/.xls/.docx)`);
+  if (ext === "pdf") {
+    // 视觉模型依赖:动态 import 避免在未配置时拖累其它导入路径的加载
+    const { parsePdf } = await import("./import-pdf.js");
+    return await parsePdf(filename, buffer);
+  }
+  throw new Error(`不支持的文件类型: .${ext || "?"} (支持 .xlsx/.xls/.docx/.pdf)`);
 }
