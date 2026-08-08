@@ -23,7 +23,15 @@ interface NodeResp {
   shieldUsed?: boolean;
   nextQuestion?: Q | null;
   hintExclude?: number[];
-  inventory?: string[];
+  inventory?: any[];
+  maxHp?: number;
+  mana?: number;
+  maxMana?: number;
+  level?: number;
+  equipped?: Record<string, any>;
+  skills?: string[];
+  pendingSkills?: any[] | null;
+  autoCorrect?: boolean;
   message?: string;
 }
 interface StartResp extends NodeResp {}
@@ -46,11 +54,58 @@ const BOSS_IMG: Record<number, string> = {
 };
 function bossImg(layer: number) { return BOSS_IMG[layer] || BOSS_IMG[5]; }
 function bossName(layer: number) { return BOSS_NAME[layer] || BOSS_NAME[5]; }
-function enemyImg(layer: number) {
-  if (layer <= 6) return "/images/rogue/enemy.png";
-  if (layer <= 13) return "/images/rogue/enemy2.png";
-  return "/images/rogue/enemy3.png";
+// 普通敌人:5 张较大精灵按层循环
+const ENEMY_IMG = [
+  "/images/rogue/enemy_a.png",
+  "/images/rogue/enemy_b.png",
+  "/images/rogue/enemy_c.png",
+  "/images/rogue/enemy_d.png",
+  "/images/rogue/enemy_e.png",
+];
+function enemyImg(layer: number) { return ENEMY_IMG[(layer - 1) % ENEMY_IMG.length]; }
+
+// 分区:按层切换背景色调与装饰素材(森林/海洋/山地/熔岩)
+type Zone = { key: string; cls: string; deco: string[] };
+const ZONES: Zone[] = [
+  { key: "forest", cls: "zone-forest", deco: ["/images/rogue/deco_forest_tree.png", "/images/rogue/deco_forest_flower.png"] },
+  { key: "ocean", cls: "zone-ocean", deco: ["/images/rogue/deco_ocean_fish.png", "/images/rogue/deco_ocean_crab.png"] },
+  { key: "mountain", cls: "zone-mountain", deco: ["/images/rogue/deco_mountain_pine.png", "/images/rogue/deco_mountain_rock.png"] },
+  { key: "volcano", cls: "zone-volcano", deco: ["/images/rogue/deco_volcano_spike.png", "/images/rogue/deco_volcano_trap.png"] },
+];
+function zoneOf(layer: number): Zone {
+  if (layer <= 5) return ZONES[0];
+  if (layer <= 10) return ZONES[1];
+  if (layer <= 15) return ZONES[2];
+  return ZONES[3];
 }
+// 玩家手持武器(随装备武器变化,默认剑)
+const WEAPON_IMG: Record<string, string> = {
+  w_wood: "/images/rogue/weapon_sword.png",
+  w_iron: "/images/rogue/weapon_sword.png",
+  w_flame: "/images/rogue/weapon_spear.png",
+  default: "/images/rogue/weapon_sword.png",
+  bow: "/images/rogue/weapon_bow.png",
+};
+function weaponImg(equipped: Record<string, any> | undefined): string {
+  const w = equipped?.weapon?.ref as string | undefined;
+  if (!w) return WEAPON_IMG.default;
+  if (w === "w_iron" || w === "w_wood") return WEAPON_IMG.w_iron;
+  if (w === "w_flame") return WEAPON_IMG.w_flame;
+  return WEAPON_IMG.default;
+}
+// 前端技能展示(与后端 SKILL_POOL 对应)
+const SKILL_META: Record<string, { name: string; icon: string; cost: number; type: string; tier: number; desc: string }> = {
+  s_fireball: { name: "火球术", icon: "🔥", cost: 3, type: "attack", tier: 1, desc: "下次作答必中" },
+  s_heal: { name: "治疗术", icon: "💚", cost: 4, type: "heal", tier: 1, desc: "回复 3 点生命" },
+  s_shield: { name: "守护", icon: "🛡", cost: 3, type: "defense", tier: 1, desc: "抵挡一次答错" },
+  s_focus: { name: "专注", icon: "💡", cost: 2, type: "utility", tier: 1, desc: "排除 2 个错误选项" },
+  s_strike: { name: "雷霆斩", icon: "⚡", cost: 5, type: "attack", tier: 2, desc: "必中并 +10 分" },
+  s_regen: { name: "生命涌动", icon: "🌿", cost: 5, type: "heal", tier: 2, desc: "回复 5 点生命" },
+  s_berserk: { name: "狂暴", icon: "😤", cost: 4, type: "utility", tier: 2, desc: "本次答对得分翻倍" },
+  s_meteor: { name: "陨石术", icon: "☄️", cost: 7, type: "attack", tier: 3, desc: "必中并 +20 分" },
+  s_aegis: { name: "圣盾", icon: "🪬", cost: 6, type: "defense", tier: 3, desc: "抵挡两次答错" },
+  s_phoenix: { name: "凤凰祝福", icon: "🦅", cost: 8, type: "heal", tier: 3, desc: "回复全部生命" },
+};
 
 export default function RoguelikePage() {
   const router = useRouter();
@@ -87,6 +142,15 @@ export default function RoguelikePage() {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("rogue_sfx_muted") === "1";
   });
+  // V1.6 战斗状态
+  const [equipped, setEquipped] = useState<Record<string, any>>({});
+  const [skills, setSkills] = useState<string[]>([]);
+  const [pendingSkills, setPendingSkills] = useState<any[] | null>(null);
+  const [mana, setMana] = useState(10);
+  const [maxMana, setMaxMana] = useState(10);
+  const [level, setLevel] = useState(1);
+  const [enemyAttackKey, setEnemyAttackKey] = useState(0);
+  const [autoArmed, setAutoArmed] = useState(false);
 
   useEffect(() => {
     setSfxMuted(sfxMuted);
@@ -147,23 +211,31 @@ export default function RoguelikePage() {
     return () => clearTimeout(t);
   }, [bossAppearKey, bossDefeatKey, rewardClaimKey]);
 
+  function applyCombat(res: any) {
+    if (res.equipped !== undefined) setEquipped(res.equipped || {});
+    if (res.skills !== undefined) setSkills(res.skills || []);
+    if (res.pendingSkills !== undefined) setPendingSkills(res.pendingSkills || null);
+    if (res.mana !== undefined) setMana(res.mana);
+    if (res.maxMana !== undefined) setMaxMana(res.maxMana);
+    if (res.level !== undefined) setLevel(res.level);
+    if (res.autoCorrect !== undefined) setAutoArmed(!!res.autoCorrect);
+  }
   function applyNode(res: {
     nodeType?: "normal" | "boss" | "reward" | null;
     question?: Q | null;
     run?: Run;
     hp?: number; layer?: number; score?: number; coins?: number; combo?: number; maxCombo?: number;
-    status?: string; drops?: string[] | null;
+    status?: string; drops?: any[] | null; inventory?: any[];
   }) {
     setNodeType(res.nodeType ?? null);
     setQuestion(res.question ?? null);
-    if (res.run) {
-      setRun(res.run);
-      setInventory((res.run as unknown as { inventory?: string[] }).inventory || []);
-    }
-    if (res.hp !== undefined && run) {
+    if (res.inventory !== undefined) setInventory(res.inventory || []);
+    if (res.run) setRun(res.run);
+    if (res.hp !== undefined) {
       setRun((r) => (r ? { ...r, hp: res.hp!, layer: res.layer!, score: res.score!, coins: res.coins!, combo: res.combo!, maxCombo: res.maxCombo!, status: res.status! } : r));
     }
-    if (res.drops) setToast(`🎁 掉落道具:${res.drops.join("、")}`);
+    applyCombat(res);
+    if (res.drops && res.drops.length) setToast(`🎁 击败怪物,掉落:${res.drops.map((d: any) => `${d.icon}${d.name}`).join("、")}`);
   }
 
   async function start() {
@@ -206,13 +278,14 @@ export default function RoguelikePage() {
       } else {
         if (d.shieldUsed) playSfx("shield");
         else playSfx("wrong");
-        if (!fxReduced) setShake(Date.now());
+        if (!fxReduced) { setShake(Date.now()); setEnemyAttackKey(Date.now()); }
         burstCenter("red");
       }
       if (d.runOver && d.status === "DEAD") playSfx("death");
       setRun((r) =>
         r ? { ...r, hp: d.hp ?? r.hp, layer: d.layer ?? r.layer, combo: d.combo ?? r.combo, maxCombo: d.maxCombo ?? r.maxCombo, score: d.score ?? r.score, coins: d.coins ?? r.coins, status: d.status ?? r.status } : r
       );
+      applyCombat(d);
       setHintExclude([]);
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
@@ -241,6 +314,7 @@ export default function RoguelikePage() {
       burstCenter("coins");
       setRewardClaimKey(Date.now());
       setRun((r) => (r ? { ...r, hp: d.hp!, layer: d.layer!, score: d.score!, coins: d.coins!, status: d.status! } : r));
+      applyCombat(d);
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
       } else {
@@ -253,31 +327,78 @@ export default function RoguelikePage() {
     }
   }
 
-  async function useItem(item: string) {
+  // 使用消耗品(物品):传 entry 对象
+  async function useItem(entry: any) {
     if (!run || !question) return;
-    if (item === "hint" && hintExclude.length) return; // 已提示过
+    if (entry.type === "utility" && hintExclude.length) return; // 已提示过
     setLoading(true);
     setError("");
     try {
-      const d = await api.post<NodeResp>(`/roguelike/${run.id}/use-item`, { item, questionId: question.id });
-      setInventory(d.inventory || inventory.filter((x) => x !== item));
+      const d = await api.post<NodeResp>(`/roguelike/${run.id}/use-item`, { uid: entry.uid, questionId: question.id });
+      setInventory(d.inventory || []);
       if (d.message) setToast(d.message);
-      playSfx(item === "hint" ? "click" : "pick");
+      playSfx("pick");
       if (d.hintExclude) setHintExclude(d.hintExclude);
-      if (item === "heal") setRun((r) => (r ? { ...r, hp: d.hp! } : r));
-      if (item === "skip") {
-        setHintExclude([]);
-        setFeedback(null);
-        setSelected("");
-        if (d.runOver) {
-          setRun((r) => (r ? { ...r, hp: d.hp!, layer: d.layer!, combo: d.combo!, score: d.score!, status: d.status! } : r));
-          setTimeout(() => setPhase("result"), 1200);
-        } else {
-          applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
-        }
-      }
+      if (entry.type === "heal") setRun((r) => (r ? { ...r, hp: d.hp! } : r));
+      applyCombat(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "使用失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 穿戴装备
+  async function equipItem(entry: any) {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const d = await api.post<NodeResp>(`/roguelike/${run.id}/equip`, { uid: entry.uid });
+      setInventory(d.inventory || []);
+      setRun((r) => (r ? { ...r, hp: d.hp ?? r.hp, maxHp: d.maxHp ?? r.maxHp } : r));
+      if (d.message) setToast(d.message);
+      playSfx("click");
+      applyCombat(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "穿戴失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 使用技能(耗蓝)
+  async function useSkill(skillId: string) {
+    if (!run || !question) return;
+    setLoading(true);
+    setError("");
+    try {
+      const d = await api.post<NodeResp>(`/roguelike/${run.id}/use-skill`, { skillId, questionId: question.id });
+      setInventory(d.inventory || []);
+      if (d.message) setToast(d.message);
+      if (d.hintExclude) setHintExclude(d.hintExclude);
+      setRun((r) => (r ? { ...r, hp: d.hp ?? r.hp } : r));
+      playSfx("boss");
+      burstCenter("gold");
+      applyCombat(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "技能失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 升级三选一
+  async function chooseSkill(skillId: string) {
+    if (!run) return;
+    setLoading(true);
+    try {
+      const d = await api.post<NodeResp>(`/roguelike/${run.id}/choose-skill`, { skillId });
+      applyCombat(d);
+      if (d.message) setToast(d.message);
+      playSfx("reward");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "选择失败");
     } finally {
       setLoading(false);
     }
@@ -397,7 +518,15 @@ export default function RoguelikePage() {
       {phase === "playing" && run && (
         <div className={`roguelike-bg mx-auto max-w-2xl ${fxReduced ? "fx-reduced" : ""}`}>
           {/* ===== 顶部舞台:环境背景 + 第一视角敌人 ===== */}
-          <div key={shake} className={`rogue-stage ${shake ? "shake" : ""} ${nodeType === "boss" ? "stage-boss" : ""} ${run.hp <= 2 ? "stage-danger" : ""}`}>
+          {(() => {
+            const zone = zoneOf(run.layer);
+            const wpn = weaponImg(equipped);
+            return (
+          <div key={shake} className={`rogue-stage ${zone.cls} ${shake ? "shake" : ""} ${nodeType === "boss" ? "stage-boss" : ""} ${run.hp <= 2 ? "stage-danger" : ""}`}>
+            {/* 环境装饰素材 */}
+            {zone.deco.map((src, i) => (
+              <img key={i} src={src} className={`stage-deco stage-deco-${i === 0 ? "left" : "right"}`} alt="" />
+            ))}
             {/* 顶部浮层:层数 / 学科 / 连对 / 得分 / 金币 / 结算 */}
             <div className="stage-top">
               <span className={`stage-badge ${nodeType === "boss" ? "is-boss" : ""}`}>
@@ -424,22 +553,38 @@ export default function RoguelikePage() {
               ) : (
                 <div className="stage-sprite-wrap">
                   {nodeType === "boss" ? (
-                    <img src={bossImg(run.layer)} className="stage-sprite stage-sprite-boss" alt="Boss" />
+                    <img src={bossImg(run.layer)} className={`stage-sprite stage-sprite-boss ${enemyAttackKey ? "enemy-attack" : ""}`} alt="Boss" />
                   ) : (
-                    <img src={enemyImg(run.layer)} className="stage-sprite stage-sprite-enemy" alt="敌人" />
+                    <img src={enemyImg(run.layer)} className={`stage-sprite stage-sprite-enemy ${enemyAttackKey ? "enemy-attack" : ""}`} alt="敌人" />
                   )}
                 </div>
               )}
             </div>
+
+            {/* 玩家第一视角手持武器 */}
+            {nodeType !== "reward" && (
+              <img src={wpn} className="stage-weapon" alt="武器" />
+            )}
 
             {/* Boss 名称牌 */}
             {nodeType === "boss" && (
               <div className="stage-nameplate">👹 {bossName(run.layer)}</div>
             )}
           </div>
+            );
+          })()}
 
-          {/* ===== 中下部 HUD:技能 / 血量 / 装备 ===== */}
+          {/* ===== 中下部 HUD:蓝条 / 生命 / 装备 / 物品 / 技能 ===== */}
           <div className="rogue-hud">
+            {/* 蓝条 + 等级 */}
+            <div className="hud-mana-row">
+              <span className="hud-level">Lv.{level}</span>
+              <div className="hud-mana">
+                <div className="hud-mana-fill" style={{ width: `${maxMana ? (mana / maxMana) * 100 : 0}%` }} />
+                <span className="hud-mana-num">🔵 {mana}/{maxMana}</span>
+              </div>
+            </div>
+            {/* 生命 */}
             <div className={`hud-hp ${run.hp <= 2 ? "low-hp" : ""}`}>
               <span className="hud-hp-label">❤ 生命</span>
               <div className="hud-hp-bar">
@@ -449,16 +594,53 @@ export default function RoguelikePage() {
               </div>
               <span className="hud-hp-num">{run.hp}/{maxHp}</span>
             </div>
-            {inventory.length > 0 && (
+            {/* 身上穿戴 */}
+            <div className="hud-equipped">
+              {["weapon", "armor", "trinket"].map((slot) => (
+                <div key={slot} className={`equip-slot equip-${slot} ${equipped[slot] ? "filled" : ""}`} title={equipped[slot]?.desc || "空"}>
+                  <span className="equip-icon">{equipped[slot]?.icon || (slot === "weapon" ? "🗡" : slot === "armor" ? "🛡" : "🔮")}</span>
+                  {equipped[slot] && <span className="equip-name">{equipped[slot].name}</span>}
+                </div>
+              ))}
+            </div>
+            {/* 物品(可点击使用) */}
+            {inventory.filter((e: any) => e.kind === "item").length > 0 && (
               <div className="hud-items">
-                {inventory.map((it) => (
-                  <button key={it} onClick={() => useItem(it)} disabled={loading} className="hud-item">
-                    {ITEM_LABEL[it] ?? it}
+                <span className="hud-section-label">物品</span>
+                {inventory.filter((e: any) => e.kind === "item").map((it: any) => (
+                  <button key={it.uid} onClick={() => useItem(it)} disabled={loading} className={`hud-item item-${it.type}`} title={it.desc}>
+                    {it.icon} {it.name}
                   </button>
                 ))}
               </div>
             )}
-            <p className="hud-hint">答错 -1 生命(护盾可抵挡) · 连续答对得分翻倍 · 每 5 层 Boss · 每 3 层奖励</p>
+            {/* 装备(可点击穿戴) */}
+            {inventory.filter((e: any) => e.kind === "gear").length > 0 && (
+              <div className="hud-items">
+                <span className="hud-section-label">装备(点击穿戴)</span>
+                {inventory.filter((e: any) => e.kind === "gear").map((it: any) => (
+                  <button key={it.uid} onClick={() => equipItem(it)} disabled={loading} className="hud-item gear-item" title={it.desc}>
+                    {it.icon} {it.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* 技能(可点击使用) */}
+            {skills.length > 0 && (
+              <div className="hud-items">
+                <span className="hud-section-label">技能</span>
+                {skills.map((sid) => {
+                  const m = SKILL_META[sid];
+                  const can = mana >= (m?.cost || 0);
+                  return (
+                    <button key={sid} onClick={() => useSkill(sid)} disabled={loading || !can} className={`hud-item skill-item ${can ? "" : "no-mana"}`} title={`${m?.desc} · 耗蓝 ${m?.cost}`}>
+                      {m?.icon} {m?.name} <span className="skill-cost">🔵{m?.cost}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="hud-hint">答错 -1 生命(护盾可抵挡) · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 消灭怪物掉装备/物品</p>
           </div>
 
           {/* ===== 底部 答题区 ===== */}
@@ -505,7 +687,7 @@ export default function RoguelikePage() {
               )}
               <button onClick={submit} disabled={!selected || loading}
                 className="rogue-submit-btn">
-                {loading ? "判分中..." : "提交答案"}
+                {loading ? "判分中..." : autoArmed ? "提交(必中)" : "提交答案"}{autoArmed ? " ✨" : ""}
               </button>
             </div>
           ) : (
@@ -516,6 +698,25 @@ export default function RoguelikePage() {
                 {run && (
                   <button onClick={() => { quit(); }} className="rogue-submit-btn">结算本次冒险</button>
                 )}
+              </div>
+            </div>
+          )}
+          {/* 升级三选一弹窗 */}
+          {pendingSkills && pendingSkills.length > 0 && (
+            <div className="skill-modal-mask">
+              <div className="skill-modal">
+                <h3 className="skill-modal-title">🎉 升级!选择一项技能</h3>
+                <div className="skill-choices">
+                  {pendingSkills.map((s: any) => (
+                    <button key={s.id} onClick={() => chooseSkill(s.id)} className="skill-choice" disabled={loading}>
+                      <span className="sc-icon">{s.icon}</span>
+                      <span className="sc-name">{s.name}</span>
+                      <span className="sc-tier">T{s.tier} · {s.type}</span>
+                      <span className="sc-desc">{s.desc}</span>
+                      <span className="sc-cost">🔵 {s.cost}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
