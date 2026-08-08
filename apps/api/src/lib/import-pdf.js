@@ -28,7 +28,11 @@ async function rasterize(pdfBuf) {
       [RASTER_SCRIPT, pdfPath, outDir, "150"],
       { maxBuffer: 50 * 1024 * 1024, timeout: 120000 }
     );
-    const info = JSON.parse(stdout);
+    // 子进程 stdout 可能混入依赖库的告警,只截取 JSON 主体
+    const s = stdout.indexOf("{");
+    const e = stdout.lastIndexOf("}");
+    if (s < 0 || e <= s) throw new Error("栅格化脚本未返回 JSON:" + stdout.slice(0, 200));
+    const info = JSON.parse(stdout.slice(s, e + 1));
     const pages = (info.pages || []).map((p) => ({
       image: fs.readFileSync(p.path).toString("base64"),
       text: p.text || "",

@@ -12,10 +12,14 @@ import os
 import json
 
 try:
-    import fitz  # PyMuPDF
+    # 优先用新包名:`import fitz` 会往 stdout 打 deprecation warning,污染 JSON 输出
+    import pymupdf as fitz
 except ImportError:
-    sys.stderr.write("ERROR: PyMuPDF 未安装,请先 `pip3 install pymupdf`\n")
-    sys.exit(3)
+    try:
+        import fitz  # 老版本 PyMuPDF 回退
+    except ImportError:
+        sys.stderr.write("ERROR: PyMuPDF 未安装,请先 `pip3 install pymupdf`\n")
+        sys.exit(3)
 
 
 def main():
