@@ -479,17 +479,18 @@ export default function TeacherPage() {
       {list.length === 0 ? (
         <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">暂无题目</p>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          {/* min-w 保证各列不被挤压,操作列按钮不换行;超宽时容器横向滚动 */}
+          <table className="w-full min-w-[1080px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-400">
               <tr>
-                <th className="px-4 py-3 font-normal">科目</th>
-                <th className="px-4 py-3 font-normal">知识点</th>
-                <th className="px-4 py-3 font-normal">题干</th>
-                <th className="px-4 py-3 font-normal">难度</th>
-                <th className="px-4 py-3 font-normal">状态</th>
-                <th className="px-4 py-3 font-normal">导入时间</th>
-                <th className="px-4 py-3 font-normal">操作</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">科目</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">知识点</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">题干</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">难度</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">状态</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">导入时间</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -509,8 +510,8 @@ export default function TeacherPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3">{q.difficulty}</td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3">{q.difficulty}</td>
+                  <td className="whitespace-nowrap px-4 py-3">
                     <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
                       {STATUS_LABEL[q.status]}
                     </span>
@@ -524,30 +525,30 @@ export default function TeacherPage() {
                       <span title={`创建于 ${fmtTime(q.createdAt)}`}>创建 {fmtTime(q.createdAt)}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-3">
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div className="flex flex-nowrap items-center gap-x-3">
                       {(q.status === "PENDING_REVIEW" || q.status === "REJECTED") && (
-                        <button onClick={() => openReview(q)} className="font-medium text-blue-600 hover:underline">审核</button>
+                        <button onClick={() => openReview(q)} className="whitespace-nowrap font-medium text-blue-600 hover:underline">审核</button>
                       )}
                       {q.status === "REJECTED" && (
-                        <button onClick={() => openAutoFix(q)} className="font-medium text-amber-600 hover:underline">一键修正</button>
+                        <button onClick={() => openAutoFix(q)} className="whitespace-nowrap font-medium text-amber-600 hover:underline">一键修正</button>
                       )}
                       {q.status === "REJECTED" && (
                         <button
                           onClick={() => openAiFix(q)}
                           disabled={!llmConfigured}
                           title={llmConfigured ? "用 AI 按退回原因语义重写题目" : "服务端未配置 LLM_API_KEY,暂不可用"}
-                          className="font-medium text-fuchsia-600 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
+                          className="whitespace-nowrap font-medium text-fuchsia-600 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
                         >
                           AI 重调
                         </button>
                       )}
-                      <button onClick={() => generateSolution(q)} disabled={genBusy === q.id} className="font-medium text-emerald-600 hover:underline disabled:opacity-50">
+                      <button onClick={() => generateSolution(q)} disabled={genBusy === q.id} className="whitespace-nowrap font-medium text-emerald-600 hover:underline disabled:opacity-50">
                         {genBusy === q.id ? "生成中..." : "AI 生成解析"}
                       </button>
-                      <button onClick={() => openEdit(q)} className="text-indigo-600 hover:underline">编辑</button>
+                      <button onClick={() => openEdit(q)} className="whitespace-nowrap text-indigo-600 hover:underline">编辑</button>
                       {user?.role === "ADMIN" && (
-                        <button onClick={() => remove(q)} className="text-red-500 hover:underline">删除</button>
+                        <button onClick={() => remove(q)} className="whitespace-nowrap text-red-500 hover:underline">删除</button>
                       )}
                     </div>
                   </td>
