@@ -177,7 +177,7 @@ router.post(
       : "";
     ok(
       res,
-      { imported, failed: errors.length, errors: errors.slice(0, 20), papers },
+      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, created },
       `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
     );
   })
@@ -234,7 +234,7 @@ router.post(
       : "";
     ok(
       res,
-      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length },
+      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created },
       `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
     );
   })
