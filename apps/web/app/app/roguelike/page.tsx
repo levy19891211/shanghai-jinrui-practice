@@ -524,7 +524,30 @@ export default function RoguelikePage() {
       )}
 
       {phase === "playing" && run && (
-        <div className={`roguelike-bg mx-auto max-w-2xl ${fxReduced ? "fx-reduced" : ""}`}>
+        <div className={`roguelike-bg battle-layout ${fxReduced ? "fx-reduced" : ""}`}>
+          {/* ===== 左列：题干（战斗画面左侧） ===== */}
+          <div className="battle-left">
+            {question && nodeType !== "reward" && (
+              <div className={`battle-panel pop-in ${nodeType === "boss" ? "is-boss" : ""}`}>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
+                  <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
+                  <span>难度 {DIFF_LABEL[question.difficulty] ?? question.difficulty}</span>
+                </div>
+                <div className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(question.stem)}</div>
+                {feedback && (
+                  <div className={`pop-in mt-4 flex items-center rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                    <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== 中列：战斗画面（舞台 + HUD） ===== */}
+          <div className="battle-center">
+          {toast && <div className="rogue-toast">{toast}</div>}
+          {error && <p className="rogue-error">{error}</p>}
           {/* ===== 顶部舞台:环境背景 + 第一视角敌人 ===== */}
           {(() => {
             const zone = zoneOf(run.layer);
@@ -652,35 +675,33 @@ export default function RoguelikePage() {
             <p className="hud-hint">答错 -1 生命(护盾可抵挡) · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 消灭怪物掉装备/物品</p>
           </div>
 
-          {/* ===== 底部 答题区 ===== */}
-          {toast && <div className="rogue-toast">{toast}</div>}
-          {error && <p className="rogue-error">{error}</p>}
-
-          {nodeType === "reward" ? (
-            <div className="rogue-question text-center">
+          {/* 奖励节点面板（中列内） */}
+          {nodeType === "reward" && (
+            <div className="battle-panel text-center">
               <p className="text-sm text-slate-500">休息一下,领取金币奖励!</p>
               <button onClick={claim} disabled={loading} className="rogue-claim-btn">
                 {loading ? "处理中..." : "领取奖励"}
               </button>
             </div>
-          ) : question ? (
-            <div className={`rogue-question pop-in q-split ${nodeType === "boss" ? "is-boss" : ""}`}>
-              {/* 左侧：题干 */}
-              <div className="q-stem-col">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
-                  <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
-                  <span>难度 {DIFF_LABEL[question.difficulty] ?? question.difficulty}</span>
-                </div>
-                <div className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(question.stem)}</div>
-                {feedback && (
-                  <div className={`pop-in mt-4 flex items-center rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                    <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
-                  </div>
+          )}
+          {/* 无题面板（中列内） */}
+          {!question && nodeType !== "reward" && (
+            <div className="battle-panel text-center">
+              <p className="text-sm text-slate-500">该学科/难度暂无可用题目,请更换学科或结算后重试。</p>
+              <div className="mt-4 flex gap-3">
+                <button onClick={resetToSetup} className="rogue-btn-secondary">返回设置</button>
+                {run && (
+                  <button onClick={() => { quit(); }} className="rogue-submit-btn">结算本次冒险</button>
                 )}
               </div>
-              {/* 右侧：选项（点击即提交） */}
-              <div className="q-options-col">
+            </div>
+          )}
+          </div>{/* /battle-center */}
+
+          {/* ===== 右列：选项（点击即提交，战斗画面右侧） ===== */}
+          <div className="battle-right">
+            {question && nodeType !== "reward" && (
+              <div className={`battle-panel pop-in ${nodeType === "boss" ? "is-boss" : ""}`}>
                 <p className="q-hint mb-2 text-xs text-slate-400">点击选项即作答{autoArmed ? "(本次必中 ✨)" : ""}</p>
                 <div className="space-y-2">
                   {(question.options || []).map((opt, i) => {
@@ -702,18 +723,8 @@ export default function RoguelikePage() {
                   })}
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="rogue-question text-center">
-              <p className="text-sm text-slate-500">该学科/难度暂无可用题目,请更换学科或结算后重试。</p>
-              <div className="mt-4 flex gap-3">
-                <button onClick={resetToSetup} className="rogue-btn-secondary">返回设置</button>
-                {run && (
-                  <button onClick={() => { quit(); }} className="rogue-submit-btn">结算本次冒险</button>
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
           {/* 升级三选一弹窗 */}
           {pendingSkills && pendingSkills.length > 0 && (
             <div className="skill-modal-mask">
