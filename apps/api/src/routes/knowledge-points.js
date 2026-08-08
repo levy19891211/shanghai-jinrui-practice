@@ -7,7 +7,6 @@ import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
-router.use(requireAuth, requireRole("TEACHER", "ADMIN"));
 
 const SUBJECTS = ["数学", "物理", "化学", "生物"];
 
@@ -21,8 +20,10 @@ function parseIds(s) {
 }
 
 // GET /api/knowledge-points?subject=数学 — 知识点列表(可按学科过滤,含各知识点关联题目数)
+// 登录用户可读(学生端知识点下拉/掌握度"针对练习"需要)
 router.get(
   "/",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const subject = req.query.subject ? String(req.query.subject) : "";
     if (subject && !SUBJECTS.includes(subject)) return fail(res, 400, "学科不合法(数学/物理/化学/生物)");
@@ -43,6 +44,8 @@ router.get(
 // POST /api/knowledge-points — 新建知识点
 router.post(
   "/",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
     const { subject, name, sortOrder } = req.body || {};
     const s = String(subject || "").trim();
@@ -62,6 +65,8 @@ router.post(
 // PUT /api/knowledge-points/:id — 更新知识点
 router.put(
   "/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
     const kp = await prisma.knowledgePoint.findUnique({ where: { id: req.params.id } });
     if (!kp) return fail(res, 404, "知识点不存在");
@@ -92,6 +97,8 @@ router.put(
 // DELETE /api/knowledge-points/:id — 删除知识点(同时从题目 topicIds 中移除)
 router.delete(
   "/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
     const kp = await prisma.knowledgePoint.findUnique({ where: { id: req.params.id } });
     if (!kp) return fail(res, 404, "知识点不存在");
