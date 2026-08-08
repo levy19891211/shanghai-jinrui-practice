@@ -4,6 +4,12 @@
 > 版本号同步维护三处：根目录 `VERSION` 文件、`apps/web/lib/version.ts`、本文件。
 > 每次发布必须在本文件顶部追加一条记录（日期 + 版本 + 变更摘要）。
 
+## V1.5.2 (2026-08-08)
+- 「冒险模式」热修复：通关 Boss 战 500 错误（「Boss 战怎么没了」）。
+  - **根因**：`/api/roguelike/:runId/answer` 中 `runOver` 被声明为 `const`，但在通关分支（第 20 层 Boss 答对后 `layer > MAX_LAYER`）执行 `runOver = true` 给常量赋值，抛出 `TypeError: Assignment to constant variable`，导致无法通关。
+  - **修复**：`runOver` 改为 `let`（该分支此前一直存在，但只有真正打到通关才触发，所以选「物理」卡加载、选「数学」玩到 Boss 才暴露）。
+  - 后端 `node --check` 通过；远程完整 playthrough 实测 layer 5/10/15/20 均正常生成 boss 节点，第 20 层答对可正常 `WON`。
+
 ## V1.5.1 (2026-08-08)
 - 「冒险模式」热修复：卡在「加载题目中…」
   - **后端抽题增强**：`pickQuestion` 在精确难度无题时，按 ±1/±2…回退查找，最终回退到该学科全部难度；避免化学/ESAT 等题库较少时无法出题。

@@ -276,7 +276,7 @@ router.post(
       });
     }
 
-    const runOver = status !== "ACTIVE";
+    let runOver = status !== "ACTIVE";
     let nextNodeInfo = { nodeType: null, question: null };
     if (!runOver && layer > MAX_LAYER) {
       status = "WON";
