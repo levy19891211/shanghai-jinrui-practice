@@ -405,12 +405,13 @@ body {
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
   display: inline-block;
+  max-height: 64vh;
   filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
   animation: stage-bob 3s ease-in-out infinite;
 }
-.stage-sprite-enemy { width: 36%; max-width: 150px; }
+.stage-sprite-enemy { width: 64%; max-width: 360px; }
 .stage-sprite-boss {
-  width: 54%; max-width: 220px;
+  width: 82%; max-width: 520px;
   filter: drop-shadow(0 0 22px rgba(239, 68, 68, 0.7)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
 }
 @keyframes stage-bob {
@@ -521,44 +522,48 @@ body {
 
 /* ===== V1.6 战斗氛围 / 装备 / 技能 UI ===== */
 
-/* 放大怪物 */
-.stage-sprite-enemy { width: 46%; max-width: 240px; }
+/* 放大怪物:源图已 4x 放大到 256x256,这里用百分比/像素显著调大显示尺寸 */
+.stage-sprite-enemy { width: 64%; max-width: 360px; }
 .stage-sprite-boss {
-  width: 62%; max-width: 340px;
-  filter: drop-shadow(0 0 26px rgba(239, 68, 68, 0.75)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
+  width: 82%; max-width: 520px;
+  filter: drop-shadow(0 0 30px rgba(239, 68, 68, 0.85)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
 }
 
-/* 分区背景色调(森林/海洋/山地/熔岩) */
+/* 分区背景(森林/海洋/山地/熔岩): 实景素材 + 色调叠加,确保文字可读 */
 .zone-forest {
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(34, 197, 94, 0.28), transparent 60%),
-    linear-gradient(180deg, #052e1a 0%, #14532d 52%, #052e1a 100%);
+    radial-gradient(120% 80% at 50% -10%, rgba(34, 197, 94, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(5, 46, 26, 0.50) 0%, rgba(5, 46, 26, 0.80) 100%),
+    url(/images/rogue/bg_forest.png) center / cover no-repeat;
 }
 .zone-ocean {
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(56, 189, 248, 0.28), transparent 60%),
-    linear-gradient(180deg, #082f49 0%, #0c4a6e 52%, #062a3a 100%);
+    radial-gradient(120% 80% at 50% -10%, rgba(56, 189, 248, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(8, 47, 73, 0.50) 0%, rgba(8, 47, 73, 0.80) 100%),
+    url(/images/rogue/bg_ocean.png) center / cover no-repeat;
 }
 .zone-mountain {
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(148, 163, 184, 0.28), transparent 60%),
-    linear-gradient(180deg, #1e293b 0%, #334155 52%, #0f172a 100%);
+    radial-gradient(120% 80% at 50% -10%, rgba(148, 163, 184, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(30, 41, 59, 0.55) 0%, rgba(30, 41, 59, 0.82) 100%),
+    url(/images/rogue/bg_mountain.png) center / cover no-repeat;
 }
 .zone-volcano {
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(249, 115, 22, 0.3), transparent 60%),
-    linear-gradient(180deg, #2a0a0a 0%, #4c1212 52%, #1a0606 100%);
+    radial-gradient(120% 80% at 50% -10%, rgba(249, 115, 22, 0.24), transparent 60%),
+    linear-gradient(180deg, rgba(42, 10, 10, 0.50) 0%, rgba(42, 10, 10, 0.82) 100%),
+    url(/images/rogue/bg_volcano.png) center / cover no-repeat;
 }
 
-/* 环境装饰素材 */
+/* 环境装饰素材(放大并提亮,在实景背景上更醒目) */
 .stage-deco {
   position: absolute;
-  bottom: 8%;
+  bottom: 6%;
   z-index: 1;
-  width: 56px;
-  height: 56px;
+  width: 92px;
+  height: 92px;
   object-fit: contain;
-  opacity: 0.5;
+  opacity: 0.72;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4));
   pointer-events: none;
 }
@@ -730,12 +735,12 @@ body {
     font-size: 1.2rem;
   }
   .rogue-stage {
-    min-height: 38vh;
+    min-height: 42vh;
   }
-  .stage-sprite-enemy { width: 50%; }
-  .stage-sprite-boss { width: 66%; }
+  .stage-sprite-enemy { width: 62%; }
+  .stage-sprite-boss { width: 76%; }
   .stage-top { font-size: 0.72rem; gap: 6px; padding: 8px 10px; }
-  .stage-deco { width: 42px; height: 42px; }
-  .stage-weapon { width: 30%; }
+  .stage-deco { width: 64px; height: 64px; }
+  .stage-weapon { width: 34%; }
   .hud-hint { font-size: 0.62rem; }
 }
