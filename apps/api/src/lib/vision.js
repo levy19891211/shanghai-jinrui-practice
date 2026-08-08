@@ -68,7 +68,9 @@ export function parseJsonArray(text) {
   return [];
 }
 
-export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall = 16 } = {}) {
+export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = {}) {
+  // 每次调用的页数:页太多会让模型丢题/截断。默认 4 页,可用 VISION_MAX_PAGES 调整。
+  const perCall = Math.max(1, Math.min(16, Number(maxPagesPerCall) || Number(process.env.VISION_MAX_PAGES) || 4));
   if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
   const chunks = [];
   for (let i = 0; i < pages.length; i += maxPagesPerCall) {
@@ -107,7 +109,7 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall = 16
           { role: "user", content },
         ],
         temperature: 0.1,
-        max_tokens: 8000,
+        max_tokens: 16000,
       }),
     });
     if (!resp.ok) {
