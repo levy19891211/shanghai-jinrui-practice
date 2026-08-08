@@ -4,6 +4,15 @@
 > 版本号同步维护三处：根目录 `VERSION` 文件、`apps/web/lib/version.ts`、本文件。
 > 每次发布必须在本文件顶部追加一条记录（日期 + 版本 + 变更摘要）。
 
+## V1.4 (2026-08-08)
+- 「冒险模式」Phase B 事件特效：
+  - **Boss 战氛围**：红色暗角背景叠加 + 像素 Boss 头像(光晕浮动) + 「⚔ BOSS 出现了!」横幅 + 「🏆 BOSS 击破!」横幅 + 低鸣 boss_appear 音。
+  - **奖励节点强化**：卡片持续金币雨(CSS emoji 双层错落) + 「🎁 奖励已领取!」横幅滑入。
+  - **通关结算**：WON 时全屏彩带幕(conic-gradient 双层反向旋转) + 大横幅「🏆 通关!」 + 升调 victory 音。
+  - **死亡暗幕**：DEAD 时 radial 渐变暗幕渐入。
+  - **Kenney CC0 美术素材**：`boss.png`(棕色大怪物)/`enemy.png`(橙色火焰小怪) 来自 Kenney Pixel Platformer，24×24 像素 + `image-rendering: pixelated` 放大锐利，附 CC0 LICENSE。
+  - 零新依赖(纯 CSS + 现有 Web Audio + Kenney 公开素材)，零侵入可回滚。
+
 ## V1.3 (2026-08-08)
 - 「冒险模式」Phase A 特效：
   - **Web Audio 合成音效**（零素材）：答对叮、连击升调（combo 越高音越高）、答错、护盾、奖励金币声、Boss 低音轰鸣、死亡下行音。
