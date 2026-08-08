@@ -44,10 +44,27 @@ async function rasterize(pdfBuf) {
   }
 }
 
-function normalizeRaw(r) {
+// 从文件名推测卷名,如 "TMUA-2021-paper-1.pdf" → "TMUA 2021 Paper 1"。
+// 用作题目的 paper 字段,既能让审核列表/试卷名可读,又能避免不同年份同名卷
+// 因 sourceKey(subject::paper::source) 相同而被错误合并。解析不出时回落到视觉模型返回的 paper。
+function paperFromFilename(filename) {
+  const f = String(filename || "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_\-]+/g, " ")
+    .trim();
+  if (!f) return "";
+  const subj = /ESAT/i.test(f) ? "ESAT" : /TMUA/i.test(f) ? "TMUA" : "";
+  const year = (f.match(/\b(19|20)\d{2}\b/) || [])[0] || "";
+  const pNum = (f.match(/paper\s*(\d+)/i) || f.match(/p\s*(\d+)/i) || [])[1] || "";
+  if (subj && year && pNum) return `${subj} ${year} Paper ${pNum}`;
+  if (subj && pNum) return `${subj} Paper ${pNum}`;
+  return "";
+}
+
+function normalizeRaw(r, filename) {
   return {
     subject: r?.subject,
-    paper: r?.paper,
+    paper: paperFromFilename(filename) || r?.paper,
     topic: r?.topic,
     difficulty: r?.difficulty,
     type: r?.type,
@@ -66,7 +83,7 @@ export async function parsePdf(filename, buffer) {
   const rows = raws
     .map((r) => {
       try {
-        return finalizeRow(normalizeRaw(r));
+        return finalizeRow(normalizeRaw(r, filename));
       } catch {
         return null;
       }
