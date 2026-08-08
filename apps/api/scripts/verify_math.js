@@ -38,7 +38,7 @@ function latexify(s) {
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
-    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
+    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
     .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/\(([^()]+)\)\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/(?<![\^{])([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
@@ -61,9 +61,10 @@ function isMathish(text) {
 }
 
 // 提取 $ 包裹的数学内容;无 $ 标记返回 null
+// 允许 $ 后带空格("$ x $"),与前端 rich.tsx 保持一致
 function extractDollarMath(text) {
   const parts = [];
-  const re = /\$\$([\s\S]+?)\$\$|\$([^\s$][^$]*)\$/g;
+  const re = /\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     parts.push(m[1] !== undefined ? m[1] : m[2]);
@@ -77,6 +78,12 @@ function findLeftover(latex) {
   if (/[0-9a-zA-Z)]\s*\/\s*[(0-9a-zA-Z]/.test(latex.replace(/\\frac/g, ""))) issues.push("可能未转\\frac的/");
   if (/(?<![\\])[0-9a-zA-Z]\^(?!\{)/.test(latex)) issues.push("裸^未转上标");
   return issues;
+}
+
+// 公式($...$ 外)的裸反斜杠命令,如 \log、\sin、\frac、3\pi
+function bareLatexCmds(text) {
+  const stripped = String(text || "").replace(/\$\$[\s\S]+?\$\$|\$[^$]+?\$/g, "");
+  return [...new Set((stripped.match(/\\[a-zA-Z]+/g) || []))];
 }
 
 async function main() {
@@ -119,6 +126,14 @@ async function main() {
           console.log(`  残留: ${leftover.join("; ")}`);
           console.log(`  latexify: ${latex.slice(0, 110)}`);
         }
+      }
+      // 公式外裸 LaTeX 命令扫描(核心审查项,如 \log 未用 $ 包裹)
+      const bare = bareLatexCmds(text);
+      if (bare.length) {
+        warnCount++;
+        console.log(`[WARN][${q.source || "未知来源"}] ${label} (题目 ${q.id.slice(0, 8)})`);
+        console.log(`  原文: ${text.slice(0, 90)}`);
+        console.log(`  公式外裸命令: ${bare.join(", ")} — 建议用 $...$ 包裹(渲染层已兜底)`);
       }
     }
   }

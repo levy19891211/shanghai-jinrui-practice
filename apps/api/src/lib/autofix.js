@@ -20,7 +20,8 @@ import { toCanonicalText, latexify } from "./text-clean.js";
 const TAG_RE =
   /<\/?(?:p|div|br|hr|span|table|tbody|thead|tfoot|caption|col|colgroup|tr|td|th|ul|ol|li|dl|dt|dd|font|small|big|h[1-6]|strong|em|b|i|u|s|a|img|code|pre|blockquote|center|nobr|section|article|header|footer|sub|sup)\b[^<>]*>/i;
 const TEX_DELIM_RE = /\\[([\])]/;
-const MATH_RE = /\$\$([\s\S]+?)\$\$|\$([^\s$][^$]*?)\$/g;
+// 行内公式允许 $ 后带空格("$ x $"),与前端 rich.tsx 保持一致
+const MATH_RE = /\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g;
 
 // ---------- 通用小工具 ----------
 
@@ -67,6 +68,13 @@ function mathSegments(s) {
     segs.push({ expr: m[1] ?? m[2], display: !!m[1], start: m.index, end: MATH_RE.lastIndex });
   }
   return segs;
+}
+
+// 检测公式($...$ / $$...$$)之外的反斜杠 LaTeX 命令(如 \log、\sin、\frac、3\pi)。
+// 这些命令渲染层(smartMath)能兜底,但数据不规范,应作为审查项提示用 $ 包裹。
+function bareLatexCmds(s) {
+  const stripped = String(s || "").replace(/\$\$[\s\S]+?\$\$|\$[^$]+?\$/g, "");
+  return [...new Set((stripped.match(/\\[a-zA-Z]+/g) || []))];
 }
 
 function renders(expr, display) {
@@ -186,6 +194,21 @@ const RULES = [
     label: "修复 $ 公式定界符不成对",
     detect: (d) => textsOf(d).some((t) => (t.match(/\$/g) || []).length % 2 !== 0),
     apply: (d) => eachText(d, (s) => ((s.match(/\$/g) || []).length % 2 !== 0 ? fixDollars(s) : s)),
+  },
+  {
+    code: "bare_latex",
+    label: "公式外存在裸 LaTeX 命令(如 \\log、\\sin、\\frac),建议用 $...$ 包裹",
+    // 渲染层已兜底(smartMath 可正确渲染),但数据不规范;不自动改,交人工/后续清洗统一处理
+    detect: (d) => textsOf(d).some((t) => bareLatexCmds(t).length > 0),
+    apply: () => ({
+      manual: [
+        {
+          code: "bare_latex",
+          label: "公式外存在裸 LaTeX 命令,建议用 $ 包裹",
+          detail: "渲染层已兜底显示,但建议规范化为 $...$;可运行 data-clean 脚本批量处理",
+        },
+      ],
+    }),
   },
   {
     code: "katex_repair",
@@ -335,6 +358,8 @@ export function healthCheck(d) {
     if (TAG_RE.test(t)) issues.push("仍有残留 HTML 标签");
     if ((t.match(/\$/g) || []).length % 2 !== 0) issues.push("$ 定界符仍不成对");
     for (const s of mathSegments(t)) if (!renders(s.expr, s.display)) issues.push(`公式仍无法渲染:${s.expr.slice(0, 40)}`);
+    const bare = bareLatexCmds(t);
+    if (bare.length) issues.push(`公式外有裸 LaTeX 命令(${bare.slice(0, 4).join(", ")})`);
   }
   return [...new Set(issues)];
 }
