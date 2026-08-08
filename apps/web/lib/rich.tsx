@@ -71,7 +71,7 @@ export function renderRich(text: string | null | undefined): React.ReactNode[] {
         return (
           <span
             key={key++}
-            className={t.display ? "my-2 block overflow-x-auto" : "math-inline align-baseline inline-block max-w-full overflow-x-auto whitespace-nowrap"}
+            className={t.display ? "my-2 block overflow-x-auto" : "math-inline"}
             dangerouslySetInnerHTML={{ __html: renderMathExpr(latexify(t.expr!), t.display!) }}
           />
         );
@@ -215,7 +215,7 @@ export function smartMath(text: string): React.ReactNode[] {
     if (mathBuf.length) {
       const expr = latexify(mathBuf.join(" "));
       parts.push(
-        <span key={key++} className="math-inline align-baseline inline-block max-w-full overflow-x-auto whitespace-nowrap" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
+        <span key={key++} className="math-inline" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
       );
       // KaTeX 数学模式忽略尾部空格,显式补一个视觉间隔
       parts.push(<span key={key++}> </span>);

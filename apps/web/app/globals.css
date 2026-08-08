@@ -289,7 +289,17 @@ body {
   100% { transform: translateX(0); opacity: 1; }
 }
 
-/* 行内公式:KaTeX 默认 1.21em 会导致与正文大小不一,统一为与正文一致 */
+/* 行内公式:KaTeX 默认 1.21em 会导致与正文大小不一,统一为与正文一致;
+   同时必须保持 inline + baseline,不能用 inline-block/overflow:auto 包裹,否则基线会被改到块底部,导致 x/公式与正文上下错位 */
+.math-inline {
+  display: inline;
+  vertical-align: baseline;
+  overflow: visible;
+}
+.math-inline .katex {
+  display: inline;
+  vertical-align: baseline;
+}
 .math-inline .katex,
 .math-inline .katex-display {
   font-size: 1em !important;

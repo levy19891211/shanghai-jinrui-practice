@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.2.5 (2026-08-08) — 行内公式基线再次修复
+- **现象**：题干中单独的 `x` 变量和行内公式（如 `x - 3y + 1 = 0`、`3x² - 7xy = 5`）与 surrounding text 上下不齐，`x` 看起来像上标，公式整体偏高/偏低。
+- **根因**：V2.2.4 的裸数字规则只解决了一部分问题；真正的 CSS 问题是 `.math-inline` 被包成 `inline-block` 并加了 `overflow-x-auto`。当 `overflow` 不为 `visible` 时，inline-block 的基线会落到块底部，导致 KaTeX 行内数学与正文基线错位，表现为 `x` 和公式上浮/下沉。
+- **修复**：
+  1. `apps/web/lib/rich.tsx`：行内数学包裹层只保留 `className="math-inline"`，去掉 `inline-block` / `align-baseline` / `max-w-full` / `overflow-x-auto` / `whitespace-nowrap` 等工具类。
+  2. `apps/web/app/globals.css`：`.math-inline` 显式设为 `display: inline; vertical-align: baseline; overflow: visible;`，内部 `.katex` 同样 `display: inline; vertical-align: baseline;`。
+- 影响范围：所有走 `renderRich` 的行内公式（题干、选项、解析）。超长行内公式暂时会自然溢出（可通过改写成 `$$...$$` 块级公式避免）。
+- 验证：Playwright 复现用户截图句子，修复后 `x` 与公式均与正文基线齐平；`tsc --noEmit` 通过；`npm run verify:math` 全题库扫描 0 ERR / 9 WARN（既有 `0^\circ` 残留）；既有 130 项回归全过。
+
 ## V2.2.4 (2026-08-08) — 题干中裸数字基线偏移修复
 - **根因**：`rich.tsx` 的 `smartMath` 把正文里的**裸数字**（如 "by **3** units" / "factor of **4**"）也判定为数学片段，交给 KaTeX 渲染成 `<span class="math-inline">`。KaTeX 数学字体的基线/字号与正文不同，导致这些数字微微上浮、和 surrounding text 不整齐。
 - **修复**：`isMathToken` 不再把裸数字、裸运算符自动判为数学；改在 `smartMath` 里做**两阶段提升**：只有与真正数学片段（变量、函数、混合表达式等）相邻的裸数字/运算符，才被吸收进同一数学模式。这样 "by 3 units" / "factor of 4" 里的数字保持正文，"x = 3" / "x^2 + 1" 仍统一按数学渲染。

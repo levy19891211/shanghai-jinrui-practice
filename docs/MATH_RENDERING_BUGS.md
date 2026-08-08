@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 21 | **行内数学 `x`/公式与正文上下不齐**:题干中 `x`、`x - 3y + 1 = 0`、`3x² - 7xy = 5` 等行内公式相对 surrounding text 明显上浮/下沉,单字母 `x` 看起来像上标 | `.math-inline` 外层被设为 `inline-block` 并加 `overflow-x:auto`;当 inline-block 的 `overflow` 不为 `visible` 时,其基线会落到块底部,导致 KaTeX 数学片段与正文基线错位 | `rich.tsx` 行内数学包裹层只保留 `className="math-inline"`,去掉 `inline-block`/`overflow-x-auto` 等工具类;`globals.css` 显式设置 `.math-inline { display:inline; vertical-align:baseline; overflow:visible; }`,内部 `.katex` 同样 `display:inline; vertical-align:baseline;` | this |
 | 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
 | 20 | **化学式裸下标显示 `X_n` 而非 `X₃`**:`HNO_3`、`CuNO_3`、`H_2O`、`NO_2` 等下标全部保留为 LaTeX `_n` 字面 | `cleanUnits` 只处理了**裸上标**(负幂次 `mol^{-1}`、`cm^3`)和 `$...$` 内的内容,**没有处理裸文本下标** `([A-Z][a-z]?)_(\d+)` 形式;视觉模型常输出 `HNO_3`/`CuNO_3` 等 | `cleanUnits` 新增:`.replace(/([A-Z][a-z]?)_(\d+)/g, (_, formula, n) => `${formula}${toSub(n)}`)`。`HNO_3`→`HNO₃`、`H_2O`→`H₂O`、`CuNO_3`→`CuNO₃`、`NO_2`→`NO₂` ✓。配合 #16 的 `HAS_UNI_SUP_SUB` 规则,清洗后判文本(正文字体)。**注意**:`x_n` 数学变量下标不误伤(`x` 不匹配 `[A-Z]`) | this |
 | 19 | **句子末尾括号注释整段斜体**:`(Ignore ions produced by dissociation of water.)` 中 `Ignore`、`dissociation`、`water` 整段斜体 | smartMath 按空白切分 `(Ignore...)` 得到 tokens `(`+`Ignore`、`ions`...、`water.)`(末尾 `)` 与 `.` 紧贴)。`water.)` 含 `)` 命中 `MIXED_LET` 数学特征 → 被判数学 → KaTeX 渲染;前面累积文本被 flush,整段视觉在数学上下文中 | `isMathToken` 新增:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` 命中→文本(末尾 `)` 前面是普通英文)。`water.)` → 文本 ✓;`(x)` 数学不破坏(单字母被 `[a-z]{2,}`/规则不命中,仍数学) | this |
@@ -62,6 +63,7 @@
 18. **括号内的化学状态/罗马数字判文本**(见 #18):smartMath 把 `(` `)` 当 OP_TOKEN,容易把 `(aq)` `(II)` 这类带进数学模式。`isMathToken` 增加:`/^\(([a-z]{2,}|[IVX]+)\)$/i` → 文本。单字母 `(x)` 不命中,保留数学。
 19. **句子末尾括号注释也容易整体被吞**(见 #19):`(Ignore ions produced by dissociation of water.)` 因末尾 `water.)` 含 `)` 被 `MIXED_LET` 判数学,整段渲染走样。`isMathToken` 增加:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` → 文本(英文开头 + 末尾 `)`)。
 20. **化学式裸下标要清洗**(见 #20):视觉模型输出 `HNO_3`/`CuNO_3`/`H_2O`/`NO_2`,前端渲染显示 `X_n` 字面。`cleanUnits` 增加:`/([A-Z][a-z]?)_(\d+)/g` → Unicode 下标(`HNO₃` 等);`x_n` 数学变量不误伤(`x` 不匹配 `[A-Z]`)。
+21. **行内 KaTeX 必须用 `display:inline` + `vertical-align:baseline` 包裹,不能用 `inline-block` 加 `overflow:auto` 等会改变基线的容器**(见 #21)。行内公式需要滚动时,优先改用 `$$...$$` 块级公式;若坚持行内滚动,也必须在 CSS 中避免破坏基线(如给 `.katex` 自身加 `overflow-x:auto` 而非外层 inline-block)。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
