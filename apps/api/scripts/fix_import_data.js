@@ -18,7 +18,7 @@ const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵
 const SUB = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
 const toSup = (s) => String(s).split("").map((c) => SUP[c] || c).join("");
 const toSub = (s) => String(s).split("").map((c) => SUB[c] || c).join("");
-const UNIT_RE = /\$((?:[\d.,\s]|\\mathrm\{(?:[^{}]|\{[^{}]*\})*\}|\\text\{(?:[^{}]|\{[^{}]*\})*\}|\\,|\\ |\^\{[^}]*\}|\^[a-zA-Z0-9]|_\{?[a-zA-Z0-9-]+\}?)+)\$/g;
+const UNIT_RE = /\$((?:[-−\d.,\s]|\\mathrm\{(?:[^{}]|\{[^{}]*\})*\}|\\text\{(?:[^{}]|\{[^{}]*\})*\}|\\,|\\ |\^\{[^}]*\}|\^[a-zA-Z0-9]|_\{?[a-zA-Z0-9-]+\}?)+)\$/g;
 function cleanUnits(s) {
   return String(s || "")
     .replace(UNIT_RE, (_all, inner) =>
@@ -38,7 +38,9 @@ function cleanUnits(s) {
     .replace(/(?<![a-zA-Z0-9\\}])cm\^(\d)/gi, (_a, n) => `cm${toSup(n)}`)
     .replace(/(?<![a-zA-Z0-9\\}])dm\^(\d)/gi, (_a, n) => `dm${toSup(n)}`)
     .replace(/(?<![a-zA-Z0-9\\}])m\^(\d)/gi, (_a, n) => `m${toSup(n)}`)
-    .replace(/(?<![a-zA-Z0-9\\}])s\^(\d)/gi, (_a, n) => `s${toSup(n)}`);
+    .replace(/(?<![a-zA-Z0-9\\}])s\^(\d)/gi, (_a, n) => `s${toSup(n)}`)
+    // 裸文本里的单位负幂次(如 "kJ mol^{-1}" → "kJ mol⁻¹"),避免 KaTeX 渲染失败
+    .replace(/\b(mol|kg|g|cm|dm|mm|m|s|min|h|K|J|kJ|Pa|Hz|V|A)\s*\^\{(-?\d+)\}/g, (_a, u, n) => `${u}${toSup(n)}`);
 }
 
 const kps = await prisma.knowledgePoint.findMany({ select: { id: true, subject: true, name: true } });
