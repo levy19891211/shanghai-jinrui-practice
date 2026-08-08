@@ -22,3 +22,4 @@ apps/web/public/uploads/
 __pycache__/
 *.pyc
 *.pyo
+apps/api/scripts/extract_figures.py
