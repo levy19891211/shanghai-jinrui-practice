@@ -15,14 +15,18 @@ const SUBJECT_POOL = { TMUA: ["数学"], ESAT: ["数学", "物理"], 数学: ["�
 // 纯单位/数字公式 → 普通文本:只允许 数字/点/空格/字母/\mathrm{...}/上标/\,/\ 
 // 上标还原为 Unicode(⁻³ 等),使 mol dm⁻³ 这类单位用正文字体,避免 KaTeX 数学字体混排
 const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺", ".": "˙" };
+const SUB = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
 const toSup = (s) => String(s).split("").map((c) => SUP[c] || c).join("");
-const UNIT_RE = /\$((?:[\d.,\s]|\\mathrm\{[^}]*\}|\\text\{[^}]*\}|\\,|\\ |\^\{[^}]*\}|^[a-zA-Z])+)\$/g;
+const toSub = (s) => String(s).split("").map((c) => SUB[c] || c).join("");
+const UNIT_RE = /\$((?:[\d.,\s]|\\mathrm\{(?:[^{}]|\{[^{}]*\})*\}|\\text\{(?:[^{}]|\{[^{}]*\})*\}|\\,|\\ |\^\{[^}]*\}|\^[a-zA-Z0-9]|_\{?[a-zA-Z0-9-]+\}?)+)\$/g;
 function cleanUnits(s) {
   return String(s || "")
     .replace(UNIT_RE, (_all, inner) =>
       inner
         .replace(/\^\{([^}]*)\}/g, (_a, n) => toSup(n))
         .replace(/\^([a-zA-Z0-9])/g, (_a, c) => toSup(c))
+        .replace(/_\{([^}]*)\}/g, (_a, n) => toSub(n))
+        .replace(/_([a-zA-Z0-9])/g, (_a, c) => toSub(c))
         .replace(/\\mathrm\{([^}]*)\}/g, "$1")
         .replace(/\\text\{([^}]*)\}/g, "$1")
         .replace(/\\,/g, " ")
