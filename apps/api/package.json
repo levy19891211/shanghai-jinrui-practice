@@ -12,6 +12,7 @@
     "seed:interview": "node scripts/seed_interview.js",
     "seed:tmua2016": "node scripts/seed_tmua2016.js",
     "seed:knowledge": "node scripts/seed_knowledge.js",
+    "classify:existing": "node scripts/classify_existing.js",
     "latexify": "node scripts/latexify_options.js",
     "smoke": "node scripts/smoke.js",
     "verify:math": "node scripts/verify_math.js",
