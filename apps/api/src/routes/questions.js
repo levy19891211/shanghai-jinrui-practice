@@ -328,6 +328,11 @@ router.post(
 function buildWhere(query, user) {
   const where = {};
   if (query.subject) where.subject = query.subject;
+  // 多学科过滤(subjects=a,b,c),用于学科 Tab(如数学 tab 包含 TMUA)
+  if (query.subjects) {
+    const subs = String(query.subjects).split(",").map((s) => s.trim()).filter(Boolean);
+    if (subs.length) where.subject = { in: subs };
+  }
   if (query.topic) where.topic = { contains: query.topic };
   if (query.difficulty) where.difficulty = Number(query.difficulty);
   if (query.paper) where.paper = query.paper;

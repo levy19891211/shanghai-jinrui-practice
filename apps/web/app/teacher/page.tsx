@@ -190,7 +190,11 @@ export default function TeacherPage() {
     const qs = new URLSearchParams({ pageSize: "50" });
     if (statusFilter) qs.set("status", statusFilter);
     if (paperId) qs.set("paperId", paperId);
-    if (subjectTab) qs.set("subject", subjectTab);
+    // 学科 Tab:数学 tab 包含 TMUA(数学思维考试);其余学科各自
+    if (subjectTab) {
+      const subs = subjectTab === "数学" ? ["数学", "TMUA"] : [subjectTab];
+      qs.set("subjects", subs.join(","));
+    }
     if (kpFilter) qs.set("knowledgePointId", kpFilter);
     if (diffFilter) qs.set("difficulty", diffFilter);
     const [sort, order] = sortBy.split("_");
