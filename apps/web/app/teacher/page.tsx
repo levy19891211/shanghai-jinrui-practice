@@ -65,6 +65,8 @@ export default function TeacherPage() {
   const [list, setList] = useState<Question[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState("");
+  // 学科 tab(空 = 全部;含数学/物理/化学/生物)
+  const [subjectTab, setSubjectTab] = useState("");
   // 筛选与排序:知识点 / 难度 / 排序
   const [kpFilter, setKpFilter] = useState("");
   const [diffFilter, setDiffFilter] = useState("");
@@ -188,6 +190,7 @@ export default function TeacherPage() {
     const qs = new URLSearchParams({ pageSize: "50" });
     if (statusFilter) qs.set("status", statusFilter);
     if (paperId) qs.set("paperId", paperId);
+    if (subjectTab) qs.set("subject", subjectTab);
     if (kpFilter) qs.set("knowledgePointId", kpFilter);
     if (diffFilter) qs.set("difficulty", diffFilter);
     const [sort, order] = sortBy.split("_");
@@ -198,7 +201,7 @@ export default function TeacherPage() {
     const d = await api.get<QuestionList>(`/questions?${qs.toString()}`);
     setList(d.list);
     setTotal(d.total);
-  }, [statusFilter, paperId, kpFilter, diffFilter, sortBy]);
+  }, [statusFilter, paperId, subjectTab, kpFilter, diffFilter, sortBy]);
 
   // 加载知识点库(供筛选下拉)
   useEffect(() => {
@@ -502,11 +505,11 @@ export default function TeacherPage() {
             <option value="REJECTED">已退回</option>
             <option value="ARCHIVED">已下架</option>
           </select>
-          {/* 筛选:知识点 / 难度 */}
+          {/* 筛选:知识点(仅显示当前学科) / 难度 */}
           <select value={kpFilter} onChange={(e) => setKpFilter(e.target.value)} className="max-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
             <option value="">全部知识点</option>
-            {allKps.map((kp) => (
-              <option key={kp.id} value={kp.id}>[{kp.subject}] {kp.name}</option>
+            {(subjectTab ? allKps.filter((kp) => kp.subject === subjectTab) : allKps).map((kp) => (
+              <option key={kp.id} value={kp.id}>{subjectTab ? kp.name : `[${kp.subject}] ${kp.name}`}</option>
             ))}
           </select>
           <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
@@ -531,6 +534,21 @@ export default function TeacherPage() {
             批量导入
           </button>
         </div>
+      </div>
+
+      {/* 学科 Tab */}
+      <div className="flex flex-wrap gap-2">
+        {[{ v: "", l: "全部" }, { v: "数学", l: "数学" }, { v: "物理", l: "物理" }, { v: "化学", l: "化学" }, { v: "生物", l: "生物" }].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => { setSubjectTab(t.v); setKpFilter(""); }}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              subjectTab === t.v ? "bg-indigo-600 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
       </div>
 
       {paperId && (
