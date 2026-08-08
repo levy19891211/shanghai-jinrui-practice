@@ -1,6 +1,12 @@
 // Web Audio 合成音效(零素材):冒险模式反馈音
 // 注意:浏览器要求用户先交互后才能播放,首次点击任意按钮会初始化 AudioContext
 let ctx: AudioContext | null = null;
+let muted = false;
+
+/** 全局静音开关(Phase C:冒险模式"音效"设置) */
+export function setSfxMuted(m: boolean) {
+  muted = m;
+}
 
 function ensureCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -33,6 +39,7 @@ function tone(freq: number, dur: number, type: OscillatorType = "sine", vol = 0.
 export type SfxKind = "correct" | "wrong" | "combo" | "reward" | "boss" | "boss_appear" | "shield" | "death" | "click" | "pick" | "victory";
 
 export function playSfx(kind: SfxKind, combo = 0) {
+  if (muted) return;
   try {
     switch (kind) {
       case "correct":

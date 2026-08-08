@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
-import { playSfx } from "@/lib/sfx";
+import { playSfx, setSfxMuted } from "@/lib/sfx";
 import Particles, { type Burst } from "./Particles";
 
 interface Run {
@@ -36,6 +36,21 @@ const DIFF_LABEL: Record<number, string> = { 1: "入门", 2: "基础", 3: "中�
 const MAX_LAYER = 20;
 const ITEM_LABEL: Record<string, string> = { shield: "🛡 护盾", heal: "🧪 药水", skip: "⏭ 跳过", hint: "💡 提示" };
 const NODE_LABEL: Record<string, string> = { normal: "普通", boss: "BOSS", reward: "奖励" };
+// Phase C:按层数分 Boss/敌人(每 5 层不同 Boss,普通敌人 3 档进阶)
+const BOSS_NAME: Record<number, string> = { 5: "巨眼魔像", 10: "血翼蝠王", 15: "暗影蝠王", 20: "灭世魔像" };
+const BOSS_IMG: Record<number, string> = {
+  5: "/images/rogue/boss.png",
+  10: "/images/rogue/boss2.png",
+  15: "/images/rogue/boss3.png",
+  20: "/images/rogue/boss.png",
+};
+function bossImg(layer: number) { return BOSS_IMG[layer] || BOSS_IMG[5]; }
+function bossName(layer: number) { return BOSS_NAME[layer] || BOSS_NAME[5]; }
+function enemyImg(layer: number) {
+  if (layer <= 6) return "/images/rogue/enemy.png";
+  if (layer <= 13) return "/images/rogue/enemy2.png";
+  return "/images/rogue/enemy3.png";
+}
 
 export default function RoguelikePage() {
   const router = useRouter();
@@ -63,10 +78,39 @@ export default function RoguelikePage() {
   const [rewardClaimKey, setRewardClaimKey] = useState(0);
   const [victoryOn, setVictoryOn] = useState(false);
   const [deathOn, setDeathOn] = useState(false);
+  // Phase C:体验设置(减少动效/静音,localStorage 持久化)
+  const [fxReduced, setFxReduced] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("rogue_fx_reduced") === "1";
+  });
+  const [sfxMuted, setSfxMutedState] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("rogue_sfx_muted") === "1";
+  });
+
+  useEffect(() => {
+    setSfxMuted(sfxMuted);
+  }, [sfxMuted]);
+
+  function toggleFx() {
+    setFxReduced((v) => {
+      const nv = !v;
+      try { localStorage.setItem("rogue_fx_reduced", nv ? "1" : "0"); } catch {}
+      return nv;
+    });
+  }
+  function toggleSfx() {
+    setSfxMutedState((v) => {
+      const nv = !v;
+      try { localStorage.setItem("rogue_sfx_muted", nv ? "1" : "0"); } catch {}
+      return nv;
+    });
+  }
 
   const burstCenter = useCallback((kind: Burst["kind"]) => {
+    if (fxReduced) return; // 减少动效:跳过粒子
     setBurst({ x: window.innerWidth / 2, y: window.innerHeight * 0.45, kind });
-  }, []);
+  }, [fxReduced]);
 
   // 进入页面检测是否有进行中的冒险
   useEffect(() => {
@@ -162,7 +206,7 @@ export default function RoguelikePage() {
       } else {
         if (d.shieldUsed) playSfx("shield");
         else playSfx("wrong");
-        setShake(Date.now());
+        if (!fxReduced) setShake(Date.now());
         burstCenter("red");
       }
       if (d.runOver && d.status === "DEAD") playSfx("death");
@@ -250,14 +294,14 @@ export default function RoguelikePage() {
   return (
     <div className="space-y-4">
       <Particles burst={burst} onDone={() => setBurst(null)} />
-      {/* Phase B 全屏横幅(Boss 出现 / 击败 / 奖励领取) */}
-      {phase === "playing" && bossAppearKey > 0 && (
-        <div key={"ba-" + bossAppearKey} className="banner banner-boss">⚔ BOSS 出现了!</div>
+      {/* Phase B 全屏横幅(Boss 出现 / 击败 / 奖励领取);减少动效时不渲染 */}
+      {phase === "playing" && !fxReduced && bossAppearKey > 0 && run && (
+        <div key={"ba-" + bossAppearKey} className="banner banner-boss">⚔ {bossName(run.layer)} 出现了!</div>
       )}
-      {phase === "playing" && bossDefeatKey > 0 && (
-        <div key={"bd-" + bossDefeatKey} className="banner banner-defeat">🏆 BOSS 击破!</div>
+      {phase === "playing" && !fxReduced && bossDefeatKey > 0 && (
+        <div key={"bd-" + bossDefeatKey} className="banner banner-defeat">🏆 {run ? bossName(run.layer) : "BOSS"} 击破!</div>
       )}
-      {phase === "playing" && rewardClaimKey > 0 && (
+      {phase === "playing" && !fxReduced && rewardClaimKey > 0 && (
         <div key={"rc-" + rewardClaimKey} className="banner banner-claim">🎁 奖励已领取!</div>
       )}
       {phase === "setup" && (
@@ -290,6 +334,18 @@ export default function RoguelikePage() {
               <p>🔥 连对递增得分;3/5/10 连对触发奖励</p>
               <p>⚔ 每 5 层 Boss(抽你的错题) · 🎁 每 3 层奖励节点 · 🏁 第 {MAX_LAYER} 层通关</p>
             </div>
+            {/* Phase C:体验设置 */}
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button onClick={toggleFx}
+                className={`rounded-lg px-3 py-1.5 font-medium transition ${fxReduced ? "border border-slate-300 text-slate-500" : "bg-indigo-600 text-white"}`}>
+                ✨ 粒子特效:{fxReduced ? "关" : "开"}
+              </button>
+              <button onClick={toggleSfx}
+                className={`rounded-lg px-3 py-1.5 font-medium transition ${sfxMuted ? "border border-slate-300 text-slate-500" : "bg-indigo-600 text-white"}`}>
+                🔊 音效:{sfxMuted ? "关" : "开"}
+              </button>
+              <span className="self-center text-slate-400">开粒子特效时手机端会自动降低粒子数保持流畅</span>
+            </div>
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
             <button onClick={start} disabled={loading} className="h-10 w-full rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
               {loading ? "生成中..." : hasActive ? "继续冒险" : "开始冒险"}
@@ -299,16 +355,16 @@ export default function RoguelikePage() {
       )}
 
       {phase === "playing" && run && (
-        <div key={shake} className="roguelike-bg mx-auto max-w-2xl space-y-4 rounded-2xl p-4">
+        <div key={shake} className={`roguelike-bg mx-auto max-w-2xl space-y-4 rounded-2xl p-4 ${fxReduced ? "fx-reduced" : ""}`}>
           {/* 状态栏 */}
           <div className="rounded-2xl border border-white/10 bg-white/95 p-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               {nodeType === "boss" && (
-                <img src="/images/rogue/boss.png" className="portrait portrait-boss h-16 w-16 shrink-0" alt="Boss" />
+                <img src={bossImg(run.layer)} className="portrait portrait-boss h-16 w-16 shrink-0" alt="Boss" />
               )}
               {nodeType === "normal" && (
-                <img src="/images/rogue/enemy.png" className="portrait portrait-enemy h-12 w-12 shrink-0" alt="敌人" />
+                <img src={enemyImg(run.layer)} className="portrait portrait-enemy h-12 w-12 shrink-0" alt="敌人" />
               )}
               <div className="flex items-center gap-2">
                 <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${nodeType === "boss" ? "bg-red-600 text-white" : "bg-indigo-600/15 text-indigo-600"}`}>
@@ -354,7 +410,7 @@ export default function RoguelikePage() {
           {/* 奖励节点 */}
           {nodeType === "reward" && (
             <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-amber-300/70 bg-amber-50/95 p-8 text-center shadow-lg">
-              <div className="coin-rain" />
+              {!fxReduced && <div className="coin-rain" />}
               <div className="gift-bounce relative text-5xl">🎁</div>
               <h2 className="reward-slide relative mt-2 text-lg font-bold text-amber-700">奖励节点</h2>
               <p className="relative mt-1 text-sm text-amber-600">休息一下,领取金币奖励!</p>
@@ -409,10 +465,10 @@ export default function RoguelikePage() {
 
       {phase === "result" && run && (
         <>
-          {victoryOn && <div className="victory-curtain" aria-hidden />}
-          {deathOn && <div className="death-curtain" aria-hidden />}
-          {victoryOn && <div key={"vic-" + phase} className="banner banner-victory">🏆 通关!</div>}
-        <div className="roguelike-bg mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/95 p-8 text-center shadow-lg">
+          {victoryOn && !fxReduced && <div className="victory-curtain" aria-hidden />}
+          {deathOn && !fxReduced && <div className="death-curtain" aria-hidden />}
+          {victoryOn && !fxReduced && <div key={"vic-" + phase} className="banner banner-victory">🏆 通关!</div>}
+        <div className={`roguelike-bg mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/95 p-8 text-center shadow-lg ${fxReduced ? "fx-reduced" : ""}`}>
           <div className="text-5xl">{run.status === "WON" ? "🏆" : "💀"}</div>
           <h1 className="mt-3 text-xl font-bold">{run.status === "WON" ? "通关!" : "冒险结束"}</h1>
           <p className="mt-1 text-sm text-slate-500">{run.status === "WON" ? "你完成了整场冒险,太强了!" : "生命耗尽,下次再来!"}</p>

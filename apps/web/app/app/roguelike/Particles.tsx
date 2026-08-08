@@ -7,7 +7,6 @@ export interface Burst {
   y: number;
   kind: "gold" | "red" | "coins" | "confetti";
 }
-
 const PALETTES: Record<Burst["kind"], string[]> = {
   gold: ["#fbbf24", "#f59e0b", "#fde68a", "#fff7ed"],
   red: ["#ef4444", "#f87171", "#b91c1c", "#fecaca"],
@@ -34,7 +33,15 @@ export default function Particles({ burst, onDone }: { burst: Burst | null; onDo
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const palette = PALETTES[burst.kind];
-    const count = burst.kind === "confetti" ? 120 : burst.kind === "coins" ? 45 : 65;
+    // Phase C 移动端/低配:粒子数自动降级(prefers-reduced-motion 减到 1/4,窄屏按比例减)
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const w = window.innerWidth;
+    let scale = 1;
+    if (reducedMotion) scale = 0.25;
+    if (w < 480) scale = Math.min(scale, 0.4);
+    else if (w < 768) scale = Math.min(scale, 0.65);
+    const baseCount = burst.kind === "confetti" ? 100 : burst.kind === "coins" ? 40 : 60;
+    const count = Math.max(8, Math.round(baseCount * scale));
     const parts: Particle[] = Array.from({ length: count }, () => ({
       x: burst.x,
       y: burst.y,

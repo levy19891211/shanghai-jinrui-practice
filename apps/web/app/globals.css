@@ -297,3 +297,53 @@ body {
 .math-inline .katex-display {
   margin: 0.25em 0;
 }
+
+/* ===== Phase C 降级与性能 ===== */
+
+/* 「减少动效」手动开关:禁用常驻动画(粒子/横幅/幕布由 JS 控制不渲染) */
+.fx-reduced .roguelike-bg,
+.fx-reduced .combo-fire,
+.fx-reduced .combo-pop,
+.fx-reduced .portrait-boss,
+.fx-reduced .portrait-enemy,
+.fx-reduced .gift-bounce,
+.fx-reduced .low-hp,
+.fx-reduced .pop-in,
+.fx-reduced .reward-slide,
+.fx-reduced .boss-arena::before {
+  animation: none !important;
+}
+.fx-reduced .coin-rain {
+  display: none !important;
+}
+
+/* 系统「减少动态效果」偏好:全局降级 */
+@media (prefers-reduced-motion: reduce) {
+  .roguelike-bg,
+  .combo-fire,
+  .combo-pop,
+  .portrait-boss,
+  .portrait-enemy,
+  .gift-bounce,
+  .low-hp,
+  .pop-in,
+  .reward-slide,
+  .boss-arena::before {
+    animation: none !important;
+  }
+  .coin-rain {
+    display: none !important;
+  }
+}
+
+/* 移动端横幅适配 */
+@media (max-width: 640px) {
+  .banner {
+    top: 12%;
+    font-size: 0.9rem;
+    padding: 10px 18px;
+  }
+  .banner-victory {
+    font-size: 1.2rem;
+  }
+}
