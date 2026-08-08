@@ -31,6 +31,7 @@ interface FormState {
   subject: string;
   paper: string;
   topic: string;
+  topicIds: string[]; // 关联知识点 id(多选)
   difficulty: number;
   type: string;
   stem: string;
@@ -41,7 +42,7 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
-  subject: "TMUA", paper: "Paper 1", topic: "", difficulty: 3, type: "SINGLE_CHOICE",
+  subject: "TMUA", paper: "Paper 1", topic: "", topicIds: [], difficulty: 3, type: "SINGLE_CHOICE",
   stem: "", optionsText: "", answer: "", solution: "", status: "DRAFT",
 };
 
@@ -72,6 +73,16 @@ export default function TeacherPage() {
   const [reviewError, setReviewError] = useState("");
   // 从「试卷管理 → 去审核」跳转过来时,只看这张卷内的题
   const [paperId, setPaperId] = useState("");
+  // 知识点库(按表单学科加载,供多选归类)
+  const [kps, setKps] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (!showForm) return;
+    api
+      .get<{ list: { id: string; name: string }[] }>(`/knowledge-points?subject=${encodeURIComponent(form.subject)}`)
+      .then((d) => setKps(d.list || []))
+      .catch(() => setKps([]));
+  }, [form.subject, showForm]);
 
   // —— 图片上传:题干 / 选项 / 解析 插入图表 ——
   const stemRef = useRef<HTMLTextAreaElement>(null);
@@ -188,10 +199,11 @@ export default function TeacherPage() {
     window.history.replaceState(null, "", "/teacher");
   }
 
-  function openCreate() { setForm(EMPTY); setError(""); setShowForm(true); }
+  function openCreate() { setForm({ ...EMPTY, topicIds: [] }); setError(""); setShowForm(true); }
   function openEdit(q: Question) {
     setForm({
-      id: q.id, subject: q.subject, paper: q.paper ?? "", topic: q.topic, difficulty: q.difficulty,
+      id: q.id, subject: q.subject, paper: q.paper ?? "", topic: q.topic, topicIds: q.topicIds || [],
+      difficulty: q.difficulty,
       type: q.type, stem: q.stem, optionsText: (q.options || []).join("\n"), answer: q.answer ?? "",
       solution: q.solution ?? "", status: q.status,
     });
@@ -207,7 +219,8 @@ export default function TeacherPage() {
     setSaving(true);
     try {
       const payload = {
-        subject: form.subject, paper: form.paper || null, topic: form.topic, difficulty: Number(form.difficulty),
+        subject: form.subject, paper: form.paper || null, topic: form.topic, topicIds: form.topicIds,
+        difficulty: Number(form.difficulty),
         type: form.type, stem: form.stem, options, answer: form.answer, solution: form.solution || null, status: form.status,
       };
       if (form.id) {
@@ -501,7 +514,17 @@ export default function TeacherPage() {
                       {q.subject}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{q.topic}</td>
+                  <td className="max-w-[200px] px-4 py-3">
+                    {q.topics && q.topics.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {q.topics.map((t) => (
+                          <span key={t} className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-600">{t}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-500" title={q.topic ? `原识别:${q.topic}` : "导入/录入时未归类"}>待归类</span>
+                    )}
+                  </td>
                   <td className="max-w-[280px] px-4 py-3 text-slate-600">
                     <div className="truncate">{plainText(q.stem)}</div>
                     {q.status === "REJECTED" && q.reviewNote && (
@@ -683,15 +706,42 @@ Answer: B
                 <select className={`${input} ui-select`} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
                   <option value="TMUA">TMUA</option>
                   <option value="ESAT">ESAT</option>
+                  <option value="数学">数学</option>
+                  <option value="物理">物理</option>
+                  <option value="化学">化学</option>
+                  <option value="生物">生物</option>
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">试卷/部分</label>
                 <input className={input} value={form.paper} onChange={(e) => setForm({ ...form, paper: e.target.value })} placeholder="Paper 1 / Maths 1" />
               </div>
-              <div>
-                <label className="mb-1 block text-sm text-slate-600">知识点</label>
-                <input className={input} value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="如:代数、微积分、逻辑" />
+              <div className="col-span-2">
+                <label className="mb-1 block text-sm text-slate-600">知识点(可多选)</label>
+                {kps.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">
+                    该学科暂无知识点,请先到「知识点管理」页添加
+                  </div>
+                ) : (
+                  <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                    {kps.map((kp) => {
+                      const on = form.topicIds.includes(kp.id);
+                      return (
+                        <button
+                          key={kp.id}
+                          type="button"
+                          onClick={() => setForm({ ...form, topicIds: on ? form.topicIds.filter((x) => x !== kp.id) : [...form.topicIds, kp.id] })}
+                          className={`rounded-full px-2.5 py-1 text-xs transition ${on ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                        >
+                          {kp.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.topic && !form.topicIds.length && (
+                  <p className="mt-1 text-xs text-amber-500" title="题库中原有的知识点文本">原知识点「{form.topic}」未匹配到库内标签,请选择标签或留空待归类</p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -760,7 +810,13 @@ Answer: B
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
               <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{reviewQ.subject}</span>
               {reviewQ.paper && <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.paper}</span>}
-              <span className="rounded bg-slate-100 px-2 py-0.5">{reviewQ.topic}</span>
+              {reviewQ.topics && reviewQ.topics.length ? (
+                reviewQ.topics.map((t) => (
+                  <span key={t} className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{t}</span>
+                ))
+              ) : (
+                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-600" title={reviewQ.topic ? `原识别:${reviewQ.topic}` : ""}>待归类</span>
+              )}
               <span className="rounded bg-slate-100 px-2 py-0.5">难度 {reviewQ.difficulty}</span>
               {reviewQ.source && <span className="rounded bg-slate-100 px-2 py-0.5">{reviewQ.source}</span>}
             </div>

@@ -10,7 +10,56 @@ import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile } from "../lib/parse-import-file.js";
 
 const router = Router();
-const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
+const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
+
+// 解析 JSON 字符串数组(如 topicIds)
+function parseJsonIds(s) {
+  try {
+    const v = JSON.parse(s || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// 依据 subject + topic 字符串,从知识点库自动匹配知识点(名称相等或互相包含)。
+// 匹配不到返回 []——题目留白,由老师后续归类。
+async function matchKnowledgePoints(subject, topicStr) {
+  const names = String(topicStr || "")
+    .split(/[,、;；\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!names.length) return [];
+  const kps = await prisma.knowledgePoint.findMany({ where: subject ? { subject } : {} });
+  const hits = [];
+  for (const n of names) {
+    const hit = kps.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+    if (hit && !hits.some((h) => h.id === hit.id)) hits.push(hit);
+  }
+  return hits;
+}
+
+// 把 topicIds(数组)解析成知识点名称数组;题目未归类返回空
+async function resolveTopics(topicIds) {
+  const ids = Array.isArray(topicIds) ? topicIds : parseJsonIds(topicIds);
+  if (!ids.length) return [];
+  const kps = await prisma.knowledgePoint.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+  const byId = new Map(kps.map((k) => [k.id, k.name]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
+// 归一化题目携带的知识点:支持 topicIds(数组) 或 topic(字符串,自动匹配)
+// 返回 { topicIds, topic }
+async function normalizeTopicInput({ subject, topic, topicIds }) {
+  if (Array.isArray(topicIds) && topicIds.length) {
+    const kps = await prisma.knowledgePoint.findMany({ where: { id: { in: topicIds } }, select: { id: true, subject: true, name: true } });
+    const valid = kps.filter((k) => !subject || k.subject === subject);
+    const ids = valid.map((k) => k.id);
+    return { topicIds: ids, topic: (valid[0]?.name) || String(topic || "").trim() };
+  }
+  const matched = await matchKnowledgePoints(subject, topic);
+  return { topicIds: matched.map((k) => k.id), topic: matched[0]?.name || String(topic || "").trim() };
+}
 
 // 解析 options(JSON 字符串或数组) → 字符串数组
 function safeParseOptions(raw) {
@@ -100,6 +149,26 @@ async function importRows(req, rows) {
   const errors = [];
   const created = []; // 供套题自动组卷使用
   let imported = 0;
+  // 预载知识点库(按 subject 分组),供导入自动归类复用
+  const allKps = await prisma.knowledgePoint.findMany();
+  const kpBySubject = new Map();
+  for (const k of allKps) {
+    if (!kpBySubject.has(k.subject)) kpBySubject.set(k.subject, []);
+    kpBySubject.get(k.subject).push(k);
+  }
+  function matchKps(subject, topicStr) {
+    const names = String(topicStr || "")
+      .split(/[,、;；\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const pool = kpBySubject.get(subject) || [];
+    const hits = [];
+    for (const n of names) {
+      const hit = pool.find((k) => k.name === n || k.name.includes(n) || n.includes(k.name));
+      if (hit && !hits.some((h) => h.id === hit.id)) hits.push(hit);
+    }
+    return hits;
+  }
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     try {
@@ -113,11 +182,24 @@ async function importRows(req, rows) {
       if (!r.answer && r.source !== "PDF 导入") {
         throw new Error("字段不完整:answer 必填");
       }
+      // 知识点归类:显式 topicIds 优先;否则按 topic 字符串自动匹配(匹配不到留空)
+      let topicIds = [];
+      let topic = String(r.topic || "").trim();
+      if (Array.isArray(r.topicIds) && r.topicIds.length) {
+        const valid = allKps.filter((k) => r.topicIds.includes(k.id) && k.subject === r.subject);
+        topicIds = valid.map((k) => k.id);
+        if (valid[0]) topic = valid[0].name;
+      } else {
+        const matched = matchKps(r.subject, r.topic);
+        topicIds = matched.map((k) => k.id);
+        if (matched[0]) topic = matched[0].name;
+      }
       const q = await prisma.question.create({
         data: {
           subject: r.subject,
           paper: r.paper || null,
-          topic: r.topic,
+          topic,
+          topicIds: JSON.stringify(topicIds),
           difficulty: Number(r.difficulty) || 3,
           type: r.type || "SINGLE_CHOICE",
           stem: normalizeNewlines(r.stem),
@@ -290,7 +372,12 @@ router.get(
       }),
       prisma.question.count({ where }),
     ]);
-    ok(res, { list, total, page, pageSize });
+    // 附带各题知识点名称(按 topicIds 解析)
+    const allIds = [...new Set(list.flatMap((q) => parseJsonIds(q.topicIds)))];
+    const kps = allIds.length ? await prisma.knowledgePoint.findMany({ where: { id: { in: allIds } }, select: { id: true, name: true } }) : [];
+    const kpNameById = new Map(kps.map((k) => [k.id, k.name]));
+    const enriched = list.map((q) => ({ ...q, topics: parseJsonIds(q.topicIds).map((id) => kpNameById.get(id)).filter(Boolean) }));
+    ok(res, { list: enriched, total, page, pageSize });
   })
 );
 
@@ -302,7 +389,7 @@ router.get(
     const q = await prisma.question.findUnique({ where: { id: req.params.id } });
     if (!q) return fail(res, 404, "题目不存在");
     if (q.status !== "PUBLISHED" && req.user.role === "STUDENT") return fail(res, 404, "题目不存在");
-    ok(res, q);
+    ok(res, { ...q, topics: await resolveTopics(q.topicIds) });
   })
 );
 
@@ -312,16 +399,18 @@ router.post(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { subject, paper, topic, difficulty, type, stem, options, answer, solution, source, status } = req.body || {};
+    const { subject, paper, topic, topicIds, difficulty, type, stem, options, answer, solution, source, status } = req.body || {};
     if (!subject || !topic || !stem || !options || !answer) {
       return fail(res, 400, "subject、topic、stem、options、answer 必填");
     }
     if (!Array.isArray(options) || options.length < 2) return fail(res, 400, "options 至少 2 个选项");
+    const kp = await normalizeTopicInput({ subject, topic, topicIds });
     const q = await prisma.question.create({
       data: {
         subject,
         paper: paper || null,
-        topic,
+        topic: kp.topic,
+        topicIds: JSON.stringify(kp.topicIds),
         difficulty: difficulty || 3,
         type: type || "SINGLE_CHOICE",
         stem: normalizeNewlines(stem),
@@ -363,6 +452,17 @@ router.put(
     if (b.options !== undefined) {
       if (!Array.isArray(b.options) || b.options.length < 2) return fail(res, 400, "options 至少 2 个选项");
       data.options = JSON.stringify(b.options.map((o) => normalizeNewlines(o)));
+    }
+    // 知识点:传了 topicIds 数组则按库归类并同步 topic;只传 topic 则自动匹配(可清空:传空数组)
+    if (b.topicIds !== undefined) {
+      if (!Array.isArray(b.topicIds)) return fail(res, 400, "topicIds 必须是数组");
+      const kp = await normalizeTopicInput({ subject: b.subject ?? existed.subject, topic: b.topic ?? existed.topic, topicIds: b.topicIds });
+      data.topicIds = JSON.stringify(kp.topicIds);
+      data.topic = kp.topic;
+    } else if (b.topic !== undefined && b.topicIds === undefined) {
+      const kp = await normalizeTopicInput({ subject: b.subject ?? existed.subject, topic: b.topic, topicIds: undefined });
+      data.topicIds = JSON.stringify(kp.topicIds);
+      data.topic = kp.topic;
     }
     const q = await prisma.question.update({ where: { id: req.params.id }, data });
     // 状态可能被手动改动,同步刷新所在试卷的就绪度

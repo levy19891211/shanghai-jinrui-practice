@@ -18,6 +18,8 @@ export interface Question {
   subject: "TMUA" | "ESAT";
   paper?: string | null;
   topic: string;
+  topicIds?: string[] | null; // 关联知识点 id(题库管理用)
+  topics?: string[]; // 知识点名称数组(后端解析返回)
   difficulty: number;
   type: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "NUMERIC";
   stem: string;

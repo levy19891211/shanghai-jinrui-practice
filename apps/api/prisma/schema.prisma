@@ -38,7 +38,8 @@ model Question {
   id         String        @id @default(cuid())
   subject    String
   paper      String?
-  topic      String
+  topic      String // 主知识点名(兼容统计/过滤);关联库由 topicIds 决定
+  topicIds   String? // 知识点 id 列表(JSON 数组),题目可归属多个知识点
   difficulty Int           @default(3)
   type       String        @default("SINGLE_CHOICE")
   stem       String
@@ -57,6 +58,19 @@ model Question {
   updatedAt  DateTime      @updatedAt
   records    AnswerRecord[]
   wrongBook  WrongBook[]
+}
+
+// 知识点(老师手动维护,供题目归类)
+// subject 合法值:数学 | 物理 | 化学 | 生物
+model KnowledgePoint {
+  id        String   @id @default(cuid())
+  subject   String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subject, name])
 }
 
 // 面试练习题(如剑桥数学面试题):开放式问答,无标准选项
