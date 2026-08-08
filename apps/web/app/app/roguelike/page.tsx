@@ -57,6 +57,12 @@ export default function RoguelikePage() {
   const [burst, setBurst] = useState<Burst | null>(null);
   const [shake, setShake] = useState(0);
   const [comboPop, setComboPop] = useState(0);
+  // Phase B 事件特效状态
+  const [bossAppearKey, setBossAppearKey] = useState(0);
+  const [bossDefeatKey, setBossDefeatKey] = useState(0);
+  const [rewardClaimKey, setRewardClaimKey] = useState(0);
+  const [victoryOn, setVictoryOn] = useState(false);
+  const [deathOn, setDeathOn] = useState(false);
 
   const burstCenter = useCallback((kind: Burst["kind"]) => {
     setBurst({ x: window.innerWidth / 2, y: window.innerHeight * 0.45, kind });
@@ -66,6 +72,36 @@ export default function RoguelikePage() {
   useEffect(() => {
     api.get<{ run: Run | null }>("/roguelike/active").then((d) => setHasActive(!!d.run)).catch(() => {});
   }, []);
+
+  // Phase B:Boss 节点出现时触发横幅 + 低鸣音
+  useEffect(() => {
+    if (nodeType === "boss") {
+      playSfx("boss_appear");
+      setBossAppearKey(Date.now());
+    }
+  }, [nodeType]);
+
+  // Phase B:进入结算页触发胜利/死亡幕布与音效
+  useEffect(() => {
+    if (phase !== "result" || !run) return;
+    if (run.status === "WON") {
+      setVictoryOn(true);
+      playSfx("victory");
+    } else if (run.status === "DEAD") {
+      setDeathOn(true);
+    }
+  }, [phase, run]);
+
+  // Phase B:banner 自动消失(2.6s 后清零 key,避免残留)
+  useEffect(() => {
+    if (!bossAppearKey && !bossDefeatKey && !rewardClaimKey) return;
+    const t = setTimeout(() => {
+      setBossAppearKey(0);
+      setBossDefeatKey(0);
+      setRewardClaimKey(0);
+    }, 2600);
+    return () => clearTimeout(t);
+  }, [bossAppearKey, bossDefeatKey, rewardClaimKey]);
 
   function applyNode(res: {
     nodeType?: "normal" | "boss" | "reward" | null;
@@ -121,6 +157,7 @@ export default function RoguelikePage() {
         if (nodeType === "boss") {
           playSfx("boss");
           burstCenter("confetti");
+          setBossDefeatKey(Date.now());
         }
       } else {
         if (d.shieldUsed) playSfx("shield");
@@ -158,6 +195,7 @@ export default function RoguelikePage() {
       setToast(d.reward || "奖励已领取");
       playSfx("reward");
       burstCenter("coins");
+      setRewardClaimKey(Date.now());
       setRun((r) => (r ? { ...r, hp: d.hp!, layer: d.layer!, score: d.score!, coins: d.coins!, status: d.status! } : r));
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
@@ -212,6 +250,16 @@ export default function RoguelikePage() {
   return (
     <div className="space-y-4">
       <Particles burst={burst} onDone={() => setBurst(null)} />
+      {/* Phase B 全屏横幅(Boss 出现 / 击败 / 奖励领取) */}
+      {phase === "playing" && bossAppearKey > 0 && (
+        <div key={"ba-" + bossAppearKey} className="banner banner-boss">⚔ BOSS 出现了!</div>
+      )}
+      {phase === "playing" && bossDefeatKey > 0 && (
+        <div key={"bd-" + bossDefeatKey} className="banner banner-defeat">🏆 BOSS 击破!</div>
+      )}
+      {phase === "playing" && rewardClaimKey > 0 && (
+        <div key={"rc-" + rewardClaimKey} className="banner banner-claim">🎁 奖励已领取!</div>
+      )}
       {phase === "setup" && (
         <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-xl font-bold">冒险模式</h1>
@@ -255,12 +303,20 @@ export default function RoguelikePage() {
           {/* 状态栏 */}
           <div className="rounded-2xl border border-white/10 bg-white/95 p-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {nodeType === "boss" && (
+                <img src="/images/rogue/boss.png" className="portrait portrait-boss h-16 w-16 shrink-0" alt="Boss" />
+              )}
+              {nodeType === "normal" && (
+                <img src="/images/rogue/enemy.png" className="portrait portrait-enemy h-12 w-12 shrink-0" alt="敌人" />
+              )}
               <div className="flex items-center gap-2">
                 <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${nodeType === "boss" ? "bg-red-600 text-white" : "bg-indigo-600/15 text-indigo-600"}`}>
                   {nodeType === "boss" ? `⚔ BOSS 第 ${run.layer} 层` : `第 ${run.layer} 层`}
                 </span>
                 <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm text-slate-600">{run.subject}</span>
               </div>
+            </div>
               <div className="flex items-center gap-3 text-sm">
                 <span key={comboPop} title="连续正确" className={run.combo >= 3 ? "combo-pop" : ""}>
                   {run.combo >= 3 ? <span className="combo-fire mr-0.5">🔥</span> : "🔥 "}
@@ -297,11 +353,12 @@ export default function RoguelikePage() {
 
           {/* 奖励节点 */}
           {nodeType === "reward" && (
-            <div className="rounded-2xl border-2 border-dashed border-amber-300/70 bg-amber-50/95 p-8 text-center shadow-lg">
-              <div className="gift-bounce text-5xl">🎁</div>
-              <h2 className="mt-2 text-lg font-bold text-amber-700">奖励节点</h2>
-              <p className="mt-1 text-sm text-amber-600">休息一下,领取金币奖励!</p>
-              <button onClick={claim} disabled={loading} className="mt-4 h-10 rounded-lg bg-amber-500 px-6 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
+            <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-amber-300/70 bg-amber-50/95 p-8 text-center shadow-lg">
+              <div className="coin-rain" />
+              <div className="gift-bounce relative text-5xl">🎁</div>
+              <h2 className="reward-slide relative mt-2 text-lg font-bold text-amber-700">奖励节点</h2>
+              <p className="relative mt-1 text-sm text-amber-600">休息一下,领取金币奖励!</p>
+              <button onClick={claim} disabled={loading} className="relative mt-4 h-10 rounded-lg bg-amber-500 px-6 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
                 {loading ? "处理中..." : "领取奖励"}
               </button>
             </div>
@@ -309,7 +366,7 @@ export default function RoguelikePage() {
 
           {/* 题目节点 */}
           {nodeType !== "reward" && (question ? (
-            <div className="pop-in rounded-2xl border border-white/10 bg-white p-6 shadow-lg">
+            <div className={`pop-in rounded-2xl border border-white/10 bg-white p-6 shadow-lg ${nodeType === "boss" ? "boss-arena" : ""}`}>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
                 <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
@@ -351,6 +408,10 @@ export default function RoguelikePage() {
       )}
 
       {phase === "result" && run && (
+        <>
+          {victoryOn && <div className="victory-curtain" aria-hidden />}
+          {deathOn && <div className="death-curtain" aria-hidden />}
+          {victoryOn && <div key={"vic-" + phase} className="banner banner-victory">🏆 通关!</div>}
         <div className="roguelike-bg mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/95 p-8 text-center shadow-lg">
           <div className="text-5xl">{run.status === "WON" ? "🏆" : "💀"}</div>
           <h1 className="mt-3 text-xl font-bold">{run.status === "WON" ? "通关!" : "冒险结束"}</h1>
@@ -371,9 +432,10 @@ export default function RoguelikePage() {
           </div>
           <div className="mt-6 flex gap-3">
             <button onClick={() => router.push("/app")} className="h-10 flex-1 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50">返回</button>
-            <button onClick={() => { setPhase("setup"); setRun(null); setQuestion(null); setFeedback(null); setSelected(""); setToast(null); setHintExclude([]); setInventory([]); setNodeType(null); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">再来一次</button>
+            <button onClick={() => { setPhase("setup"); setRun(null); setQuestion(null); setFeedback(null); setSelected(""); setToast(null); setHintExclude([]); setInventory([]); setNodeType(null); setBossAppearKey(0); setBossDefeatKey(0); setRewardClaimKey(0); setVictoryOn(false); setDeathOn(false); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">再来一次</button>
           </div>
         </div>
+        </>
       )}
     </div>
   );

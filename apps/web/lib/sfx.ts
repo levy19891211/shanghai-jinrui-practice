@@ -30,7 +30,7 @@ function tone(freq: number, dur: number, type: OscillatorType = "sine", vol = 0.
   o.stop(t + dur + 0.05);
 }
 
-export type SfxKind = "correct" | "wrong" | "combo" | "reward" | "boss" | "shield" | "death" | "click" | "pick";
+export type SfxKind = "correct" | "wrong" | "combo" | "reward" | "boss" | "boss_appear" | "shield" | "death" | "click" | "pick" | "victory";
 
 export function playSfx(kind: SfxKind, combo = 0) {
   try {
@@ -61,8 +61,18 @@ export function playSfx(kind: SfxKind, combo = 0) {
         tone(95, 0.5, "square", 0.16, 0.1);
         tone(190, 0.3, "triangle", 0.14, 0.2);
         break;
+      case "boss_appear":
+        tone(110, 0.5, "sawtooth", 0.2);
+        tone(75, 0.6, "square", 0.18, 0.08);
+        tone(140, 0.4, "triangle", 0.14, 0.18);
+        tone(200, 0.3, "sine", 0.1, 0.3);
+        break;
       case "death":
         [320, 260, 210, 160].forEach((f, i) => tone(f, 0.24, "sawtooth", 0.12, i * 0.12));
+        break;
+      case "victory":
+        [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, "triangle", 0.2, i * 0.1));
+        tone(1568, 0.3, "sine", 0.16, 0.45);
         break;
       case "click":
         tone(420, 0.05, "triangle", 0.06);
