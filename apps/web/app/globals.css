@@ -506,8 +506,8 @@ body {
 }
 .battle-panel.is-boss { border: 1px solid rgba(220, 38, 38, 0.4); }
 .battle-panel .q-hint { letter-spacing: 0.02em; }
-/* 窄屏：战斗画面在上,题干、选项依次在下 */
-@media (max-width: 860px) {
+/* 中等及以下屏幕：战斗画面在上,题干、选项依次在下(避免题干被挤成窄条显示不完整) */
+@media (max-width: 1100px) {
   .battle-layout { grid-template-columns: 1fr; gap: 12px; }
   .battle-center { order: 1; }
   .battle-left { order: 2; }
