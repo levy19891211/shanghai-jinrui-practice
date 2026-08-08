@@ -13,6 +13,7 @@
     "seed:tmua2016": "node scripts/seed_tmua2016.js",
     "seed:knowledge": "node scripts/seed_knowledge.js",
     "classify:existing": "node scripts/classify_existing.js",
+    "clean:option-prefix": "node scripts/clean_option_prefix.js",
     "latexify": "node scripts/latexify_options.js",
     "smoke": "node scripts/smoke.js",
     "verify:math": "node scripts/verify_math.js",
