@@ -33,6 +33,16 @@ const RULES = [
   { subject: "生物", re: /遗传|gene|genetic/, kp: "Genetics and Variation" },
 ];
 
+// 题目 subject → 可归类的知识点学科池
+const SUBJECT_POOL = {
+  TMUA: ["数学"],
+  ESAT: ["数学", "物理"],
+  数学: ["数学"],
+  物理: ["物理"],
+  化学: ["化学"],
+  生物: ["生物"],
+};
+
 // token 交集兜底:英文 topic 与知识点名共享核心词则匹配(如 "Sequences & Series" ↔ "Sequences and Series")
 function tokens(s) {
   return String(s || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
@@ -67,11 +77,11 @@ const kpCount = new Map();
 for (const q of qs) {
   const topic = String(q.topic || "").trim();
   if (!topic) { blank++; continue; }
-  const pool = kpBySubject.get(q.subject) || [];
+  const pool = (SUBJECT_POOL[q.subject] || []).flatMap((s) => kpBySubject.get(s) || []);
   const hitKps = [];
   // 规则匹配
   for (const r of RULES) {
-    if (r.subject !== q.subject) continue;
+    if (!(SUBJECT_POOL[q.subject] || []).includes(r.subject)) continue;
     if (r.re.test(topic)) {
       const kp = pool.find((k) => k.name === r.kp);
       if (kp && !hitKps.some((h) => h.id === kp.id)) hitKps.push(kp);
