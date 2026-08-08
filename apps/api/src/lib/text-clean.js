@@ -39,16 +39,30 @@ export function latexify(s) {
     .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
 }
 
+// 行内公式首尾空格规范化:$ x $ → $x$(块级 $$...$$ 原样保留)。
+// 视觉模型/录入常写成 "$ f(x) $"($ 后带空格),旧版渲染正则要求 $ 后非空白会误判成纯文本,导致 \log 等裸命令露出反斜杠。
+// 渲染层(rich.tsx)已兼容,这里再把数据规范化,双保险。
+export function normalizeInlineFormula(s) {
+  if (!s) return s;
+  return String(s).replace(/\$\$[\s\S]+?\$\$|\$([^$\n]+?)\$/g, (all, inner) => {
+    if (inner === undefined) return all; // 块级公式,原样保留
+    const t = inner.trim();
+    return t ? `$${t}$` : "$";
+  });
+}
+
 // 换行归一化:统一换行符、去行尾空白、合并 >=3 连续换行为 2、去首尾换行与空白。
 // 用于录入/导入/一键修正的边界,保证存库的题干/选项/解析换行一致(作者每行=一行,只清理多余空白)。
 export function normalizeNewlines(s) {
   if (!s) return s;
-  return s
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/^\n+|\n+$/g, "")
-    .trim();
+  return normalizeInlineFormula(
+    s
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/^\n+|\n+$/g, "")
+      .trim()
+  );
 }
 
 // 把一份可能含 HTML 与 \( \) 的文本,转成规范富文本(含 $...$ 公式)
@@ -94,6 +108,9 @@ export function toCanonicalText(raw = "") {
 
   // 5) LaTeX 化(√/π/²/≤ 等)
   s = latexify(s);
+
+  // 6) 行内公式首尾空格规范化($ x $ → $x$)
+  s = normalizeInlineFormula(s);
 
   return s;
 }
