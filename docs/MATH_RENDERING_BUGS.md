@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 23 | **题库题干/选项中 `$` 字符直接外露、整段被吞成巨大公式**:如题干出现 `f(x)g(x) = \cos^2 x$ for all real numbers x ... any x$ ?`,`$` 符号可见且后续整段被渲染成 KaTeX 变量斜体,导致题干无法阅读 | 数据导入/PDF 提取残留**只保留闭合 `$` 而丢失开头 `$**;`rich.tsx` 行内公式正则 `\$([^$]+?)\$` 会把两个零散 `$` 之间的整段正文吞进一个巨大行内公式,触发 KaTeX 把英文单词全部当变量渲染 | `apps/web/lib/rich.tsx`:① tokenize 增加 `looksLikeTextInDollars`,若 `$...$` 内含多个普通英文单词则退回文本;② `isMathToken` 增加 `stripDollarArtifacts`,让 `x$` 按变量 `x` 进入数学模式;③ `smartMath` 开头去掉片段首尾零散 `$`,flushMath 时从数学 buffer 中剔除所有残留 `$` | this |
 | 22 | **行内公式/字母/数字比正文小**:题库、练习、错题本中 `$x^2 - 5x + 6 = 0$`、`$3$` 等行内公式/数字比 surrounding text 小一截;同一句中 `$3$` 与正文 `4` 大小不一 | V2.2.5 修复 #21 对齐时,在 `globals.css` 给 `.math-inline .katex` 加了 `font-size: 1em !important`;KaTeX 字形本按 1.21em 设计,强制 1em 后视觉上比正文小,且该规则是全局样式,所有走 `renderRich` 的页面均中招 | `apps/web/app/globals.css`:移除 `.math-inline .katex { font-size: 1em !important }`,恢复 KaTeX 默认 1.21em;保留 `.math-inline { display:inline; vertical-align:baseline; overflow:visible }` 保证基线对齐 | this |
 | 21 | **行内数学 `x`/公式与正文上下不齐**:题干中 `x`、`x - 3y + 1 = 0`、`3x² - 7xy = 5` 等行内公式相对 surrounding text 明显上浮/下沉,单字母 `x` 看起来像上标 | `.math-inline` 外层被设为 `inline-block` 并加 `overflow-x:auto`;当 inline-block 的 `overflow` 不为 `visible` 时,其基线会落到块底部,导致 KaTeX 数学片段与正文基线错位 | `rich.tsx` 行内数学包裹层只保留 `className="math-inline"`,去掉 `inline-block`/`overflow-x-auto` 等工具类;`globals.css` 显式设置 `.math-inline { display:inline; vertical-align:baseline; overflow:visible; }`,内部 `.katex` 同样 `display:inline; vertical-align:baseline;` | this |
 | 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
@@ -65,6 +66,7 @@
 19. **句子末尾括号注释也容易整体被吞**(见 #19):`(Ignore ions produced by dissociation of water.)` 因末尾 `water.)` 含 `)` 被 `MIXED_LET` 判数学,整段渲染走样。`isMathToken` 增加:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` → 文本(英文开头 + 末尾 `)`)。
 20. **化学式裸下标要清洗**(见 #20):视觉模型输出 `HNO_3`/`CuNO_3`/`H_2O`/`NO_2`,前端渲染显示 `X_n` 字面。`cleanUnits` 增加:`/([A-Z][a-z]?)_(\d+)/g` → Unicode 下标(`HNO₃` 等);`x_n` 数学变量不误伤(`x` 不匹配 `[A-Z]`)。
 21. **行内 KaTeX 必须用 `display:inline` + `vertical-align:baseline` 包裹,不能用 `inline-block` 加 `overflow:auto` 等会改变基线的容器**(见 #21)。行内公式需要滚动时,优先改用 `$$...$$` 块级公式;若坚持行内滚动,也必须在 CSS 中避免破坏基线(如给 `.katex` 自身加 `overflow-x:auto` 而非外层 inline-block)。
+23. **零散 `$` 必须被渲染层鲁棒处理,不能只依赖导入清洗**(见 #23):PDF/Word/图片提取很容易只保留公式闭合 `$` 而丢掉开头 `$`,导致 `$` 字符外露或整段正文被吞进 `$...$`。前端 `rich.tsx` 必须具备三重兜底:① 识别 `$...$` 内是否像普通英文句子,是则退回文本;② `smartMath` 自动识别数学片段时去掉 token 尾部零散 `$`;③ 文本片段首尾孤立的 `$ ` / ` $` 直接清洗掉。修改后要跑新增回归样本验证。
 22. **禁止对 `.math-inline .katex` 强制 `font-size: 1em` 或更小**(见 #22):KaTeX 默认 `font-size: 1.21em` 是数学公式与 surrounding text 协调的正确比例;强行压成 1em 会让公式/字母/数字看起来比正文小。若需统一字号,应调整外层容器字号,而不是压扁数学公式,否则题库、练习、错题本等所有使用 `renderRich` 的页面都会看到公式偏小。
 
 ## 三、验证用例集(手动/自动化回归样本)
@@ -155,6 +157,15 @@ x_n + 1 = 0                              (数学变量下标不变,仍为数学)
 方程 $x^{2} - 5x + 6 = 0 $ 的两个实数根之和是多少?                   (整段公式大小与正文协调)
 一个直角三角形的两条直角边分别为 $3 $ 和 4,其面积是多少?            ($3$ 与旁边 4 不得明显一小一大)
 Find the value of x where f(x) = 2x gives f(3) = 6.                  (smartMath 自动识别的数学片段大小与正文协调)
+```
+
+**#23 回归样本(零散 $ 不得外露、整段英文不得被吞进公式):**
+
+```
+$$f(x) - g(x) = 2\sin x$$f(x)g(x) = \cos^2 x$ for all real numbers x . Across all solutions for f(x) , what is the minimum value that f(x) attains for any x$ ?
+                                                        (结果:行内公式正常渲染,$ 字符不可见,英文保持正文)
+$ f(x) = x^{\frac{1}{7}}(x^2 - x + 1) $                 ($ 后带空格仍正确渲染,且 $ 不可见)
+选项: 5 | 10 | 15 | 3\pi | 9\pi | 12\pi                 (裸 \pi 仍须渲染,不露出 $)
 ```
 
 ## 四、运行验证

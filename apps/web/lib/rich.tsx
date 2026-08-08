@@ -10,6 +10,23 @@ import katex from "katex";
 // 行内公式允许 $ 后紧跟空白(如 "$ f(x) $",常见于模型/录入数据),只要内容非空且不成对 $ 就不算
 const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g;
 
+// 智能数学识别里的函数名白名单,也用于判定 $...$ 内是否更像普通英文句子
+const FUNC_NAMES = new Set(["log", "sin", "cos", "tan", "ln", "sec", "csc", "cot", "exp", "sqrt", "sinh", "cosh", "tanh"]);
+
+// 去掉 token 尾部零散的 $(PDF/导入常把公式闭合 $ 保留、开头 $ 丢失,如 "x$")
+// 单独的 "$" 或纯 "$" 字符串不处理,避免误删货币/占位符。
+function stripDollarArtifacts(token: string): string {
+  if (/^\$+$/.test(token)) return token;
+  return token.replace(/\$+$/g, "");
+}
+
+// 判断一段被 $...$ 包裹的内容是否更像普通英文句子而非数学公式。
+// 若包含多个普通英文单词(非函数名),很可能是数据源里的零散 $ 被误当定界符。
+function looksLikeTextInDollars(expr: string): boolean {
+  const words = (expr.match(/\b[a-z]{2,}\b/g) || []).filter((w) => !FUNC_NAMES.has(w));
+  return words.length >= 2;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -45,7 +62,14 @@ function tokenize(text: string): Token[] {
     } else if (m[3] !== undefined) {
       tokens.push({ type: "math", expr: m[3], display: true });
     } else {
-      tokens.push({ type: "math", expr: m[4], display: false });
+      // 行内公式:若内容明显是普通英文句子而非数学,退回成文本,交给 smartMath 自动识别真正的数学片段。
+      // 这能防止数据里只保留了一个闭合 $ 时,整段正文被吞进一个巨大的 $...$ 公式。
+      const expr = m[4];
+      if (looksLikeTextInDollars(expr)) {
+        tokens.push({ type: "text", text: m[0] });
+      } else {
+        tokens.push({ type: "math", expr, display: false });
+      }
     }
     last = m.index + m[0].length;
   }
@@ -177,6 +201,10 @@ function isMixedMath(token: string): boolean {
 const HAS_UNI_SUP_SUB = /[⁰¹²³⁴⁵⁶⁷⁸⁹⁻₀₁₂₃₄₅₆₇₈⁹]/;
 
 export function isMathToken(token: string): boolean {
+  // 去除 token 尾部零散的 $,让 "x$" 能按变量 x 进入数学模式,避免把 $ 字符显示出来。
+  const t = stripDollarArtifacts(token);
+  if (t === "") return false; // 原 token 只是零散 $,按普通文本处理
+  token = t;
   if (HAS_UNI_SUP_SUB.test(token)) return false;
   // 纯小写英文用 / 连接的组合(如 is/are、and/or、either/or)→ 一律文本
   if (/^[a-z]+(\/[a-z]+)+$/.test(token)) return false;
@@ -205,6 +233,9 @@ export function isMathToken(token: string): boolean {
 // 将文本按"数学片段 / 纯文本片段"切分,数学片段用 KaTeX 渲染
 // 关键:每次 flushMath 后追加一个 " " 文本节点,避免 KaTeX 吞掉尾部空格导致与后续文本挤在一起(0differ)
 export function smartMath(text: string): React.ReactNode[] {
+  // 前置清洗:文本片段首尾出现的零散 $ (开头 "$ " 或结尾 " $")
+  // 是 PDF/导入残留,去掉后 smartMath 才能正确识别真正的数学片段。
+  text = text.replace(/^\$\s+/, "").replace(/\s+\$$/, "");
   const parts: React.ReactNode[] = [];
   const tokens = text.split(/(\s+)/);
   let mathBuf: string[] = [];
@@ -213,7 +244,9 @@ export function smartMath(text: string): React.ReactNode[] {
 
   const flushMath = () => {
     if (mathBuf.length) {
-      const expr = latexify(mathBuf.join(" "));
+      // smartMath 自动检测的数学片段里不应再残留 $;残留的 $ 多为数据格式错误,
+      // 保留会导致 KaTeX "$ 不能在数学模式中使用" 或直接把 $ 字符显示出来。
+      const expr = latexify(mathBuf.join(" ").replace(/\$+/g, ""));
       parts.push(
         <span key={key++} className="math-inline" dangerouslySetInnerHTML={{ __html: renderMathExpr(expr, false) }} />
       );
@@ -290,7 +323,6 @@ export function smartMath(text: string): React.ReactNode[] {
 }
 
 // 判断是否为"纯数学"文本(适合整体用 $ 包裹渲染)
-const FUNC_NAMES = new Set(["log", "sin", "cos", "tan", "ln", "sec", "csc", "cot", "exp", "sqrt"]);
 export function isPureMath(s: string): boolean {
   if (/[\u4e00-\u9fa5]/.test(s)) return false;
   const words = s.match(/[a-zA-Z]+/g) || [];
