@@ -623,6 +623,7 @@ Answer: B
                   <p>answer 写字母(A/B/C/D)或选项文本均可,系统会自动对齐。</p>
                   <p className="mt-2 font-semibold text-slate-700">PDF 导入:</p>
                   <p>系统会把 PDF 逐页渲染成图片,交给视觉模型读取渲染后的数学公式并自动转成题目(公式不需手敲 LaTeX)。PDF 导入需在服务器配置视觉模型(VISION_API_KEY 等),未配置时会提示。</p>
+                  <p className="text-amber-600">强烈建议把「试卷题目」和「答案 Key/Mark Scheme」合并成一个 PDF 后上传;这样视觉模型能同时提取正确答案和解析。如果只上传题目,答案会留空,需教师在审核页手动补充。</p>
                 </div>
               </>
             )}
