@@ -31,10 +31,25 @@ function knowledgeSubjectsFor(subject) {
   return [subject];
 }
 
+// 视觉模型/导入数据里学科可能是英文,归一化到知识点库的四门中文学科(及 TMUA/ESAT)
+const SUBJECT_NORM = {
+  Chemistry: "化学",
+  Physics: "物理",
+  Biology: "生物",
+  Math: "数学",
+  Maths: "数学",
+  Mathematics: "数学",
+  Alevel: "数学",
+};
+function normalizeSubject(s) {
+  const v = String(s || "").trim();
+  return SUBJECT_NORM[v] || v;
+}
+
 // 匹配不到返回 []——题目留白,由老师后续归类。
 async function matchKnowledgePoints(subject, topicStr) {
   const names = String(topicStr || "")
-    .split(/[,、;；\s]+/)
+    .split(/[,、;；\/\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (!names.length) return [];
@@ -185,7 +200,7 @@ async function importRows(req, rows) {
   }
   function matchKps(subject, topicStr) {
     const names = String(topicStr || "")
-      .split(/[,、;；\s]+/)
+      .split(/[,、;；\/\s]+/)
       .map((s) => s.trim())
       .filter(Boolean);
     // 题目学科映射到知识点学科池(TMUA→数学,ESAT→数学+物理),保证 TMUA 题也能自动归类
@@ -214,6 +229,8 @@ async function importRows(req, rows) {
       const options = Array.isArray(r.options)
         ? r.options
         : String(r.options || "").split(/[;；]/).map((s) => s.trim()).filter(Boolean);
+      // 学科归一化(视觉模型可能输出 Chemistry/Physics 等英文,映射到中文学科)
+      r.subject = normalizeSubject(r.subject);
       if (!r.subject || !r.topic || !r.stem || options.length < 2) {
         throw new Error("字段不完整(需要 subject/topic/stem/options≥2)");
       }
