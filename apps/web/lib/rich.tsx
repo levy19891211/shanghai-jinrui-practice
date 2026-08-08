@@ -190,7 +190,11 @@ export function isMathToken(token: string): boolean {
   if (/\\[a-zA-Z]+/.test(token)) return true;
   // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
   if (PURE_WORD.test(token) && !FUNC_TOKEN.test(token)) return false;
-  if (OP_TOKEN.test(token) || NUM_TOKEN.test(token) || FUNC_TOKEN.test(token)) return true;
+  if (FUNC_TOKEN.test(token)) return true;
+  // 裸数字/裸运算符不再自动判为数学,避免 "by 3 units" / "factor of 4" 里的普通数字被 KaTeX 渲染后基线偏移
+  // 这些 token 会在 smartMath 里二次判断:若与真正数学片段相邻则被吸收进数学模式
+  // (OP_TOKEN 与 NUM_TOKEN 保留为下方 smartMath 的"连接器"使用)
+  if (OP_TOKEN.test(token) || NUM_TOKEN.test(token)) return false;
   // 单字母变量(a/A/i/I 是英文冠词/代词,不当作数学)
   if (VAR_TOKEN.test(token) && !["a", "A", "i", "I"].includes(token)) return true;
   if (MATHY_TOKEN.test(token)) return true;
@@ -225,12 +229,54 @@ export function smartMath(text: string): React.ReactNode[] {
     }
   };
 
-  for (const t of tokens) {
-    if (t.trim() === "") {
+  // 第一轮:先给每个 token 打标签
+  // math = 本身含数学特征(变量/函数/混合表达式/数学符号/LaTeX 命令)
+  // bare = 裸数字/裸运算符,只在与 math 相邻时才被提升为数学
+  // promoted = 被提升为数学的裸数字/裸运算符
+  // text = 普通正文
+  type Cls = "space" | "math" | "bare" | "promoted" | "text";
+  const cls: Cls[] = tokens.map((t) => {
+    if (t.trim() === "") return "space";
+    if (isMathToken(t.trim())) return "math";
+    if (NUM_TOKEN.test(t.trim()) || OP_TOKEN.test(t.trim())) return "bare";
+    return "text";
+  });
+
+  const prevNonSpace = (i: number): number => {
+    for (let j = i - 1; j >= 0; j--) if (cls[j] !== "space") return j;
+    return -1;
+  };
+  const nextNonSpace = (i: number): number => {
+    for (let j = i + 1; j < tokens.length; j++) if (cls[j] !== "space") return j;
+    return -1;
+  };
+
+  // 第二轮:把与 math 相邻(直接或通过其它 bare 串联)的 bare token 提升为 promoted
+  // 这样 "x = 3" 整段进入数学模式,但 "by 3 units" / "factor of 4" 里的数字保持正文
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < tokens.length; i++) {
+      if (cls[i] !== "bare") continue;
+      const pi = prevNonSpace(i);
+      const ni = nextNonSpace(i);
+      const leftIsMath = pi >= 0 && (cls[pi] === "math" || cls[pi] === "promoted");
+      const rightIsMath = ni >= 0 && (cls[ni] === "math" || cls[ni] === "promoted");
+      if (leftIsMath || rightIsMath) {
+        cls[i] = "promoted";
+        changed = true;
+      }
+    }
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const kind = cls[i];
+    if (kind === "space") {
       (mathBuf.length ? mathBuf : textBuf).push(t);
       continue;
     }
-    if (isMathToken(t.trim())) {
+    if (kind === "math" || kind === "promoted") {
       flushText();
       mathBuf.push(t);
     } else {
