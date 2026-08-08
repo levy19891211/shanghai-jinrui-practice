@@ -30,6 +30,8 @@ export function cleanUnits(s) {
     .replace(/(?<![a-zA-Z0-9\\}])s\^(\d)/gi, (_a, n) => `s${toSup(n)}`)
     // 裸文本单位负幂次:kJ mol^{-1} → kJ mol⁻¹
     .replace(/\b(mol|kg|g|cm|dm|mm|m|s|min|h|K|J|kJ|Pa|Hz|V|A)\s*\^\{(-?\d+)\}/g, (_a, u, n) => `${u}${toSup(n)}`)
+    // 裸文本化学式下标:HNO_3 → HNO₃、CuNO_3 → CuNO₃、H_2O → H₂O、NO_2 → NO₂(见 #20)
+    .replace(/([A-Z][a-z]?)_(\d+)/g, (_a, formula, n) => `${formula}${toSub(n)}`)
     // LaTeX 度符号:^\circ → °(如 4 J g⁻¹ ^\circ C⁻¹ → 4 J g⁻¹ °C⁻¹)
     .replace(/\^\\circ\b/gi, "°")
     .replace(/\^\{?\\circ\}?/g, "°");
