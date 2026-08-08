@@ -10,7 +10,7 @@ import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile } from "../lib/parse-import-file.js";
 
 const router = Router();
-const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
+const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
 
 // 解析 options(JSON 字符串或数组) → 字符串数组
 function safeParseOptions(raw) {
@@ -126,6 +126,7 @@ async function importRows(req, rows) {
           solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
           status: r.status || "PENDING_REVIEW",
+          importedAt: new Date(),
           createdBy: req.user.id,
         },
       });

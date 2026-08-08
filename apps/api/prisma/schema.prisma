@@ -52,6 +52,7 @@ model Question {
   reviewedBy String? // 审核人 id
   reviewedAt DateTime? // 审核时间
   autoFixLog String? // 最近一次「一键修正」的记录(JSON 字符串,含修正项与前后值)
+  importedAt DateTime? // 批量导入(Excel/Word/PDF)时间;手动录入的题目为空
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   records    AnswerRecord[]

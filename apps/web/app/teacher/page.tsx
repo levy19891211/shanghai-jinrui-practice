@@ -17,6 +17,15 @@ const STATUS_BADGE: Record<string, string> = {
   ARCHIVED: "bg-slate-100 text-slate-400",
 };
 
+// 把 ISO 时间格式化为「YYYY-MM-DD HH:mm」,用于显示导入/创建时间
+function fmtTime(s?: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 interface FormState {
   id?: string;
   subject: string;
@@ -479,6 +488,7 @@ export default function TeacherPage() {
                 <th className="px-4 py-3 font-normal">题干</th>
                 <th className="px-4 py-3 font-normal">难度</th>
                 <th className="px-4 py-3 font-normal">状态</th>
+                <th className="px-4 py-3 font-normal">导入时间</th>
                 <th className="px-4 py-3 font-normal">操作</th>
               </tr>
             </thead>
@@ -504,6 +514,15 @@ export default function TeacherPage() {
                     <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
                       {STATUS_LABEL[q.status]}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {q.importedAt ? (
+                      <span className="font-medium text-slate-600" title={`导入于 ${fmtTime(q.importedAt)}`}>
+                        {fmtTime(q.importedAt)}
+                      </span>
+                    ) : (
+                      <span title={`创建于 ${fmtTime(q.createdAt)}`}>创建 {fmtTime(q.createdAt)}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">

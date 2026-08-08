@@ -28,6 +28,7 @@ export interface Question {
   status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED" | "ARCHIVED";
   reviewNote?: string | null;
   reviewedAt?: string | null;
+  importedAt?: string | null; // 批量导入时间;手动录入为空
   createdAt?: string;
 }
 
