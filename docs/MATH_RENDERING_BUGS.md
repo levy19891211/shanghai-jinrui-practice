@@ -8,6 +8,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 14 | `log`/`sin`/`\frac` 前**露出反斜杠**、排版错乱换行;且反复出现于导入题 | ① 视觉模型/录入常写 `$ f(x) $`(`$` 后带空格),行内公式正则 `\$([^\s$][^$]*)\$` 要求 `$` 后非空白 → 整段被降级为普通文本;② smartMath 不认反斜杠开头的裸命令(`\log`)→ 按纯文本字面显示反斜杠 | **三层修复**:① `rich.tsx` 行内公式正则改 `\$([^$]+?)\$`(允许 `$` 后空格);② smartMath 识别含 `\` 的裸命令(`\\[a-zA-Z]+`,覆盖 `3\pi`),latexify 函数名 lookbehind 加 `\\` 防 `\log`→`\\log`;③ 导入层 `text-clean.js` 新增 `normalizeInlineFormula`(`$ x $`→`$x$`,并入 `normalizeNewlines`/`toCanonicalText`),存量数据全库清洗 | 865a4f8 5f4e126 479a527 |
 | 13 | `log₁₀(2/(a+2b+3c))` 分数显示斜杠 | KaTeX 数学模式**不推断语义**,`/` 必须显式 `\frac`;而 `$...$` 数学分支**跳过了 latexify** | math 分支渲染前也调 `latexify(t.expr)`(幂等) | 02b4baf |
 | 12 | `2 / (a+2b+3c)`(带空格)分数不转 | 分数正则 `/` 前后不容忍空格 | 正则加 `\s*` | 1cd0aca |
 | 11 | `(n−1)/(3n−1)` 两边括号未转分数 | 分数正则只匹配 `A/(B)` | 增加 `\(A\)/(B)` 形式;并限制 A 首字符为字母/数字(避免吞 `+`/`−` 运算符) | bcf5eec |
@@ -28,10 +29,13 @@
 2. **KaTeX 不做语义推断**:`\frac`、`\sqrt`、`\log` 等所有命令必须显式。latexify 是"语义化转换器",**任何传给 KaTeX 的输入都必须先过 latexify**(text 分支和 math 分支都要)。
 3. **KaTeX 数学模式忽略空格**(行内):混排时数学片段后必须显式补视觉空格(flushMath 后 push `" "`)。
 4. **不要用 `vertical-align: middle` 包裹 KaTeX**,用默认/`baseline`,否则根号、上下标基线错乱。
-5. **函数名转换**(sin/cos/log...)用 `(?<![a-zA-Z])` 而非 `\b`(数字后 `\b` 不成立)。
+5. **函数名转换**(sin/cos/log...)用 `(?<![a-zA-Z])` 而非 `\b`(数字后 `\b` 不成立);**且 lookbehind 必须再排除反斜杠 `(?<![a-zA-Z\\])`**,否则会把已是 `\log` 的重复加 `\` 成 `\\log`(见 #14)。
 6. **单字母变量**排除英文冠词/代词 `a/A/i/I`;纯小写英文单词(长度≥2、非函数名)判文本。
 7. **选项的 options 字段**:后端接口返回前必须解析为数组(`safeParseOptions`),前端渲染再做一次 normalize 兜底。
-8. **改动必须回归**:改完 latexify/smartMath 后运行 `npm run verify:math --workspace=apps/api`(全题库扫描,检测 KaTeX 渲染错误与未转换残留)。
+8. **改动必须回归**:改完 latexify/smartMath 后运行 `npm run verify:math --workspace=apps/api`(全题库扫描,检测 KaTeX 渲染错误、未转换残留、**公式外裸命令**)。
+9. **行内公式正则必须允许 `$` 后带空格**:统一用 `\$([^$]+?)\$`(而非 `[^\s$]`),否则 `$ f(x) $` 会被当纯文本、内部 `\log` 等裸命令露出反斜杠。**此正则在前端 `rich.tsx`、`autofix.js`、`scripts/verify_math.js` 三处各有一份,改动必须同步**(见 #14)。
+10. **`$...$` 包裹外的裸反斜杠命令必须被 smartMath 识别为数学**(`/\\[a-zA-Z]+/`),否则字面露出 `\`。渲染层兜底之外,导入归一化(`text-clean.js` 的 `normalizeInlineFormula`)负责把数据规范成 `$...$`。
+11. **核心审查项——公式外裸命令**:`autofix.js` 的 `bare_latex` 规则与 `healthCheck`、`verify_math.js` 的裸命令扫描,会检出 `$` 外未包裹的 `\log`/`\sin`/`\frac`/`3\pi` 等并报告;所有导入/修改的数据入库前都应通过该审查。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -51,6 +55,18 @@ log₁₀(2/(a + 2b + 3c))
 (4 − x^2)[(1 + 2x + 3x^2)^4 − (1 + 4x^3)^3]
 Σ(n=1..100) aₙ
 0 ≤ θ ≤ 4π
+```
+
+**#14 回归样本($ 后带空格 / 裸命令,必须正确渲染、不得露出反斜杠):**
+
+```
+$ f(x) = x^{\frac{1}{7}}(x^2 - x + 1) $
+We are solving $$ (x+1)(3-x) = 2(1 - \cos(\pi x)). $$
+原方程：$2\log_{10}(x - y) = \log_{10}(2 - 2x) + \log_{10}(y + 5)$
+The function is $y = x^3 - 6x + 3$. Differentiating gives:
+Use trapezium rule with 3 strips over $[\frac{1}{2}, 2]$.
+选项: 5 | 10 | 15 | 3\pi | 9\pi | 12\pi      (裸 \pi 也须渲染)
+$\log_{10}\frac{3}{2}$                       (latexify 不得变 \\log)
 ```
 
 ## 四、运行验证
