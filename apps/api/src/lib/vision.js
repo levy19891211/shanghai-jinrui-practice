@@ -73,8 +73,8 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = 
   const perCall = Math.max(1, Math.min(16, Number(maxPagesPerCall) || Number(process.env.VISION_MAX_PAGES) || 4));
   if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
   const chunks = [];
-  for (let i = 0; i < pages.length; i += maxPagesPerCall) {
-    chunks.push(pages.slice(i, i + maxPagesPerCall));
+  for (let i = 0; i < pages.length; i += perCall) {
+    chunks.push(pages.slice(i, i + perCall));
   }
   const all = [];
   for (const chunk of chunks) {
