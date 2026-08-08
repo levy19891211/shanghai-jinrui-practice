@@ -72,7 +72,7 @@ export async function parsePdf(filename, buffer) {
       }
     })
     .filter(Boolean)
-    .filter((r) => r.stem && Array.isArray(r.options) && r.options.length >= 2 && r.answer);
+    .filter((r) => r.stem && Array.isArray(r.options) && r.options.length >= 2);
   if (!rows.length) {
     throw new Error("视觉模型未从 PDF 解析出有效的选择题(可能是纯文本试卷、或公式无法识别)");
   }

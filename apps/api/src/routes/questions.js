@@ -106,8 +106,12 @@ async function importRows(req, rows) {
       const options = Array.isArray(r.options)
         ? r.options
         : String(r.options || "").split(/[;；]/).map((s) => s.trim()).filter(Boolean);
-      if (!r.subject || !r.topic || !r.stem || options.length < 2 || !r.answer) {
-        throw new Error("字段不完整(需要 subject/topic/stem/options≥2/answer)");
+      if (!r.subject || !r.topic || !r.stem || options.length < 2) {
+        throw new Error("字段不完整(需要 subject/topic/stem/options≥2)");
+      }
+      // PDF 导入若图片中无答案 key,允许 answer 为空,教师在审核页补充
+      if (!r.answer && r.source !== "PDF 导入") {
+        throw new Error("字段不完整:answer 必填");
       }
       const q = await prisma.question.create({
         data: {
@@ -118,7 +122,7 @@ async function importRows(req, rows) {
           type: r.type || "SINGLE_CHOICE",
           stem: normalizeNewlines(r.stem),
           options: JSON.stringify(options.map((o) => normalizeNewlines(o))),
-          answer: normalizeNewlines(String(r.answer)),
+          answer: r.answer ? normalizeNewlines(String(r.answer)) : "",
           solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
           status: r.status || "PENDING_REVIEW",
