@@ -183,6 +183,9 @@ export function isMathToken(token: string): boolean {
   // 括号内全小写≥2字母(化学状态如 (aq)/(gas)) 或纯罗马数字((II)/(III)/(IV))→ 文本
   // 见 #18(NaCl(aq)、copper(II) 等化学式中括号被当 OP 带进数学模式)
   if (/^\(([a-z]{2,}|[IVX]+)\)$/i.test(token)) return false;
+  // 小写/英文开头的 token 末尾带 ) (如 "water.)"、"sentence.)") → 文本
+  // 这是句子末尾括号注释被 smartMath 切碎后误判的常见模式(#19);含数学特征 ) 但前面是普通英文
+  if (/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/.test(token)) return false;
   // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
   if (/\\[a-zA-Z]+/.test(token)) return true;
   // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
