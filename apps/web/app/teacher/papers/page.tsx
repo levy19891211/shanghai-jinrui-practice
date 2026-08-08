@@ -266,7 +266,7 @@ export default function TeacherPapersPage() {
         </div>
         <button
           onClick={() => setShowGenerator((v) => !v)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="h-9 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
         >
           {showGenerator ? "收起组卷面板" : "+ 手动组卷"}
         </button>
@@ -422,7 +422,7 @@ export default function TeacherPapersPage() {
           <button
             onClick={generate}
             disabled={generating || available === 0}
-            className="mt-4 rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-4 h-9 rounded-lg bg-indigo-600 px-6 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {generating ? "组卷中..." : `生成试卷(取 ${Math.min(form.count, available)} 题)`}
           </button>
@@ -435,7 +435,7 @@ export default function TeacherPapersPage() {
             <button
               key={t.key}
               onClick={() => setFilter(t.key)}
-              className={`rounded-lg px-3 py-1.5 text-sm ${
+              className={`h-8 rounded-lg px-3.5 text-sm font-medium transition ${
                 filter === t.key ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -450,16 +450,16 @@ export default function TeacherPapersPage() {
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-slate-400">
-                  <th className="pb-2 font-normal">名称</th>
-                  <th className="pb-2 font-normal">科目</th>
-                  <th className="pb-2 font-normal">模式</th>
-                  <th className="pb-2 font-normal">题目数</th>
-                  <th className="pb-2 font-normal">审核进度</th>
-                  <th className="pb-2 font-normal">状态</th>
-                  <th className="pb-2 font-normal">操作</th>
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">试卷名称</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">科目</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">模式</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">题数</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">审核进度</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">状态</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -468,22 +468,34 @@ export default function TeacherPapersPage() {
                   const s = p.stats;
                   const notReady = s ? s.total - s.published : 0;
                   return (
-                    <tr key={p.id} className="border-b border-slate-50 align-middle">
-                      <td className="py-3 pr-3">
+                    <tr key={p.id} className="border-b border-slate-50 align-middle transition hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{p.title}</span>
+                          <span className="max-w-[240px] truncate font-medium text-slate-800" title={p.title}>
+                            {p.title}
+                          </span>
                           {p.origin === "AUTO_SET" && (
-                            <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-600">套题</span>
+                            <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">
+                              套题
+                            </span>
                           )}
                         </div>
-                        {p.source && <p className="mt-0.5 text-xs text-slate-400">{p.source}</p>}
+                        {p.source && (
+                          <p className="mt-0.5 max-w-[240px] truncate text-xs text-slate-400" title={p.source}>
+                            {p.source}
+                          </p>
+                        )}
                       </td>
-                      <td className="py-3 pr-3">{p.subject}</td>
-                      <td className="py-3 pr-3">
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                          {p.subject}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {p.mode === "EXAM" ? `模拟考 ${p.durationMin ?? "?"}min` : "练习"}
                       </td>
-                      <td className="py-3 pr-3">{p.questionCount}</td>
-                      <td className="py-3 pr-3">
+                      <td className="whitespace-nowrap px-4 py-3">{p.questionCount} 题</td>
+                      <td className="whitespace-nowrap px-4 py-3">
                         {s ? (
                           <div className="flex items-center gap-2">
                             <ProgressBar stats={s} />
@@ -495,7 +507,7 @@ export default function TeacherPapersPage() {
                           "—"
                         )}
                       </td>
-                      <td className="py-3 pr-3">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <span className={`rounded px-2 py-0.5 text-xs ${PAPER_STATUS_BADGE[st] ?? ""}`}>
                           {PAPER_STATUS_LABEL[st] ?? st}
                         </span>
@@ -503,32 +515,41 @@ export default function TeacherPapersPage() {
                           <span className="ml-1 text-xs text-slate-400">还差 {notReady} 题</span>
                         )}
                       </td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap gap-2.5">
-                          <button onClick={() => openDetail(p.id)} className="text-indigo-600 hover:underline">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openDetail(p.id)}
+                            className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                          >
                             查看
                           </button>
                           {st === "DRAFT" && (
-                            <button onClick={() => gotoReview(p.id)} className="font-medium text-blue-600 hover:underline">
+                            <button
+                              onClick={() => gotoReview(p.id)}
+                              className="h-8 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white transition hover:bg-blue-700"
+                            >
                               去审核
                             </button>
                           )}
                           {st === "ARCHIVED" ? (
                             <button
                               onClick={() => patchPaper(p.id, { status: "ACTIVE" }, "试卷已恢复上架")}
-                              className="text-emerald-600 hover:underline"
+                              className="h-8 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
                             >
                               上架
                             </button>
                           ) : (
                             <button
                               onClick={() => patchPaper(p.id, { status: "ARCHIVED" }, "试卷已下架,学生不再可见")}
-                              className="text-slate-500 hover:underline"
+                              className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-500 transition hover:bg-slate-50"
                             >
                               下架
                             </button>
                           )}
-                          <button onClick={() => removePaper(p)} className="text-red-500 hover:underline">
+                          <button
+                            onClick={() => removePaper(p)}
+                            className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-600 transition hover:bg-red-100"
+                          >
                             删除
                           </button>
                         </div>
