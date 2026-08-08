@@ -142,6 +142,8 @@ export default function RoguelikePage() {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("rogue_sfx_muted") === "1";
   });
+  // 测试模式:固定题目 1+1=?(A 2 / B 3),便于快速验证 UI / 战斗流程
+  const [testMode, setTestMode] = useState(false);
   // V1.6 战斗状态
   const [equipped, setEquipped] = useState<Record<string, any>>({});
   const [skills, setSkills] = useState<string[]>([]);
@@ -243,7 +245,7 @@ export default function RoguelikePage() {
     setLoading(true);
     playSfx("click");
     try {
-      const d = await api.post<StartResp>("/roguelike/start", { subject, difficulty });
+      const d = await api.post<StartResp>("/roguelike/start", { subject, difficulty, test: testMode });
       setRun(d.run!);
       applyNode(d);
       setPhase("playing");
@@ -505,6 +507,10 @@ export default function RoguelikePage() {
                 className={`rounded-lg px-3 py-1.5 font-medium transition ${sfxMuted ? "border border-slate-300 text-slate-500" : "bg-indigo-600 text-white"}`}>
                 🔊 音效:{sfxMuted ? "关" : "开"}
               </button>
+              <button onClick={() => setTestMode((v) => !v)}
+                className={`rounded-lg px-3 py-1.5 font-medium transition ${testMode ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-500"}`}>
+                🧪 测试模式:{testMode ? "开" : "关"}
+              </button>
               <span className="self-center text-slate-400">开粒子特效时手机端会自动降低粒子数保持流畅</span>
             </div>
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
@@ -533,6 +539,7 @@ export default function RoguelikePage() {
                 {nodeType === "boss" ? `⚔ BOSS · 第 ${run.layer} 层` : `第 ${run.layer} 层`}
               </span>
               <span className="stage-subject">{run.subject}</span>
+              {testMode && <span className="stage-badge" style={{ background: "#059669" }}>🧪 测试</span>}
               <span key={comboPop} className={`stage-stat ${run.combo >= 3 ? "combo-pop" : ""}`}>
                 {run.combo >= 3 ? <span className="combo-fire mr-0.5">🔥</span> : "🔥 "}
                 <b className={run.combo >= 3 ? "text-amber-300" : "text-slate-100"}>{run.combo}</b>

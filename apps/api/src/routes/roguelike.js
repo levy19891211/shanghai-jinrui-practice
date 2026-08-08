@@ -14,6 +14,19 @@ import { isAnswerCorrect } from "../lib/grading.js";
 const router = Router();
 
 const MAX_LAYER = 20; // 通关层数
+// 测试模式固定题：用户开启测试模式后,所有题目替换为这一题,便于快速验证 UI / 战斗流程
+const TEST_QUESTION = {
+  id: "TEST_Q",
+  subject: "数学",
+  topic: "测试",
+  topicIds: [],
+  difficulty: 1,
+  type: "CHOICE",
+  stem: "1+1=?",
+  options: ["2", "3"],
+  answer: "2",
+  solution: "1+1=2",
+};
 const QUIZ_FIELDS = {
   id: true, subject: true, paper: true, topic: true, topicIds: true, difficulty: true,
   type: true, stem: true, options: true, answer: true, solution: true,
@@ -70,6 +83,7 @@ function defaultItems() {
     mana: 10, maxMana: 10, level: 1, xp: 0,
     equipped: {}, skills: [], pendingSkills: null, pendingCount: 0,
     autoCorrect: false, pendingScoreBonus: 0, shield: false, shieldCount: 0, berserk: false,
+    test: false,
   };
 }
 function parseItems(raw) {
@@ -94,6 +108,7 @@ function parseItems(raw) {
       shield: !!v.shield,
       shieldCount: typeof v.shieldCount === "number" ? v.shieldCount : 0,
       berserk: !!v.berserk,
+      test: !!v.test,
     };
   } catch {
     return defaultItems();
@@ -138,9 +153,17 @@ function safeParseOptions(value) {
   }
 }
 
+// 提示用：测试模式直接返回固定题,否则查库
+async function resolveQuestionForHint(run, questionId) {
+  const items = parseItems(run.items);
+  if (items.test && questionId === TEST_QUESTION.id) return TEST_QUESTION;
+  return prisma.question.findUnique({ where: { id: questionId }, select: QUIZ_FIELDS });
+}
+
 // 抽一题
 async function pickQuestion(run, opts = {}) {
   const items = parseItems(run.items);
+  if (items.test) return publicQuestion(TEST_QUESTION);
   const exclude = new Set(items.answered);
   const subs = run.subject === "数学" ? ["数学", "TMUA"] : run.subject === "ESAT" ? ["ESAT", "数学", "物理"] : [run.subject];
   const subjectWhere = subs.length === 1 ? subs[0] : { in: subs };
@@ -266,6 +289,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const subject = String(req.body?.subject || "").trim() || "数学";
     const difficulty = req.body?.difficulty ? Number(req.body.difficulty) : 3;
+    const test = !!req.body?.test;
 
     const existing = await prisma.roguelikeRun.findFirst({
       where: { studentId: req.user.id, status: "ACTIVE" },
@@ -279,12 +303,14 @@ router.post(
       return ok(res, { run: existing, ...extraState(parseItems(existing.items)), ...node }, "继续上次冒险");
     }
 
+    const runItems = defaultItems();
+    runItems.test = test;
     const run = await prisma.roguelikeRun.create({
       data: {
         studentId: req.user.id,
         subject,
         difficulty,
-        items: JSON.stringify(defaultItems()),
+        items: JSON.stringify(runItems),
       },
     });
     const node = await nextNode(run);
@@ -308,11 +334,16 @@ router.post(
 
     const { questionId, selected } = req.body || {};
     if (!questionId) return fail(res, 400, "questionId 必填");
-    const question = await prisma.question.findUnique({ where: { id: questionId } });
-    if (!question || question.status !== "PUBLISHED") return fail(res, 404, "题目不存在");
-
     const items = parseItems(run.items);
     const nodeType = items.map[run.layer - 1] || "normal";
+
+    let question;
+    if (items.test && questionId === TEST_QUESTION.id) {
+      question = TEST_QUESTION;
+    } else {
+      question = await prisma.question.findUnique({ where: { id: questionId } });
+      if (!question || question.status !== "PUBLISHED") return fail(res, 404, "题目不存在");
+    }
 
     let correct = isAnswerCorrect(question, selected);
     // 攻击道具/技能：下次作答必中
@@ -498,7 +529,7 @@ router.post(
     } else if (meta.type === "utility") {
       const hintQid = String(req.body?.questionId || "");
       if (!hintQid) return fail(res, 400, "提示需要 questionId");
-      const q = await prisma.question.findUnique({ where: { id: hintQid }, select: QUIZ_FIELDS });
+      const q = await resolveQuestionForHint(run, hintQid);
       if (!q) return fail(res, 404, "题目不存在");
       const answer = String(q.answer).trim();
       const opts = safeParseOptions(q.options);
@@ -600,7 +631,7 @@ router.post(
         // 专注:提示
         const hintQid = String(req.body?.questionId || "");
         if (!hintQid) return fail(res, 400, "专注需要 questionId");
-        const q = await prisma.question.findUnique({ where: { id: hintQid }, select: QUIZ_FIELDS });
+        const q = await resolveQuestionForHint(run, hintQid);
         if (!q) return fail(res, 404, "题目不存在");
         const answer = String(q.answer).trim();
         const opts = safeParseOptions(q.options);
