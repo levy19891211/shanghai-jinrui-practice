@@ -86,6 +86,31 @@ function bareLatexCmds(text) {
   return [...new Set((stripped.match(/\\[a-zA-Z]+/g) || []))];
 }
 
+// ===== 复刻前端 smartMath 的数学判定(必须与 apps/web/lib/rich.tsx 同步) =====
+const SM_MIXED_NUM = /^[0-9√πθ(−][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
+const SM_MIXED_LET = /^[a-zA-Z][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*[0-9₁₀₂₃^√πθ()\[\]/−][a-zA-Z0-9₁₀₂₃√πθ−^(){}[\]/.,]*$/;
+const SM_FUNC = new Set(["log", "log₁₀", "log₂", "log₃", "sin", "cos", "tan", "ln", "sec", "csc", "cot", "exp", "sqrt", "sinh", "cosh", "tanh"]);
+function smIsMath(t) {
+  if (/\\[a-zA-Z]+/.test(t)) return true;
+  if (/^[a-z]{2,}$/.test(t) && !SM_FUNC.has(t)) return false;
+  if (/^[+\-*/=<>≤≥≈≠×÷±()−]$/.test(t) || /^[\-−]?\d+([.,]\d+)?%?$/.test(t) || SM_FUNC.has(t)) return true;
+  if (/^[a-zA-Z]$/.test(t) && !["a", "A", "i", "I"].includes(t)) return true;
+  if (/[√πθΣ∫≤≥≈≠×÷±²³⁴⁵⁶⁷⁸⁹⁰¹^]/.test(t)) return true;
+  if (SM_MIXED_NUM.test(t) || SM_MIXED_LET.test(t)) return true;
+  return false;
+}
+// 英文单词带句号/逗号、或连字符开头 → 被误判为数学的 token(=会渲染成斜体,见 #15)
+function falseItalicTokens(text) {
+  const stripped = String(text || "").replace(/\$\$[\s\S]+?\$\$|\$[^$]+?\$/g, "");
+  const out = [];
+  for (const t of String(stripped).split(/\s+/)) {
+    const t2 = t.trim();
+    if (!t2) continue;
+    if (smIsMath(t2) && (/^[a-zA-Z]{2,}[.,:;]/.test(t2) || /^-[a-zA-Z]{2,}/.test(t2))) out.push(t2);
+  }
+  return [...new Set(out)];
+}
+
 async function main() {
   const questions = await prisma.question.findMany();
   let errCount = 0;
@@ -134,6 +159,14 @@ async function main() {
         console.log(`[WARN][${q.source || "未知来源"}] ${label} (题目 ${q.id.slice(0, 8)})`);
         console.log(`  原文: ${text.slice(0, 90)}`);
         console.log(`  公式外裸命令: ${bare.join(", ")} — 建议用 $...$ 包裹(渲染层已兜底)`);
+      }
+      // 英文单词被误判为数学(会渲染成斜体,见 #15)
+      const falseItalic = falseItalicTokens(text);
+      if (falseItalic.length) {
+        warnCount++;
+        console.log(`[WARN][${q.source || "未知来源"}] ${label} (题目 ${q.id.slice(0, 8)})`);
+        console.log(`  原文: ${text.slice(0, 90)}`);
+        console.log(`  疑似被误判为数学的英文: ${falseItalic.join(", ")} — 会渲染成斜体,应修复数据或渲染规则`);
       }
     }
   }

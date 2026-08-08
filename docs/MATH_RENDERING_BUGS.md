@@ -8,6 +8,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 15 | 题干/解析大量**英文单词莫名变斜体**(如 `radius.`、`Thus,`、`points.`、`-coordinate`) | `MIXED_LET` 把 `.` `,` 当"数学特征"→ 英文单词带句号/逗号("radius.")被判数学;`MIXED_NUM` 开头类含 ASCII `-`,把 "-coordinate" 整词判数学;KaTeX 数学模式默认斜体 | ① `MIXED_LET` 数学特征类去掉 `.` `,`;② `MIXED_NUM` 开头类去掉 ASCII `-`/`+`/`[`(负号由 OP_TOKEN 处理,不破坏 "(n"、"-5x" 等真数学) | bc8d7ec 2a9a283 |
 | 14 | `log`/`sin`/`\frac` 前**露出反斜杠**、排版错乱换行;且反复出现于导入题 | ① 视觉模型/录入常写 `$ f(x) $`(`$` 后带空格),行内公式正则 `\$([^\s$][^$]*)\$` 要求 `$` 后非空白 → 整段被降级为普通文本;② smartMath 不认反斜杠开头的裸命令(`\log`)→ 按纯文本字面显示反斜杠 | **三层修复**:① `rich.tsx` 行内公式正则改 `\$([^$]+?)\$`(允许 `$` 后空格);② smartMath 识别含 `\` 的裸命令(`\\[a-zA-Z]+`,覆盖 `3\pi`),latexify 函数名 lookbehind 加 `\\` 防 `\log`→`\\log`;③ 导入层 `text-clean.js` 新增 `normalizeInlineFormula`(`$ x $`→`$x$`,并入 `normalizeNewlines`/`toCanonicalText`),存量数据全库清洗 | 865a4f8 5f4e126 479a527 |
 | 13 | `log₁₀(2/(a+2b+3c))` 分数显示斜杠 | KaTeX 数学模式**不推断语义**,`/` 必须显式 `\frac`;而 `$...$` 数学分支**跳过了 latexify** | math 分支渲染前也调 `latexify(t.expr)`(幂等) | 02b4baf |
 | 12 | `2 / (a+2b+3c)`(带空格)分数不转 | 分数正则 `/` 前后不容忍空格 | 正则加 `\s*` | 1cd0aca |
@@ -36,6 +37,7 @@
 9. **行内公式正则必须允许 `$` 后带空格**:统一用 `\$([^$]+?)\$`(而非 `[^\s$]`),否则 `$ f(x) $` 会被当纯文本、内部 `\log` 等裸命令露出反斜杠。**此正则在前端 `rich.tsx`、`autofix.js`、`scripts/verify_math.js` 三处各有一份,改动必须同步**(见 #14)。
 10. **`$...$` 包裹外的裸反斜杠命令必须被 smartMath 识别为数学**(`/\\[a-zA-Z]+/`),否则字面露出 `\`。渲染层兜底之外,导入归一化(`text-clean.js` 的 `normalizeInlineFormula`)负责把数据规范成 `$...$`。
 11. **核心审查项——公式外裸命令**:`autofix.js` 的 `bare_latex` 规则与 `healthCheck`、`verify_math.js` 的裸命令扫描,会检出 `$` 外未包裹的 `\log`/`\sin`/`\frac`/`3\pi` 等并报告;所有导入/修改的数据入库前都应通过该审查。
+12. **数学特征判定(MIXED_LET/MIXED_NUM)必须用"真数学特征"**:`.`/`,`(英文标点)、ASCII 连字符 `-` 不是数学特征,否则 `radius.`、`Thus,`、`-coordinate` 等英文词会被误判为数学而渲染成**斜体**(见 #15)。判定"是数学"的特征应是:数字、`^`、`√πθ`、`−`(U+2212)、下划线、括号等。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -67,6 +69,14 @@ The function is $y = x^3 - 6x + 3$. Differentiating gives:
 Use trapezium rule with 3 strips over $[\frac{1}{2}, 2]$.
 选项: 5 | 10 | 15 | 3\pi | 9\pi | 12\pi      (裸 \pi 也须渲染)
 $\log_{10}\frac{3}{2}$                       (latexify 不得变 \\log)
+```
+
+**#15 回归样本(这些英文词不得渲染成斜体,须保持正文字体):**
+
+```
+The circles have the same radius. Two circles intersect at two points.
+Thus, the minimum is attainable. Similarly, the region is a square.
+x-coordinate, y-coordinate, -coordinate           (连字符开头也不得整词斜体)
 ```
 
 ## 四、运行验证
