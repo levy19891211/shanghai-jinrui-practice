@@ -46,7 +46,10 @@ function safeParse(s) {
 async function pickQuestion(run) {
   const exclude = new Set(safeParse(run.items));
   const where = { status: "PUBLISHED" };
-  if (run.subject) where.subject = run.subject;
+  // 学科映射:数学包含 TMUA(数学思维考试),ESAT 含数学+物理(与题库管理一致)
+  const subs = run.subject === "数学" ? ["数学", "TMUA"] : run.subject === "ESAT" ? ["ESAT", "数学", "物理"] : [run.subject];
+  if (subs.length === 1) where.subject = subs[0];
+  else where.subject = { in: subs };
   if (run.difficulty) where.difficulty = run.difficulty;
   const all = await prisma.question.findMany({ where, select: { id: true } });
   if (!all.length) return null;
