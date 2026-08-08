@@ -395,74 +395,85 @@ export default function RoguelikePage() {
       )}
 
       {phase === "playing" && run && (
-        <div key={shake} className={`roguelike-bg mx-auto max-w-2xl space-y-4 rounded-2xl p-4 ${fxReduced ? "fx-reduced" : ""}`}>
-          {/* 状态栏 */}
-          <div className="rounded-2xl border border-white/10 bg-white/95 p-4 shadow-lg">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              {nodeType === "boss" && (
-                <img src={bossImg(run.layer)} className="portrait portrait-boss h-16 w-16 shrink-0" alt="Boss" />
-              )}
-              {nodeType === "normal" && (
-                <img src={enemyImg(run.layer)} className="portrait portrait-enemy h-12 w-12 shrink-0" alt="敌人" />
-              )}
-              <div className="flex items-center gap-2">
-                <span className={`rounded-lg px-2.5 py-1 text-sm font-bold ${nodeType === "boss" ? "bg-red-600 text-white" : "bg-indigo-600/15 text-indigo-600"}`}>
-                  {nodeType === "boss" ? `⚔ BOSS 第 ${run.layer} 层` : `第 ${run.layer} 层`}
-                </span>
-                <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm text-slate-600">{run.subject}</span>
-              </div>
+        <div className={`roguelike-bg mx-auto max-w-2xl ${fxReduced ? "fx-reduced" : ""}`}>
+          {/* ===== 顶部舞台:环境背景 + 第一视角敌人 ===== */}
+          <div key={shake} className={`rogue-stage ${shake ? "shake" : ""} ${nodeType === "boss" ? "stage-boss" : ""} ${run.hp <= 2 ? "stage-danger" : ""}`}>
+            {/* 顶部浮层:层数 / 学科 / 连对 / 得分 / 金币 / 结算 */}
+            <div className="stage-top">
+              <span className={`stage-badge ${nodeType === "boss" ? "is-boss" : ""}`}>
+                {nodeType === "boss" ? `⚔ BOSS · 第 ${run.layer} 层` : `第 ${run.layer} 层`}
+              </span>
+              <span className="stage-subject">{run.subject}</span>
+              <span key={comboPop} className={`stage-stat ${run.combo >= 3 ? "combo-pop" : ""}`}>
+                {run.combo >= 3 ? <span className="combo-fire mr-0.5">🔥</span> : "🔥 "}
+                <b className={run.combo >= 3 ? "text-amber-300" : "text-slate-100"}>{run.combo}</b>
+              </span>
+              <span className="stage-stat">⭐ {run.score}</span>
+              <span className="stage-stat">🪙 {run.coins}</span>
+              <button onClick={quit} className="stage-quit">结算</button>
             </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span key={comboPop} title="连续正确" className={run.combo >= 3 ? "combo-pop" : ""}>
-                  {run.combo >= 3 ? <span className="combo-fire mr-0.5">🔥</span> : "🔥 "}
-                  连对 <b className={run.combo >= 3 ? "text-amber-600" : "text-slate-800"}>{run.combo}</b>
-                </span>
-                <span title="得分">⭐ <b className="text-slate-800">{run.score}</b></span>
-                <span title="金币">🪙 <b className="text-slate-800">{run.coins}</b></span>
-                <button onClick={quit} className="rounded-lg border border-slate-200 px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-50">结算</button>
-              </div>
+
+            {/* 敌人 / 奖励 显示区(第一视角) */}
+            <div className="stage-center">
+              {nodeType === "reward" ? (
+                <div className="reward-stage">
+                  {!fxReduced && <div className="coin-rain" />}
+                  <div className="gift-bounce text-6xl">🎁</div>
+                  <p className="reward-slide mt-2 text-base font-bold text-amber-200">奖励节点</p>
+                </div>
+              ) : (
+                <div className="stage-sprite-wrap">
+                  {nodeType === "boss" ? (
+                    <img src={bossImg(run.layer)} className="stage-sprite stage-sprite-boss" alt="Boss" />
+                  ) : (
+                    <img src={enemyImg(run.layer)} className="stage-sprite stage-sprite-enemy" alt="敌人" />
+                  )}
+                </div>
+              )}
             </div>
-            <div className={`mt-3 rounded-full ${run.hp <= 2 ? "low-hp" : ""}`}>
-              <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+
+            {/* Boss 名称牌 */}
+            {nodeType === "boss" && (
+              <div className="stage-nameplate">👹 {bossName(run.layer)}</div>
+            )}
+          </div>
+
+          {/* ===== 中下部 HUD:技能 / 血量 / 装备 ===== */}
+          <div className="rogue-hud">
+            <div className={`hud-hp ${run.hp <= 2 ? "low-hp" : ""}`}>
+              <span className="hud-hp-label">❤ 生命</span>
+              <div className="hud-hp-bar">
                 {Array.from({ length: maxHp }).map((_, i) => (
-                  <div key={i} className={`mx-0.5 my-0.5 flex-1 rounded-full transition ${i < run.hp ? "bg-red-500" : "bg-slate-200"}`} />
+                  <div key={i} className={`hud-hp-cell ${i < run.hp ? "on" : "off"}`} />
                 ))}
               </div>
-              <p className="mt-1 text-xs text-slate-400">生命 {run.hp}/{maxHp} · 答错扣除 1 点生命</p>
+              <span className="hud-hp-num">{run.hp}/{maxHp}</span>
             </div>
-            {/* 道具栏 */}
             {inventory.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="hud-items">
                 {inventory.map((it) => (
-                  <button key={it} onClick={() => useItem(it)} disabled={loading}
-                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+                  <button key={it} onClick={() => useItem(it)} disabled={loading} className="hud-item">
                     {ITEM_LABEL[it] ?? it}
                   </button>
                 ))}
               </div>
             )}
+            <p className="hud-hint">答错 -1 生命(护盾可抵挡) · 连续答对得分翻倍 · 每 5 层 Boss · 每 3 层奖励</p>
           </div>
 
-          {toast && <div className="pop-in rounded-xl bg-amber-50/95 px-4 py-2.5 text-sm text-amber-700 shadow">{toast}</div>}
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {/* ===== 底部 答题区 ===== */}
+          {toast && <div className="rogue-toast">{toast}</div>}
+          {error && <p className="rogue-error">{error}</p>}
 
-          {/* 奖励节点 */}
-          {nodeType === "reward" && (
-            <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-amber-300/70 bg-amber-50/95 p-8 text-center shadow-lg">
-              {!fxReduced && <div className="coin-rain" />}
-              <div className="gift-bounce relative text-5xl">🎁</div>
-              <h2 className="reward-slide relative mt-2 text-lg font-bold text-amber-700">奖励节点</h2>
-              <p className="relative mt-1 text-sm text-amber-600">休息一下,领取金币奖励!</p>
-              <button onClick={claim} disabled={loading} className="relative mt-4 h-10 rounded-lg bg-amber-500 px-6 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
+          {nodeType === "reward" ? (
+            <div className="rogue-question text-center">
+              <p className="text-sm text-slate-500">休息一下,领取金币奖励!</p>
+              <button onClick={claim} disabled={loading} className="rogue-claim-btn">
                 {loading ? "处理中..." : "领取奖励"}
               </button>
             </div>
-          )}
-
-          {/* 题目节点 */}
-          {nodeType !== "reward" && (question ? (
-            <div className={`pop-in rounded-2xl border border-white/10 bg-white p-6 shadow-lg ${nodeType === "boss" ? "boss-arena" : ""}`}>
+          ) : question ? (
+            <div className={`rogue-question pop-in ${nodeType === "boss" ? "is-boss" : ""}`}>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 {nodeType === "boss" && <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">BOSS · 薄弱点</span>}
                 <span className="rounded bg-slate-100 px-2 py-0.5">{question.topic || "待归类"}</span>
@@ -493,21 +504,21 @@ export default function RoguelikePage() {
                 </div>
               )}
               <button onClick={submit} disabled={!selected || loading}
-                className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                className="rogue-submit-btn">
                 {loading ? "判分中..." : "提交答案"}
               </button>
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-white p-8 text-center shadow">
+            <div className="rogue-question text-center">
               <p className="text-sm text-slate-500">该学科/难度暂无可用题目,请更换学科或结算后重试。</p>
               <div className="mt-4 flex gap-3">
-                <button onClick={resetToSetup} className="h-10 flex-1 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50">返回设置</button>
+                <button onClick={resetToSetup} className="rogue-btn-secondary">返回设置</button>
                 {run && (
-                  <button onClick={() => { quit(); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700">结算本次冒险</button>
+                  <button onClick={() => { quit(); }} className="rogue-submit-btn">结算本次冒险</button>
                 )}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 

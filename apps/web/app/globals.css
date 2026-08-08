@@ -298,6 +298,227 @@ body {
   margin: 0.25em 0;
 }
 
+/* ===== 冒险模式 三段式布局(顶部舞台 / 中下 HUD / 底部答题) ===== */
+
+/* 顶部舞台:环境背景 + 第一视角敌人 */
+.rogue-stage {
+  position: relative;
+  min-height: 46vh;
+  border-radius: 1.25rem 1.25rem 0 0;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(99, 102, 241, 0.30), transparent 60%),
+    linear-gradient(180deg, #1e1b4b 0%, #312e81 52%, #0b1020 100%);
+  box-shadow: inset 0 -50px 70px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(0, 0, 0, 0.4);
+}
+/* 地面透视与暗角 */
+.rogue-stage::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 44%;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 100%);
+}
+/* Boss 战红色暗角氛围 */
+.stage-boss::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 38%, rgba(127, 29, 29, 0.55) 100%),
+    radial-gradient(circle at 22% 8%, rgba(239, 68, 68, 0.22), transparent 50%),
+    radial-gradient(circle at 80% 95%, rgba(220, 38, 38, 0.18), transparent 55%);
+  animation: rogue-boss-pulse 2.6s ease-in-out infinite;
+}
+/* 低血量危险红边 */
+.stage-danger::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px rgba(239, 68, 68, 0.55);
+}
+
+/* 顶部浮层 HUD */
+.stage-top {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: #e2e8f0;
+}
+.stage-badge {
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.28);
+  color: #c7d2fe;
+}
+.stage-badge.is-boss { background: rgba(220, 38, 38, 0.9); color: #fff; }
+.stage-subject { color: #cbd5e1; }
+.stage-stat { color: #e2e8f0; }
+.stage-stat b { color: #fff; }
+.stage-quit {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 2px 9px;
+  font-size: 0.7rem;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+}
+.stage-quit:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* 敌人显示区(第一视角:敌人位于上方、靠近) */
+.stage-center {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 6%;
+}
+.stage-sprite-wrap { position: relative; line-height: 0; }
+.stage-sprite-wrap::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: -4%;
+  transform: translateX(-50%);
+  width: 62%; height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.5), transparent 70%);
+}
+.stage-sprite {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: inline-block;
+  filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
+  animation: stage-bob 3s ease-in-out infinite;
+}
+.stage-sprite-enemy { width: 36%; max-width: 150px; }
+.stage-sprite-boss {
+  width: 54%; max-width: 220px;
+  filter: drop-shadow(0 0 22px rgba(239, 68, 68, 0.7)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
+}
+@keyframes stage-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.stage-nameplate {
+  position: absolute;
+  bottom: 10px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 4px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fecaca;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* 中下部 HUD:技能 / 血量 / 装备 */
+.rogue-hud {
+  background: rgba(15, 23, 42, 0.94);
+  border-radius: 0 0 1.25rem 1.25rem;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hud-hp { display: flex; align-items: center; gap: 8px; }
+.hud-hp-label { font-size: 0.75rem; color: #fca5a5; white-space: nowrap; }
+.hud-hp-bar { flex: 1; display: flex; gap: 3px; }
+.hud-hp-cell { flex: 1; height: 11px; border-radius: 999px; transition: background 0.3s; }
+.hud-hp-cell.on { background: #ef4444; }
+.hud-hp-cell.off { background: rgba(255, 255, 255, 0.12); }
+.hud-hp-num { font-size: 0.75rem; color: #e2e8f0; white-space: nowrap; }
+.hud-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.hud-item {
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  background: rgba(79, 70, 229, 0.2);
+  color: #c7d2fe;
+  border-radius: 9px;
+  padding: 5px 11px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.hud-item:hover { background: rgba(79, 70, 229, 0.36); }
+.hud-hint { font-size: 0.68rem; color: #94a3b8; margin: 0; }
+
+/* 底部答题区 */
+.rogue-question {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 1.25rem;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.rogue-question.is-boss { border: 1px solid rgba(220, 38, 38, 0.4); }
+.rogue-toast {
+  margin-top: 12px;
+  border-radius: 0.75rem;
+  background: #fef3c7;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  color: #b45309;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.rogue-error {
+  margin-top: 12px;
+  border-radius: 0.5rem;
+  background: #fef2f2;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #dc2626;
+}
+.rogue-claim-btn,
+.rogue-submit-btn {
+  margin-top: 16px;
+  height: 40px;
+  width: 100%;
+  border-radius: 0.5rem;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.rogue-claim-btn { background: #f59e0b; }
+.rogue-claim-btn:hover { background: #d97706; }
+.rogue-submit-btn:hover { background: #4338ca; }
+.rogue-submit-btn:disabled,
+.rogue-claim-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.rogue-btn-secondary {
+  height: 40px;
+  flex: 1;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #475569;
+}
+.rogue-btn-secondary:hover { background: #f1f5f9; }
+
 /* ===== Phase C 降级与性能 ===== */
 
 /* 「减少动效」手动开关:禁用常驻动画(粒子/横幅/幕布由 JS 控制不渲染) */
@@ -310,7 +531,10 @@ body {
 .fx-reduced .low-hp,
 .fx-reduced .pop-in,
 .fx-reduced .reward-slide,
-.fx-reduced .boss-arena::before {
+.fx-reduced .boss-arena::before,
+.fx-reduced .stage-sprite,
+.fx-reduced .stage-boss::before,
+.fx-reduced .stage-danger::before {
   animation: none !important;
 }
 .fx-reduced .coin-rain {
@@ -328,7 +552,10 @@ body {
   .low-hp,
   .pop-in,
   .reward-slide,
-  .boss-arena::before {
+  .boss-arena::before,
+  .stage-sprite,
+  .stage-boss::before,
+  .stage-danger::before {
     animation: none !important;
   }
   .coin-rain {
@@ -346,4 +573,11 @@ body {
   .banner-victory {
     font-size: 1.2rem;
   }
+  .rogue-stage {
+    min-height: 38vh;
+  }
+  .stage-sprite-enemy { width: 42%; }
+  .stage-sprite-boss { width: 60%; }
+  .stage-top { font-size: 0.72rem; gap: 6px; padding: 8px 10px; }
+  .hud-hint { font-size: 0.62rem; }
 }
