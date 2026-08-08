@@ -121,6 +121,14 @@ export function latexify(s: string): string {
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
+    // 连续 Unicode 上标/下标 → 单个 LaTeX 上标/下标
+    // 关键:先整体合并,避免 ⁻¹ 被后续单字符转换拆成 ⁻^{1}(Double superscript 报错)
+    .replace(/([⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (m) =>
+      "^{" + m.split("").map((c) => ({ "⁻": "-", "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9" })[c] || c).join("") + "}"
+    )
+    .replace(/([₀₁₂₃₄₅₆₇₈₉]+)/g, (m) =>
+      "_{" + m.split("").map((c) => ({ "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9" })[c] || c).join("") + "}"
+    )
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母或已有反斜杠,避免 \log 变成 \\log)
     .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
     // 简单分数:数字/π/θ/单变量的 A/B(如 3π/4、1/2、x/y、5650/79.5;分母至少 1 字符)
@@ -142,8 +150,8 @@ const OP_TOKEN = /^[+\-*/=<>≤≥≈≠×÷±()−]$/;
 const NUM_TOKEN = /^[\-−]?\d+([.,]\d+)?%?$/;
 const VAR_TOKEN = /^[a-zA-Z]$/;
 const FUNC_TOKEN = /^(log|log₁₀|log₂|log₃|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)$/;
-// 含数学符号的 token
-const MATHY_TOKEN = /[√πθΣ∫≤≥≈≠×÷±²³⁴⁵⁶⁷⁸⁹⁰¹^]/;
+// 含数学符号的 token(Unicode 上下标 ⁻¹²³ 等排除:它们是单位/化学式文本,如 mol⁻¹、cm³,不应按数学渲染)
+const MATHY_TOKEN = /[√πθΣ∫≤≥≈≠×÷±^]/;
 // 纯小写英文单词(长度≥2 且非函数名) → 文本(避免 sum/Given/it 等英文单词误判;单字母 x/y 由 VAR 处理)
 const PURE_WORD = /^[a-z]{2,}$/;
 // 数字/数学符号开头的紧凑表达式(如 3x^2、10^(-y)、2π、5650/79.5、−log₁₀(1)
