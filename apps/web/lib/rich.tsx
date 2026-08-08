@@ -155,8 +155,8 @@ function isMixedMath(token: string): boolean {
 }
 
 export function isMathToken(token: string): boolean {
-  // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
-  if (/^\\[a-zA-Z]+/.test(token)) return true;
+  // 裸 LaTeX 命令(如 \log、\sin、\frac、\sqrt、3\pi,没有 $ 包裹)也必须按数学渲染,否则会露出反斜杠
+  if (/\\[a-zA-Z]+/.test(token)) return true;
   // 纯小写英文单词(非函数名)直接判文本;单字母变量由 VAR 处理
   if (PURE_WORD.test(token) && !FUNC_TOKEN.test(token)) return false;
   if (OP_TOKEN.test(token) || NUM_TOKEN.test(token) || FUNC_TOKEN.test(token)) return true;
