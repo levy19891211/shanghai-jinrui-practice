@@ -249,6 +249,8 @@ export default function RoguelikePage() {
   const loadingRef = useRef(false);
   const feedbackRef = useRef(false);
   const questionIdRef = useRef<string | null>(null);
+  const tickFailRef = useRef(0);              // 连续心跳失败次数
+  const swapTimer = useRef<number | null>(null); // 答题后换题定时器(卸载时清理,避免残留反馈锁)
 
   useEffect(() => {
     setSfxMuted(sfxMuted);
@@ -273,10 +275,13 @@ export default function RoguelikePage() {
   // 心跳把真实流逝时间上报服务端,结算敌人自动攻击与超时;本地循环只负责平滑倒计时与蓄力环。
   async function sendTick() {
     if (!run || !run.id) return;
-    if (nodeType === "reward" || !combatRef.current) return;
+    if (nodeType === "reward") return; // 奖励节点无战斗
     if (loadingRef.current || feedbackRef.current) return; // 答题/反馈期间跳过,避免双重换题
+    // 注意:combatRef 为空时"仍然"要发心跳。旧版在这里 return 会导致战斗视图一旦丢失
+    // 就再也拿不到服务端回填,心跳永久停摆(表现为怪物消失后完全没反应)。
     try {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/tick`, {});
+      tickFailRef.current = 0;
       if (d.status === "DEAD" || d.runOver) {
         setRun((r) => (r ? { ...r, hp: typeof d.hp === "number" ? d.hp : r.hp, status: d.status ?? r.status } : r));
         applyCombatView(d);
@@ -294,10 +299,13 @@ export default function RoguelikePage() {
         setRun((r) => (r ? { ...r, combo: d.combo ?? 0 } : r));
         setSelected("");
         setFeedback(null);
-        if (d.nextQuestion) applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
+        // 即使没取到下一题也要同步:此时后端已停战,前端应展示缺题面板而不是停在旧题上
+        applyNode({ nodeType: d.nodeType ?? nodeType, question: d.nextQuestion ?? null, combat: d.combat });
       }
     } catch {
-      /* 网络抖动忽略,下次心跳重试 */
+      // 网络抖动忽略,下次心跳重试;但连续失败要让玩家知道,别以为是游戏卡死
+      tickFailRef.current += 1;
+      if (tickFailRef.current === 5) setToast("⚠ 网络连接不稳定,战斗计时已暂停,正在重试…");
     }
   }
 
@@ -315,11 +323,27 @@ export default function RoguelikePage() {
     return () => {
       if (renderTimer.current) clearInterval(renderTimer.current);
       if (tickTimer.current) clearInterval(tickTimer.current);
+      if (swapTimer.current) { clearTimeout(swapTimer.current); swapTimer.current = null; }
       renderTimer.current = null;
       tickTimer.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, run?.id, nodeType]);
+
+  // 看门狗:反馈状态最多停留 3 秒。任何异常路径把 feedback 卡住都会导致
+  // 选项全部 disabled + 心跳被拦截(整局假死),这里兜底强制解锁。
+  useEffect(() => {
+    if (!feedback) return;
+    const t = setTimeout(() => {
+      if (feedbackRef.current) {
+        feedbackRef.current = false;
+        setFeedback(null);
+        setCombatNum(null);
+        setSelected("");
+      }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [feedback]);
 
   const burstCenter = useCallback((kind: Burst["kind"]) => {
     if (fxReduced) return; // 减少动效:跳过粒子
@@ -390,12 +414,18 @@ export default function RoguelikePage() {
     if (res.deathGuardUsed !== undefined) setDeathGuardUsed(!!res.deathGuardUsed);
   }
   // 应用后端战斗视图：同步敌人/计时窗口，并重置本地倒计时
+  // 只有响应里"显式带 combat 字段"时才更新战斗视图。
+  // 字段缺失(部分更新)必须保持原状 —— 否则换题时会把敌人整批清空,
+  // 表现为"怪物突然消失 + 心跳自杀导致完全没反应"(V2.2.1 修复)。
   function applyCombatView(res: any) {
-    if (res.combat) {
-      combatRef.current = res.combat;
-      setCombat(res.combat);
-      if (typeof res.combat.qRemainMs === "number") setRemainMs(res.combat.qRemainMs);
+    if (!res || typeof res !== "object" || !("combat" in res)) return;
+    const c = res.combat;
+    if (c && Array.isArray(c.enemies)) {
+      combatRef.current = c;
+      setCombat(c);
+      if (typeof c.qRemainMs === "number") setRemainMs(c.qRemainMs);
     } else {
+      // 显式 null(奖励节点/战斗结束) 或脏数据 → 降级清空,保证渲染安全
       combatRef.current = null;
       setCombat(null);
     }
@@ -476,6 +506,7 @@ export default function RoguelikePage() {
     run?: Run;
     hp?: number; layer?: number; score?: number; coins?: number; combo?: number; maxCombo?: number;
     status?: string; drops?: any[] | null; inventory?: any[];
+    combat?: CombatView | null;
   }) {
     setNodeType(res.nodeType ?? null);
     setQuestion(res.question ?? null);
@@ -568,15 +599,22 @@ export default function RoguelikePage() {
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
       } else {
-        setTimeout(() => {
+        if (swapTimer.current) clearTimeout(swapTimer.current);
+        swapTimer.current = window.setTimeout(() => {
+          swapTimer.current = null;
           setFeedback(null);
           feedbackRef.current = false;
           setCombatNum(null);
           setSelected("");
-          applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
+          // 必须带上 combat:换题不能丢掉当前这批敌人与计时窗口
+          applyNode({ nodeType: d.nodeType, question: d.nextQuestion, combat: d.combat });
         }, 900);
       }
     } catch (e) {
+      // 关键:异常时必须解除反馈锁。否则 feedback 一直为真 → 所有选项 disabled、
+      // 心跳被 feedbackRef 拦截 → 整局彻底卡死无法操作。
+      setFeedback(null);
+      feedbackRef.current = false;
       setError(e instanceof Error ? e.message : "提交失败");
     } finally {
       setLoading(false);
@@ -599,7 +637,7 @@ export default function RoguelikePage() {
       if (d.runOver) {
         setTimeout(() => setPhase("result"), 1200);
       } else {
-        applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
+        applyNode({ nodeType: d.nodeType, question: d.nextQuestion, combat: d.combat });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "领取失败");
@@ -904,7 +942,7 @@ export default function RoguelikePage() {
           {(() => {
             const zone = zoneOf(run.layer);
             const wpn = weaponImg(equipped);
-            const alive = combat ? combat.enemies.filter((e) => e.hp > 0) : [];
+            const alive = combat && Array.isArray(combat.enemies) ? combat.enemies.filter((e) => e.hp > 0) : [];
             const ratio = combat && combat.qLimitMs > 0 ? 1 - remainMs / combat.qLimitMs : 1; // 已用时间比例
             const tier = speedTierOf(ratio);
             const secLeft = Math.max(0, Math.ceil(remainMs / 1000));

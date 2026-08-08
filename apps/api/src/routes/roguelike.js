@@ -614,6 +614,9 @@ router.post(
         const q = await pickQuestion({ ...run, layer, items: JSON.stringify(items) }, { boss: nodeType === "boss" });
         nextNodeInfo = { nodeType, question: q };
         if (q && items.combat) beginQuestionWindow(items.combat, q, { test: items.test });
+        // 取不到题:必须停战。否则计时窗口停留在上一题,心跳会判定恒超时,
+        // 玩家会被"看不见的敌人"持续重击致死(前端只显示缺题面板)。
+        if (!q) items.combat = null;
       }
     }
 
@@ -682,6 +685,8 @@ router.post(
           const q = await pickQuestion({ ...run, layer, items: JSON.stringify(items) }, { boss: nodeType === "boss" });
           nextNodeInfo = { nodeType, question: q };
           if (q) beginQuestionWindow(items.combat, q, { test: items.test });
+          // 同上:取不到题就停战,避免恒超时把玩家打死
+          else items.combat = null;
         }
       }
     }
