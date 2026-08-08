@@ -35,7 +35,7 @@ interface NodeResp {
   message?: string;
 }
 interface StartResp extends NodeResp {}
-interface AnsResp extends NodeResp { correct: boolean; nextQuestion: Q | null }
+interface AnsResp extends NodeResp { correct: boolean; nextQuestion: Q | null; damage?: number; heal?: number; shieldUsed?: boolean }
 interface RunDetail { run: Run; nodeType: string | null; question: Q | null; inventory?: string[] }
 
 const SUBJECTS = ["数学", "物理", "化学", "生物", "TMUA"];
@@ -96,11 +96,11 @@ function weaponImg(equipped: Record<string, any> | undefined): string {
 // 前端技能展示(与后端 SKILL_POOL 对应)
 const SKILL_META: Record<string, { name: string; icon: string; cost: number; type: string; tier: number; desc: string }> = {
   s_fireball: { name: "火球术", icon: "🔥", cost: 3, type: "attack", tier: 1, desc: "下次作答必中" },
-  s_heal: { name: "治疗术", icon: "💚", cost: 4, type: "heal", tier: 1, desc: "回复 3 点生命" },
+  s_heal: { name: "治疗术", icon: "💚", cost: 4, type: "heal", tier: 1, desc: "回复 14-21 生命" },
   s_shield: { name: "守护", icon: "🛡", cost: 3, type: "defense", tier: 1, desc: "抵挡一次答错" },
   s_focus: { name: "专注", icon: "💡", cost: 2, type: "utility", tier: 1, desc: "排除 2 个错误选项" },
   s_strike: { name: "雷霆斩", icon: "⚡", cost: 5, type: "attack", tier: 2, desc: "必中并 +10 分" },
-  s_regen: { name: "生命涌动", icon: "🌿", cost: 5, type: "heal", tier: 2, desc: "回复 5 点生命" },
+  s_regen: { name: "生命涌动", icon: "🌿", cost: 5, type: "heal", tier: 2, desc: "回复 26-39 生命" },
   s_berserk: { name: "狂暴", icon: "😤", cost: 4, type: "utility", tier: 2, desc: "本次答对得分翻倍" },
   s_meteor: { name: "陨石术", icon: "☄️", cost: 7, type: "attack", tier: 3, desc: "必中并 +20 分" },
   s_aegis: { name: "圣盾", icon: "🪬", cost: 6, type: "defense", tier: 3, desc: "抵挡两次答错" },
@@ -116,7 +116,9 @@ export default function RoguelikePage() {
   const [nodeType, setNodeType] = useState<"normal" | "boss" | "reward" | null>(null);
   const [question, setQuestion] = useState<Q | null>(null);
   const [selected, setSelected] = useState("");
-  const [feedback, setFeedback] = useState<null | { correct: boolean; shieldUsed?: boolean }>(null);
+  const [feedback, setFeedback] = useState<null | { correct: boolean; shieldUsed?: boolean; damage?: number; heal?: number }>(null);
+  // 浮动战斗数字(伤害红 / 回复绿)
+  const [combatNum, setCombatNum] = useState<null | { key: number; text: string; kind: "dmg" | "heal" }>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [inventory, setInventory] = useState<string[]>([]);
   const [hintExclude, setHintExclude] = useState<number[]>([]);
@@ -264,7 +266,12 @@ export default function RoguelikePage() {
     setToast(null);
     try {
       const d = await api.post<AnsResp>(`/roguelike/${run.id}/answer`, { questionId: question.id, selected: val });
-      setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed });
+      setFeedback({ correct: d.correct, shieldUsed: d.shieldUsed, damage: d.damage, heal: d.heal });
+      // 浮动战斗数字(减少动效时跳过)
+      if (!fxReduced) {
+        if (d.correct && d.heal) setCombatNum({ key: Date.now(), text: `+${d.heal}`, kind: "heal" });
+        else if (!d.correct && !d.shieldUsed && d.damage) setCombatNum({ key: Date.now(), text: `-${d.damage}`, kind: "dmg" });
+      }
       if (d.reward) setToast(`🎁 ${d.reward}`);
       // ---- Phase A 特效 ----
       if (d.correct) {
@@ -296,6 +303,7 @@ export default function RoguelikePage() {
       } else {
         setTimeout(() => {
           setFeedback(null);
+          setCombatNum(null);
           setSelected("");
           applyNode({ nodeType: d.nodeType, question: d.nextQuestion });
         }, 900);
@@ -420,6 +428,7 @@ export default function RoguelikePage() {
     setQuestion(null);
     setFeedback(null);
     setSelected("");
+    setCombatNum(null);
     setToast(null);
     setHintExclude([]);
     setInventory([]);
@@ -466,7 +475,7 @@ export default function RoguelikePage() {
       {phase === "setup" && (
         <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-xl font-bold">冒险模式</h1>
-          <p className="mt-1 text-sm text-slate-500">连续答对推进层数,答错扣生命;每 5 层有 Boss,每 3 层有奖励!</p>
+          <p className="mt-1 text-sm text-slate-500">连续答对推进层数,答错随机扣血、答对随机回血;每 5 层有 Boss,每 3 层有奖励!</p>
             {hasActive && (
               <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
                 <p>你有进行中的冒险,点「开始冒险」将继续上次进度</p>
@@ -495,7 +504,7 @@ export default function RoguelikePage() {
               </div>
             </div>
             <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-              <p>❤ 生命 {maxHp} · 答错 -1(护盾可抵挡) · 🛡 护盾/🧪 药水/⏭ 跳过/💡 提示</p>
+              <p>❤ 生命 {maxHp} · 答错随机扣血(护盾可抵挡) · 答对随机回血 · 🛡 护盾/🧪 药水/⏭ 跳过/💡 提示</p>
               <p>🔥 连对递增得分;3/5/10 连对触发奖励</p>
               <p>⚔ 每 5 层 Boss(抽你的错题) · 🎁 每 3 层奖励节点 · 🏁 第 {MAX_LAYER} 层通关</p>
             </div>
@@ -537,7 +546,7 @@ export default function RoguelikePage() {
                 <div className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(question.stem)}</div>
                 {feedback && (
                   <div className={`pop-in mt-4 flex items-center rounded-xl px-4 py-2.5 text-sm ${feedback.correct ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                    <span>{feedback.correct ? "✓ 回答正确!" : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : "✗ 回答错误,生命 -1"}</span>
+                    <span>{feedback.correct ? `✓ 回答正确!回复 ${feedback.heal ?? 0} 点生命` : feedback.shieldUsed ? "✗ 回答错误(护盾抵挡,生命不减)" : `✗ 回答错误,受到 ${feedback.damage ?? 0} 点伤害`}</span>
                   </div>
                 )}
               </div>
@@ -617,14 +626,15 @@ export default function RoguelikePage() {
               </div>
             </div>
             {/* 生命 */}
-            <div className={`hud-hp ${run.hp <= 2 ? "low-hp" : ""}`}>
+            <div className={`hud-hp ${run.hp / maxHp <= 0.25 ? "low-hp" : ""}`}>
               <span className="hud-hp-label">❤ 生命</span>
               <div className="hud-hp-bar">
-                {Array.from({ length: maxHp }).map((_, i) => (
-                  <div key={i} className={`hud-hp-cell ${i < run.hp ? "on" : "off"}`} />
-                ))}
+                <div className="hud-hp-fill" style={{ width: `${Math.max(0, Math.min(100, (run.hp / maxHp) * 100))}%` }} />
               </div>
               <span className="hud-hp-num">{run.hp}/{maxHp}</span>
+              {combatNum && (
+                <span key={combatNum.key} className={`combat-float ${combatNum.kind}`}>{combatNum.text}</span>
+              )}
             </div>
             {/* 身上穿戴 */}
             <div className="hud-equipped">
@@ -672,7 +682,7 @@ export default function RoguelikePage() {
                 })}
               </div>
             )}
-            <p className="hud-hint">答错 -1 生命(护盾可抵挡) · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 消灭怪物掉装备/物品</p>
+            <p className="hud-hint">答错随机扣血(护盾可抵挡) · 答对随机回血 · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 消灭怪物掉装备/物品</p>
           </div>
 
           {/* 奖励节点面板（中列内） */}

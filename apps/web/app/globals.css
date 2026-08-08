@@ -443,13 +443,26 @@ body {
   gap: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
-.hud-hp { display: flex; align-items: center; gap: 8px; }
+.hud-hp { position: relative; display: flex; align-items: center; gap: 8px; }
 .hud-hp-label { font-size: 0.75rem; color: #fca5a5; white-space: nowrap; }
-.hud-hp-bar { flex: 1; display: flex; gap: 3px; }
-.hud-hp-cell { flex: 1; height: 11px; border-radius: 999px; transition: background 0.3s; }
-.hud-hp-cell.on { background: #ef4444; }
-.hud-hp-cell.off { background: rgba(255, 255, 255, 0.12); }
-.hud-hp-num { font-size: 0.75rem; color: #e2e8f0; white-space: nowrap; }
+.hud-hp-bar { flex: 1; height: 11px; background: rgba(255, 255, 255, 0.12); border-radius: 999px; overflow: hidden; }
+.hud-hp-fill { height: 100%; border-radius: 999px; background: #22c55e; transition: width 0.3s, background 0.3s; }
+.hud-hp.low-hp .hud-hp-fill { background: #ef4444; }
+.hud-hp-num { font-size: 0.75rem; color: #e2e8f0; white-space: nowrap; min-width: 48px; text-align: right; }
+/* 浮动战斗数字:伤害红 / 回复绿 */
+.combat-float {
+  position: absolute; right: 6px; top: -4px;
+  font-weight: 800; font-size: 1.05rem; line-height: 1;
+  pointer-events: none; z-index: 6;
+  animation: combat-float 0.9s ease-out forwards;
+}
+.combat-float.dmg { color: #fca5a5; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+.combat-float.heal { color: #6ee7b7; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+@keyframes combat-float {
+  0% { opacity: 0; transform: translateY(6px) scale(0.9); }
+  18% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-22px) scale(1); }
+}
 .hud-items { display: flex; flex-wrap: wrap; gap: 6px; }
 .hud-item {
   border: 1px solid rgba(129, 140, 248, 0.5);
@@ -744,7 +757,8 @@ body {
   .stage-boss::before,
   .stage-danger::before,
   .stage-weapon,
-  .enemy-attack {
+  .enemy-attack,
+  .combat-float {
     animation: none !important;
   }
   .coin-rain {

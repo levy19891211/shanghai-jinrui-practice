@@ -37,26 +37,26 @@ const GEAR_POOL = [
   { id: "w_wood", slot: "weapon", name: "木剑", icon: "🗡", bonus: { score: 1 }, desc: "每答对 +1 分" },
   { id: "w_iron", slot: "weapon", name: "铁剑", icon: "⚔", bonus: { score: 2 }, desc: "每答对 +2 分" },
   { id: "w_flame", slot: "weapon", name: "烈焰剑", icon: "🔥", bonus: { score: 3 }, desc: "每答对 +3 分" },
-  { id: "a_leather", slot: "armor", name: "皮甲", icon: "🛡", bonus: { hp: 1 }, desc: "生命上限 +1" },
-  { id: "a_iron", slot: "armor", name: "铁甲", icon: "🛡", bonus: { hp: 2 }, desc: "生命上限 +2" },
-  { id: "a_holy", slot: "armor", name: "圣铠", icon: "✨", bonus: { hp: 3 }, desc: "生命上限 +3" },
+  { id: "a_leather", slot: "armor", name: "皮甲", icon: "🛡", bonus: { hp: 10 }, desc: "生命上限 +10" },
+  { id: "a_iron", slot: "armor", name: "铁甲", icon: "🛡", bonus: { hp: 18 }, desc: "生命上限 +18" },
+  { id: "a_holy", slot: "armor", name: "圣铠", icon: "✨", bonus: { hp: 28 }, desc: "生命上限 +28" },
   { id: "t_amber", slot: "trinket", name: "琥珀", icon: "🔮", bonus: { mana: 2 }, desc: "蓝上限 +2" },
   { id: "t_star", slot: "trinket", name: "星之坠", icon: "🌟", bonus: { mana: 3, regen: 1 }, desc: "蓝上限 +3，每答对回蓝 +1" },
 ];
 const ITEM_POOL = [
-  { id: "i_heal", type: "heal", name: "治疗药水", icon: "🧪", heal: 2, desc: "回复 2 点生命" },
-  { id: "i_heal_big", type: "heal", name: "大治疗药水", icon: "💗", heal: 4, desc: "回复 4 点生命" },
+  { id: "i_heal", type: "heal", name: "治疗药水", icon: "🧪", heal: 18, desc: "回复 12-21 生命" },
+  { id: "i_heal_big", type: "heal", name: "大治疗药水", icon: "💗", heal: 34, desc: "回复 26-39 生命" },
   { id: "i_atk", type: "attack", name: "力量药剂", icon: "💥", desc: "下次作答必中（自动答对）" },
   { id: "i_shield", type: "defense", name: "护盾", icon: "🛡", desc: "抵挡一次答错扣血" },
   { id: "i_hint", type: "utility", name: "提示卷轴", icon: "💡", desc: "排除 2 个错误选项" },
 ];
 const SKILL_POOL = [
   { id: "s_fireball", tier: 1, type: "attack", name: "火球术", icon: "🔥", cost: 3, bonus: 0, desc: "下次作答必中（自动答对）" },
-  { id: "s_heal", tier: 1, type: "heal", name: "治疗术", icon: "💚", cost: 4, heal: 3, desc: "回复 3 点生命" },
+  { id: "s_heal", tier: 1, type: "heal", name: "治疗术", icon: "💚", cost: 4, heal: 18, desc: "回复 14-21 生命" },
   { id: "s_shield", tier: 1, type: "defense", name: "守护", icon: "🛡", cost: 3, blocks: 1, desc: "抵挡一次答错扣血" },
   { id: "s_focus", tier: 1, type: "utility", name: "专注", icon: "💡", cost: 2, desc: "排除 2 个错误选项" },
   { id: "s_strike", tier: 2, type: "attack", name: "雷霆斩", icon: "⚡", cost: 5, bonus: 10, desc: "下次作答必中，并 +10 分" },
-  { id: "s_regen", tier: 2, type: "heal", name: "生命涌动", icon: "🌿", cost: 5, heal: 5, desc: "回复 5 点生命" },
+  { id: "s_regen", tier: 2, type: "heal", name: "生命涌动", icon: "🌿", cost: 5, heal: 34, desc: "回复 26-39 生命" },
   { id: "s_berserk", tier: 2, type: "utility", name: "狂暴", icon: "😤", cost: 4, desc: "本次答对得分翻倍" },
   { id: "s_meteor", tier: 3, type: "attack", name: "陨石术", icon: "☄️", cost: 7, bonus: 20, desc: "下次作答必中，并 +20 分" },
   { id: "s_aegis", tier: 3, type: "defense", name: "圣盾", icon: "🪬", cost: 6, blocks: 2, desc: "抵挡两次答错扣血" },
@@ -152,6 +152,19 @@ function safeParseOptions(value) {
     return [];
   }
 }
+// 随机整数 [min, max]
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+// 回复数值带随机性:以 base 为中心上下波动(满血 999 除外)
+function rollHeal(base) {
+  if (base >= 999) return base;
+  const lo = Math.max(1, Math.round(base * 0.75));
+  const hi = Math.round(base * 1.15);
+  return randInt(lo, hi);
+}
+// HP 基准(数值化,带随机伤害/回复)
+const BASE_HP = 100;
 
 // 提示用：测试模式直接返回固定题,否则查库
 async function resolveQuestionForHint(run, questionId) {
@@ -211,7 +224,7 @@ async function pickQuestion(run, opts = {}) {
 
 // 连击奖励（额外物品）
 function comboReward(combo) {
-  if (combo === 3) return { message: "3 连对!恢复 1 点生命", coins: 2, heal: 1, items: ["i_heal"] };
+  if (combo === 3) return { message: "3 连对!生命恢复", coins: 2, heal: randInt(6, 12), items: ["i_heal"] };
   if (combo === 5) return { message: "5 连对!获得护盾 ×1", coins: 5, heal: 0, items: ["i_shield"] };
   if (combo === 10) return { message: "10 连对!获得治疗药水 ×1", coins: 10, heal: 0, items: ["i_heal"] };
   if (combo > 0 && combo % 5 === 0) return { message: `${combo} 连对!金币奖励`, coins: 5, heal: 0, items: [] };
@@ -312,6 +325,8 @@ router.post(
         studentId: req.user.id,
         subject,
         difficulty,
+        hp: BASE_HP,
+        maxHp: BASE_HP,
         items: JSON.stringify(runItems),
       },
     });
@@ -363,6 +378,8 @@ router.post(
     let reward = { message: "", coins: 0, heal: 0, items: [] };
     let shieldUsed = false;
     let leveled = false;
+    let resDamage = 0; // 本题受到的伤害(答错时)
+    let resHeal = 0;   // 本题回复的生命(答对时)
 
     if (correct) {
       combo += 1;
@@ -382,6 +399,10 @@ router.post(
       reward = comboReward(combo);
       coins += 1 + reward.coins;
       if (reward.heal > 0) hp = Math.min(run.maxHp, hp + reward.heal);
+      // 答对随机回复生命
+      const heal = randInt(5, 10);
+      resHeal = heal;
+      hp = Math.min(run.maxHp, hp + heal);
       reward.items.forEach((ref) => items.inventory.push(mkItemEntry(ref)));
 
       if (nodeType === "boss") {
@@ -401,7 +422,9 @@ router.post(
         if (items.shieldCount <= 0) items.shield = false;
         shieldUsed = true;
       } else {
-        hp -= 1;
+        const dmg = randInt(12, 22);
+        hp -= dmg;
+        resDamage = dmg;
       }
       combo = 0;
       items.berserk = false;
@@ -446,6 +469,8 @@ router.post(
       reward: reward.message || null,
       drops: drops.length ? drops : null,
       shieldUsed,
+      damage: resDamage,
+      heal: resHeal,
       leveled,
       runOver, status: status,
       nodeType: nextNodeInfo.nodeType,
@@ -472,7 +497,7 @@ router.post(
     coins += 2;
     const msg = [];
     if (Math.random() < 0.3) { items.inventory.push(mkItemEntry("i_heal")); msg.push("治疗药水×1"); }
-    if (hp < run.maxHp && Math.random() < 0.3) { hp += 1; msg.push("回复 1 点生命"); }
+    if (hp < run.maxHp && Math.random() < 0.3) { const ch = randInt(6, 12); hp = Math.min(run.maxHp, hp + ch); msg.push(`回复 ${ch} 点生命`); }
     layer += 1;
     let runOver = false;
     let nextNodeInfo = { nodeType: null, question: null };
@@ -522,8 +547,9 @@ router.post(
     let nextNodeInfo = { nodeType: null, question: null };
 
     if (meta.type === "heal") {
-      hp = Math.min(run.maxHp, hp + (meta.heal || 1));
-      payload = { message: `使用${meta.name},回复 ${meta.heal} 点生命` };
+      const healAmt = meta.heal >= 999 ? run.maxHp : rollHeal(meta.heal || 1);
+      hp = Math.min(run.maxHp, hp + healAmt);
+      payload = { message: `使用${meta.name},回复 ${healAmt} 点生命` };
     } else if (meta.type === "attack") {
       items.autoCorrect = true;
       payload = { message: "力量药剂生效:下次作答必中" };
@@ -621,7 +647,7 @@ router.post(
       items.pendingScoreBonus = meta.bonus || 0;
       payload = { message: `${meta.name}发动:下次作答必中${meta.bonus ? `,+${meta.bonus} 分` : ""}` };
     } else if (meta.type === "heal") {
-      const amt = meta.heal >= 999 ? run.maxHp : meta.heal;
+      const amt = meta.heal >= 999 ? run.maxHp : rollHeal(meta.heal || 1);
       hp = Math.min(run.maxHp, hp + amt);
       payload = { message: `${meta.name}:回复 ${amt} 点生命` };
     } else if (meta.type === "defense") {
