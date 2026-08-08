@@ -26,6 +26,20 @@ function fmtTime(s?: string | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// topicIds 后端可能返回 JSON 字符串(如 "[...]"),统一解析为数组
+function parseJsonIds(v: string | string[] | null | undefined): string[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") {
+    try {
+      const a = JSON.parse(v);
+      return Array.isArray(a) ? a.filter((x) => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 interface FormState {
   id?: string;
   subject: string;
@@ -204,7 +218,7 @@ export default function TeacherPage() {
   function openCreate() { setForm({ ...EMPTY, topicIds: [] }); setError(""); setShowForm(true); }
   function openEdit(q: Question) {
     setForm({
-      id: q.id, subject: q.subject, paper: q.paper ?? "", topic: q.topic, topicIds: q.topicIds || [],
+      id: q.id, subject: q.subject, paper: q.paper ?? "", topic: q.topic, topicIds: parseJsonIds(q.topicIds),
       difficulty: q.difficulty,
       type: q.type, stem: q.stem, optionsText: (q.options || []).join("\n"), answer: q.answer ?? "",
       solution: q.solution ?? "", status: q.status,

@@ -15,7 +15,7 @@ export interface AuthData {
 
 export interface Question {
   id: string;
-  subject: "TMUA" | "ESAT";
+  subject: string;
   paper?: string | null;
   topic: string;
   topicIds?: string[] | null; // 关联知识点 id(题库管理用)

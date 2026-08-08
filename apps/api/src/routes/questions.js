@@ -377,7 +377,7 @@ router.get(
     const allIds = [...new Set(list.flatMap((q) => parseJsonIds(q.topicIds)))];
     const kps = allIds.length ? await prisma.knowledgePoint.findMany({ where: { id: { in: allIds } }, select: { id: true, name: true } }) : [];
     const kpNameById = new Map(kps.map((k) => [k.id, k.name]));
-    const enriched = list.map((q) => ({ ...q, topics: parseJsonIds(q.topicIds).map((id) => kpNameById.get(id)).filter(Boolean) }));
+    const enriched = list.map((q) => ({ ...q, topicIds: parseJsonIds(q.topicIds), topics: parseJsonIds(q.topicIds).map((id) => kpNameById.get(id)).filter(Boolean) }));
     ok(res, { list: enriched, total, page, pageSize });
   })
 );
@@ -390,7 +390,7 @@ router.get(
     const q = await prisma.question.findUnique({ where: { id: req.params.id } });
     if (!q) return fail(res, 404, "题目不存在");
     if (q.status !== "PUBLISHED" && req.user.role === "STUDENT") return fail(res, 404, "题目不存在");
-    ok(res, { ...q, topics: await resolveTopics(q.topicIds) });
+    ok(res, { ...q, topicIds: parseJsonIds(q.topicIds), topics: await resolveTopics(q.topicIds) });
   })
 );
 
@@ -429,7 +429,7 @@ router.post(
       papers = await syncAutoPaperSets([{ id: q.id, subject: q.subject, paper: q.paper, source: q.source }]);
     }
     const msg = papers.length ? `创建成功;已归入套题试卷「${papers[0].title}」(共 ${papers[0].total} 题)` : "创建成功";
-    ok(res, { ...q, papers, topics: await resolveTopics(q.topicIds) }, msg);
+    ok(res, { ...q, papers, topicIds: parseJsonIds(q.topicIds), topics: await resolveTopics(q.topicIds) }, msg);
   })
 );
 
@@ -468,7 +468,7 @@ router.put(
     const q = await prisma.question.update({ where: { id: req.params.id }, data });
     // 状态可能被手动改动,同步刷新所在试卷的就绪度
     if (data.status !== undefined) await recalcPapersOfQuestion(q.id);
-    ok(res, { ...q, topics: await resolveTopics(q.topicIds) }, "更新成功");
+    ok(res, { ...q, topicIds: parseJsonIds(q.topicIds), topics: await resolveTopics(q.topicIds) }, "更新成功");
   })
 );
 
