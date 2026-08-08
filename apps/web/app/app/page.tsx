@@ -12,8 +12,9 @@ import type { CreateSessionData, SessionSummary, StatsData } from "@/lib/types";
 export default function StudentHome() {
   const router = useRouter();
   const user = getUser();
-  const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "" });
+  const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "", knowledgePointId: "", difficulty: "" });
   const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number }[]>([]);
+  const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [allSessions, setAllSessions] = useState<SessionSummary[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -27,6 +28,8 @@ export default function StudentHome() {
     }).catch(() => {});
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
     api.get<{ list: { id: string; title: string; mode: string; questionCount: number }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
+    // 知识点库(供知识点下拉与掌握度"针对练习")
+    api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
   }, []);
 
   async function start() {
@@ -37,6 +40,8 @@ export default function StudentHome() {
         mode: form.mode,
         limit: form.limit,
         subject: form.subject || undefined,
+        knowledgePointId: form.knowledgePointId || undefined,
+        difficulty: form.difficulty || undefined,
         durationMin: form.mode === "EXAM" ? form.durationMin : undefined,
         paperId: form.paperId || undefined,
       });
@@ -49,8 +54,25 @@ export default function StudentHome() {
     }
   }
 
+  // 针对某个知识点发起练习(10 题)
+  async function practiceTopic(topic: string) {
+    const kp = allKps.find((k) => k.name === topic);
+    if (!kp) return;
+    setError("");
+    setLoading(true);
+    try {
+      const data = await api.post<CreateSessionData>("/sessions", { mode: "PRACTICE", limit: 10, knowledgePointId: kp.id });
+      sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
+      router.push(`/app/practice/${data.sessionId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const input =
-    "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500";
+    "h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select";
 
   // 成绩趋势数据(已提交且有总分的会话,按时间升序,最近 10 次)
   const trendData = allSessions
@@ -99,10 +121,38 @@ export default function StudentHome() {
           )}
           <div>
             <label className="mb-1 block text-sm text-slate-600">科目</label>
-            <select className={input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
+            <select className={input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value, knowledgePointId: "" })}>
               <option value="">全部</option>
               <option value="TMUA">TMUA</option>
               <option value="ESAT">ESAT</option>
+              <option value="数学">数学</option>
+              <option value="物理">物理</option>
+              <option value="化学">化学</option>
+              <option value="生物">生物</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-600">知识点</label>
+            <select className={`${input} max-w-[220px]`} value={form.knowledgePointId} onChange={(e) => setForm({ ...form, knowledgePointId: e.target.value })}>
+              <option value="">全部知识点</option>
+              {(() => {
+                const pool = form.subject === "TMUA" ? ["数学"] : form.subject === "ESAT" ? ["数学", "物理"] : form.subject ? [form.subject] : null;
+                const list = pool ? allKps.filter((k) => pool.includes(k.subject)) : allKps;
+                return list.map((kp) => (
+                  <option key={kp.id} value={kp.id}>{pool ? kp.name : `[${kp.subject}] ${kp.name}`}</option>
+                ));
+              })()}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-600">难度</label>
+            <select className={input} value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
+              <option value="">全部难度</option>
+              <option value="1">难度 1</option>
+              <option value="2">难度 2</option>
+              <option value="3">难度 3</option>
+              <option value="4">难度 4</option>
+              <option value="5">难度 5</option>
             </select>
           </div>
           <div>
@@ -141,7 +191,19 @@ export default function StudentHome() {
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
             {stats.byTopic.map((t) => (
               <div key={t.topic} className="rounded-xl bg-slate-50 p-4">
-                <p className="text-sm font-medium text-slate-800">{t.topic}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-800">{t.topic}</p>
+                  {allKps.some((k) => k.name === t.topic) && (
+                    <button
+                      onClick={() => practiceTopic(t.topic)}
+                      disabled={loading}
+                      title="针对该知识点练 10 题"
+                      className="shrink-0 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      练习
+                    </button>
+                  )}
+                </div>
                 <p className="mt-1 text-xs text-slate-500">作答 {t.attempts} 次</p>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
                   <div

@@ -21,9 +21,16 @@ async function resolveQuestionIds(body) {
   if (Array.isArray(body.questionIds) && body.questionIds.length > 0) {
     return body.questionIds;
   }
-  // 默认:从已发布题目中随机抽取 10 道(优先按 subject 过滤)
+  // 默认:从已发布题目中随机抽取 10 道(支持 subject/subjects/difficulty/knowledgePointId 过滤)
   const where = { status: "PUBLISHED" };
   if (body.subject) where.subject = body.subject;
+  if (body.subjects) {
+    const subs = String(body.subjects).split(",").map((s) => s.trim()).filter(Boolean);
+    if (subs.length) where.subject = { in: subs };
+  }
+  if (body.difficulty) where.difficulty = Number(body.difficulty);
+  // 按知识点组卷:只抽取挂了该知识点标签的题
+  if (body.knowledgePointId) where.topicIds = { contains: String(body.knowledgePointId) };
   const all = await prisma.question.findMany({ where, select: { id: true } });
   const picked = all.sort(() => Math.random() - 0.5).slice(0, Number(body.limit) || 10);
   return picked.map((q) => q.id);
