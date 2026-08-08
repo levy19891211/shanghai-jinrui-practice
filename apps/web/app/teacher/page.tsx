@@ -489,70 +489,85 @@ export default function TeacherPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* 标题行:左标题 + 右主操作 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">题库管理</h1>
           <p className="mt-1 text-sm text-slate-500">共 {total} 道题目</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button onClick={() => setStatusFilter("PENDING_REVIEW")} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"}`}>
-            审核队列
-          </button>
-          <button onClick={openBatch} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
-            退回题一键修正
-          </button>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
-            <option value="">全部状态</option>
-            <option value="DRAFT">草稿</option>
-            <option value="PENDING_REVIEW">待审核</option>
-            <option value="PUBLISHED">已发布</option>
-            <option value="REJECTED">已退回</option>
-            <option value="ARCHIVED">已下架</option>
-          </select>
-          {/* 筛选:知识点(仅显示当前学科) / 难度 */}
-          <select value={kpFilter} onChange={(e) => setKpFilter(e.target.value)} className="max-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
-            <option value="">全部知识点</option>
-            {(subjectTab ? allKps.filter((kp) => kp.subject === subjectTab) : allKps).map((kp) => (
-              <option key={kp.id} value={kp.id}>{subjectTab ? kp.name : `[${kp.subject}] ${kp.name}`}</option>
-            ))}
-          </select>
-          <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
-            <option value="">全部难度</option>
-            <option value="1">难度 1</option>
-            <option value="2">难度 2</option>
-            <option value="3">难度 3</option>
-            <option value="4">难度 4</option>
-            <option value="5">难度 5</option>
-          </select>
-          {/* 排序 */}
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
-            <option value="createdAt_desc">导入时间 最新在前</option>
-            <option value="createdAt_asc">导入时间 最早在前</option>
-            <option value="difficulty_desc">难度 高到低</option>
-            <option value="difficulty_asc">难度 低到高</option>
-          </select>
-          <button onClick={openCreate} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-            + 新建题目
-          </button>
-          <button onClick={() => { setImportOpen(true); setImportText(""); setImportResult(null); setImportError(""); }} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setImportOpen(true); setImportText(""); setImportResult(null); setImportError(""); }}
+            className="h-9 rounded-lg border border-indigo-300 px-4 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+          >
             批量导入
+          </button>
+          <button onClick={openCreate} className="h-9 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">
+            + 新建题目
           </button>
         </div>
       </div>
 
       {/* 学科 Tab */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         {[{ v: "", l: "全部" }, { v: "数学", l: "数学" }, { v: "物理", l: "物理" }, { v: "化学", l: "化学" }, { v: "生物", l: "生物" }].map((t) => (
           <button
             key={t.v}
             onClick={() => { setSubjectTab(t.v); setKpFilter(""); }}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              subjectTab === t.v ? "bg-indigo-600 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-50"
+            className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+              subjectTab === t.v ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             {t.l}
           </button>
         ))}
+      </div>
+
+      {/* 筛选工具栏:统一控件高度 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select">
+          <option value="">全部状态</option>
+          <option value="DRAFT">草稿</option>
+          <option value="PENDING_REVIEW">待审核</option>
+          <option value="PUBLISHED">已发布</option>
+          <option value="REJECTED">已退回</option>
+          <option value="ARCHIVED">已下架</option>
+        </select>
+        <select value={kpFilter} onChange={(e) => setKpFilter(e.target.value)} className="h-9 max-w-[220px] rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select">
+          <option value="">全部知识点</option>
+          {(subjectTab ? allKps.filter((kp) => kp.subject === subjectTab) : allKps).map((kp) => (
+            <option key={kp.id} value={kp.id}>{subjectTab ? kp.name : `[${kp.subject}] ${kp.name}`}</option>
+          ))}
+        </select>
+        <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select">
+          <option value="">全部难度</option>
+          <option value="1">难度 1</option>
+          <option value="2">难度 2</option>
+          <option value="3">难度 3</option>
+          <option value="4">难度 4</option>
+          <option value="5">难度 5</option>
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select">
+          <option value="createdAt_desc">导入时间 最新在前</option>
+          <option value="createdAt_asc">导入时间 最早在前</option>
+          <option value="difficulty_desc">难度 高到低</option>
+          <option value="difficulty_asc">难度 低到高</option>
+        </select>
+        <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+        <button
+          onClick={() => setStatusFilter("PENDING_REVIEW")}
+          className={`h-9 rounded-lg px-3.5 text-sm font-medium transition ${
+            statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"
+          }`}
+        >
+          审核队列
+        </button>
+        <button
+          onClick={openBatch}
+          className="h-9 rounded-lg border border-amber-300 px-3.5 text-sm font-medium text-amber-700 hover:bg-amber-50"
+        >
+          退回题一键修正
+        </button>
       </div>
 
       {paperId && (
