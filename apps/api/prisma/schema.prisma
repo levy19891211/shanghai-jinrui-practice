@@ -32,6 +32,7 @@ model User {
   createdAt        DateTime  @default(now())
   sessions         Session[]
   wrongBook        WrongBook[]
+  roguelikeRuns    RoguelikeRun[]
 }
 
 model Question {
@@ -155,4 +156,25 @@ model WrongBook {
   updatedAt  DateTime @updatedAt
 
   @@unique([studentId, questionId])
+}
+
+// Roguelike 冒险模式运行进度(一期:线性爬塔)
+// 题目不存于此表——每层临时抽题,答完即弃;判分/连击/血量全部后端权威计算
+model RoguelikeRun {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id])
+  subject   String
+  difficulty Int     @default(3)
+  layer     Int      @default(1) // 当前层(从 1 开始)
+  hp        Int      @default(5)
+  maxHp     Int      @default(5)
+  combo     Int      @default(0) // 当前连续正确
+  maxCombo  Int      @default(0) // 历史最大连击
+  score     Int      @default(0)
+  coins     Int      @default(0)
+  items     String? // 道具(JSON 数组),一期预留
+  status    String   @default("ACTIVE") // ACTIVE | WON | DEAD
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

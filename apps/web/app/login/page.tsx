@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, setToken, setUser } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
 import type { AuthData } from "@/lib/types";
 
 export default function LoginPage() {
@@ -38,6 +39,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-center text-2xl font-bold text-slate-900">上海金瑞学校 附加笔试刷题系统</h1>
         <p className="mt-1 text-center text-sm text-slate-500">TMUA / ESAT 附加笔试 · 练习 · 模拟考 · 学情分析</p>
+        <p className="mt-1 text-center text-xs text-slate-300">{APP_VERSION}</p>
 
         <div className="mt-6 flex rounded-lg bg-slate-100 p-1 text-sm">
           {(["login", "register"] as const).map((m) => (
