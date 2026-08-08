@@ -25,7 +25,7 @@ body {
 /* 行内公式:KaTeX 默认 1.21em 会导致与正文大小不一,统一为与正文一致 */
 .math-inline .katex,
 .math-inline .katex-display {
-  font-size: 1em;
+  font-size: 1em !important;
 }
 .math-inline .katex-display {
   margin: 0.25em 0;
