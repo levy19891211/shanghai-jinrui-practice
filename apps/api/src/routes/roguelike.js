@@ -408,11 +408,14 @@ router.post(
         hp = 0;
         status = "DEAD";
       }
-      await prisma.wrongBook.upsert({
-        where: { studentId_questionId: { studentId: req.user.id, questionId } },
-        create: { studentId: req.user.id, questionId, wrongCount: 1 },
-        update: { wrongCount: { increment: 1 }, mastered: false },
-      });
+      // 测试模式(固定题 TEST_Q 不存在于 question 表)跳过错题本写入,避免外键报错
+      if (!items.test) {
+        await prisma.wrongBook.upsert({
+          where: { studentId_questionId: { studentId: req.user.id, questionId } },
+          create: { studentId: req.user.id, questionId, wrongCount: 1 },
+          update: { wrongCount: { increment: 1 }, mastered: false },
+        });
+      }
     }
 
     let runOver = status !== "ACTIVE";
