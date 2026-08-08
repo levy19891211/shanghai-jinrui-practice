@@ -899,6 +899,131 @@ body {
   100% { opacity: 0; }
 }
 
+/* ===================================================================
+   V2.2 被动技能表现层：状态条 / 被动清单 / 主动被动 / 灼烧标记 / 被动卡
+   =================================================================== */
+
+/* --- 实时状态条(由 passiveStats 折算) --- */
+.hud-buffs { display: flex; flex-wrap: wrap; gap: 5px; }
+.buff-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 1px solid transparent; border-radius: 7px;
+  padding: 2px 6px; font-size: 0.66rem; font-weight: 700;
+  line-height: 1.35; white-space: nowrap;
+}
+.bc-icon { font-size: 0.78rem; line-height: 1; }
+.bc-text { letter-spacing: 0.01em; }
+.buff-atk   { background: rgba(239, 68, 68, 0.16);  border-color: rgba(248, 113, 113, 0.5); color: #fecaca; }
+.buff-spell { background: rgba(139, 92, 246, 0.18); border-color: rgba(167, 139, 250, 0.5); color: #ddd6fe; }
+.buff-def   { background: rgba(59, 130, 246, 0.16); border-color: rgba(96, 165, 250, 0.5);  color: #bfdbfe; }
+.buff-sus   { background: rgba(16, 185, 129, 0.16); border-color: rgba(52, 211, 153, 0.5);  color: #a7f3d0; }
+.buff-off   { background: rgba(100, 116, 139, 0.18); border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; opacity: 0.6; }
+/* 临时护盾会呼吸,提示「正在吸收伤害」 */
+.buff-shield {
+  background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.6); color: #bae6fd;
+  animation: buff-pulse 1.8s ease-in-out infinite;
+}
+@keyframes buff-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45); }
+  50%      { box-shadow: 0 0 9px 2px rgba(56, 189, 248, 0.35); }
+}
+
+/* --- 已习得被动清单(可展开看完整说明) --- */
+.hud-passives { display: flex; flex-direction: column; gap: 4px; }
+.passive-toggle {
+  width: auto; text-align: left; cursor: pointer; background: none; border: none;
+  padding: 0; color: #94a3b8; font-size: 0.62rem; letter-spacing: 0.05em;
+}
+.passive-toggle:hover { color: #cbd5e1; }
+.passive-list {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  max-height: 52px; overflow: hidden; transition: max-height 0.25s ease;
+}
+.passive-list.open {
+  flex-direction: column; flex-wrap: nowrap;
+  max-height: 260px; overflow-y: auto; padding-right: 2px;
+}
+.passive-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06); color: #e2e8f0;
+  padding: 2px 8px; font-size: 0.68rem; font-weight: 600; line-height: 1.4;
+}
+.passive-list.open .passive-chip {
+  width: 100%; border-radius: 9px; flex-wrap: wrap; padding: 5px 9px;
+}
+.pc-icon { font-size: 0.82rem; line-height: 1; }
+.pc-stacks { font-size: 0.62rem; font-weight: 800; color: #fde047; }
+.pc-desc { width: 100%; margin-top: 2px; font-size: 0.62rem; font-weight: 400; color: #94a3b8; }
+/* 四棵树配色 */
+.passive-chip.tree-attack  { border-color: rgba(248, 113, 113, 0.5); background: rgba(239, 68, 68, 0.14);  color: #fecaca; }
+.passive-chip.tree-spell   { border-color: rgba(167, 139, 250, 0.5); background: rgba(139, 92, 246, 0.16); color: #ddd6fe; }
+.passive-chip.tree-defense { border-color: rgba(96, 165, 250, 0.5);  background: rgba(59, 130, 246, 0.16); color: #bfdbfe; }
+.passive-chip.tree-sustain { border-color: rgba(52, 211, 153, 0.5);  background: rgba(16, 185, 129, 0.16); color: #a7f3d0; }
+/* 稀有度：稀有描边 / 史诗金光 */
+.passive-chip.rar-rare { box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.35); }
+.passive-chip.rar-epic { border-color: rgba(251, 191, 36, 0.75); box-shadow: 0 0 8px rgba(251, 191, 36, 0.4); }
+
+/* --- 主动被动：虚空魔弹 --- */
+.void-bolt {
+  position: relative;
+  border-color: rgba(192, 132, 252, 0.75);
+  background: linear-gradient(135deg, rgba(126, 34, 206, 0.42), rgba(37, 99, 235, 0.35));
+  color: #f5d0fe;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.35);
+}
+.void-bolt:hover:not(:disabled) { box-shadow: 0 0 16px rgba(168, 85, 247, 0.6); }
+.void-bolt.on-cd, .void-bolt.no-mana, .hud-item.no-mana { opacity: 0.45; box-shadow: none; }
+.void-cd {
+  margin-left: 4px; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 3px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55); font-size: 0.6rem; color: #e9d5ff;
+}
+
+/* --- 敌人灼烧标记(蓝焰灼烧 DoT) --- */
+.enemy-burn {
+  position: absolute; left: 2px; top: 0; z-index: 3;
+  font-size: 0.95rem; pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(251, 146, 60, 0.9));
+  animation: burn-flicker 0.7s ease-in-out infinite;
+}
+@keyframes burn-flicker {
+  0%, 100% { transform: translateY(0) scale(1);      opacity: 1; }
+  50%      { transform: translateY(-2px) scale(1.14); opacity: 0.78; }
+}
+.enemy-sprite.is-burning {
+  filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.8)) drop-shadow(0 12px 14px rgba(0, 0, 0, 0.6));
+}
+
+/* --- 升级三选一：被动卡 --- */
+.skill-modal-sub { text-align: center; font-size: 0.7rem; color: #94a3b8; margin: -6px 0 12px; }
+.passive-card {
+  grid-template-areas:
+    "icon name rarity"
+    "icon desc desc"
+    "icon tier stack";
+  align-items: start;
+}
+.passive-card .sc-icon { align-self: center; }
+.passive-card .sc-tier { grid-area: tier; justify-self: start; }
+.pcard-rarity { grid-area: rarity; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.05em; }
+.pcard-rarity.rar-common { color: #cbd5e1; }
+.pcard-rarity.rar-rare   { color: #93c5fd; }
+.pcard-rarity.rar-epic   { color: #fbbf24; }
+.pcard-up, .pcard-new { grid-area: stack; justify-self: end; font-size: 0.62rem; font-weight: 700; }
+.pcard-up  { color: #fde047; }
+.pcard-new { color: #86efac; }
+/* 卡片按树配色 */
+.passive-card.tree-attack  { border-color: rgba(248, 113, 113, 0.45); background: rgba(239, 68, 68, 0.12); }
+.passive-card.tree-attack:hover  { background: rgba(239, 68, 68, 0.24); }
+.passive-card.tree-spell   { border-color: rgba(167, 139, 250, 0.45); background: rgba(139, 92, 246, 0.13); }
+.passive-card.tree-spell:hover   { background: rgba(139, 92, 246, 0.26); }
+.passive-card.tree-defense { border-color: rgba(96, 165, 250, 0.45);  background: rgba(59, 130, 246, 0.13); }
+.passive-card.tree-defense:hover { background: rgba(59, 130, 246, 0.26); }
+.passive-card.tree-sustain { border-color: rgba(52, 211, 153, 0.45);  background: rgba(16, 185, 129, 0.13); }
+.passive-card.tree-sustain:hover { background: rgba(16, 185, 129, 0.26); }
+.passive-card.rar-epic { box-shadow: 0 0 14px rgba(251, 191, 36, 0.35); border-color: rgba(251, 191, 36, 0.6); }
+
 /* ===== Phase C 降级与性能 ===== */
 
 /* 「减少动效」手动开关:禁用常驻动画(粒子/横幅/幕布由 JS 控制不渲染) */
@@ -920,7 +1045,9 @@ body {
   .fx-reduced .enemy-hit,
   .fx-reduced .enemy-float,
   .fx-reduced .timeout-flash,
-  .fx-reduced .windup-ring.danger {
+  .fx-reduced .windup-ring.danger,
+  .fx-reduced .buff-shield,
+  .fx-reduced .enemy-burn {
     animation: none !important;
   }
 .fx-reduced .coin-rain {
@@ -948,6 +1075,8 @@ body {
   .enemy-float,
   .timeout-flash,
   .windup-ring.danger,
+  .buff-shield,
+  .enemy-burn,
   .combat-float {
     animation: none !important;
   }
@@ -982,4 +1111,10 @@ body {
   .stage-deco { width: 64px; height: 64px; }
   .stage-weapon { width: 34%; }
   .hud-hint { font-size: 0.62rem; }
+  /* V2.2:窄屏收紧状态条与被动清单 */
+  .buff-chip { font-size: 0.6rem; padding: 2px 5px; }
+  .passive-chip { font-size: 0.62rem; padding: 2px 6px; }
+  .passive-list { max-height: 46px; }
+  .passive-list.open { max-height: 200px; }
+  .enemy-burn { font-size: 0.8rem; }
 }

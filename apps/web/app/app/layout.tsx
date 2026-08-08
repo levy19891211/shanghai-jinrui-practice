@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuth, getUser } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -57,6 +58,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-300">{APP_VERSION}</span>
             <span className="text-sm text-slate-500">{user?.name}</span>
             <button onClick={logout} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">
               退出

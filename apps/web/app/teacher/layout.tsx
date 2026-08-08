@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuth, getUser } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -51,6 +52,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-300">{APP_VERSION}</span>
             <span className="text-sm text-slate-500">{user?.name}({user?.role === "ADMIN" ? "管理员" : "老师"})</span>
             <button
               onClick={() => { clearAuth(); router.push("/login"); }}

@@ -33,6 +33,7 @@ import {
   addPassive,
   passiveGainStats,
   PASSIVE_BY_ID,
+  PASSIVES,
 } from "../lib/rogue-skills.js";
 
 const router = Router();
@@ -168,6 +169,11 @@ function extraState(items) {
     inventory: items.inventory, autoCorrect: items.autoCorrect,
     passives: items.passives,
     passiveStats: stats,
+    // V2.2 前端状态可视化：临时护盾 / 主动被动冷却 / 一次性守护消耗情况
+    tempShield: items.tempShield || 0,
+    voidCdUntil: items.voidCdUntil || 0,
+    ironWillUsed: items.ironWillUsed || 0,
+    deathGuardUsed: !!items.deathGuardUsed,
     combat: combatView(items),
   };
 }
@@ -1034,6 +1040,27 @@ router.post(
     if (run.status !== "ACTIVE") return fail(res, 400, "冒险已结束");
     const updated = await prisma.roguelikeRun.update({ where: { id: run.id }, data: { status: "QUIT" } });
     ok(res, { run: updated }, "冒险已结算");
+  })
+);
+
+// GET /api/roguelike/meta/passives — 被动技能图鉴（前端展示名称/图标/描述，避免前后端两份清单漂移）
+// 注意：必须定义在 GET /:runId 之前（两段路径不会与单段的 :runId 冲突，但保持顺序更稳妥）
+router.get(
+  "/meta/passives",
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    ok(res, {
+      passives: PASSIVES.map((p) => ({
+        id: p.id,
+        name: p.name,
+        icon: p.icon,
+        desc: p.desc,
+        tree: p.tree,
+        rarity: p.rarity,
+        stackable: !!p.stackable,
+        active: !!p.voidBolt, // 需手动释放的被动
+      })),
+    });
   })
 );
 

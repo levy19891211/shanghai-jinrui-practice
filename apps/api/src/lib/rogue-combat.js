@@ -272,8 +272,10 @@ export function simulate(items, hp, nowMs, ctx = {}) {
   // —— 周期维持（在敌人出手前，先回蓝/耗蓝/回血/刷新屏障）——
   upkeep(items, s, maxHp, dBeat, c.totalBeat, prevBeat, events);
   if (items._lifeFlowHeal) {
+    const before = hp;
     hp = Math.min(maxHp, hp + items._lifeFlowHeal);
     items._lifeFlowHeal = 0;
+    if (hp > before) events.push({ type: "lifeflow", heal: hp - before });
   }
 
   for (const e of c.enemies) {
@@ -364,6 +366,9 @@ export function combatView(items, nowMs = Date.now()) {
       nextAtkBeat: e.nextAtkBeat,
       // 蓄力进度 0-1（服务端快照，前端以本地计算为准）
       windup: e.hp > 0 ? Math.max(0, Math.min(1, 1 - (e.nextAtkBeat - c.totalBeat) / e.interval)) : 0,
+      // 灼烧状态（V2.2 前端展示用）：是否燃烧 + 剩余节拍
+      burning: !!(e.burn && e.hp > 0 && c.totalBeat < e.burn.untilBeat),
+      burnLeft: e.burn ? Math.max(0, Math.round((e.burn.untilBeat - c.totalBeat) * 10) / 10) : 0,
     })),
     qLimitMs: c.qLimitMs,
     qRemainMs: Math.max(0, c.qLimitMs - (nowMs - c.qStartMs)),

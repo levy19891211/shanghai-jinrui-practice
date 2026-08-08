@@ -16,6 +16,36 @@ interface Q { id: string; topic?: string; type: string; stem: string; options: s
 interface EnemyView {
   eid: string; name: string; kind: "normal" | "boss"; sprite: number;
   hp: number; maxHp: number; interval: number; nextAtkBeat: number; windup: number;
+  burning?: boolean; burnLeft?: number;
+}
+// ===== V2.1/V2.2 被动技能 =====
+interface PassiveEntry { ref: string; stacks: number }
+interface PassiveMeta {
+  id: string; name: string; icon: string; desc: string;
+  tree: string; rarity: string; stackable: boolean; active: boolean;
+}
+// 升级三选一返回的被动卡
+interface PassiveCard {
+  id: string; name: string; icon: string; desc: string;
+  tree: string; rarity: string; newStacks: number;
+}
+// computeStats 折算出的实时数值（前端只读用于状态可视化）
+interface PassiveStats {
+  physAtkMult: number; armorPen: number; splash: number; critChance: number; critMult: number; bloodBladePer10: number;
+  spellMult: number; maxManaBonus: number; cdMult: number; manaCostMult: number;
+  scatterCount: number; scatterDmg: number; killMana: number; spellSplash: number;
+  burn: { dur: number; pct: number } | null;
+  voidBolt: { cost: number; cd: number } | null;
+  overload: { mult: number; drain: number } | null;
+  dmgReduce: number; playerArmor: number; dodge: number; ironWill: number;
+  manaBarrier: { cost: number; pct: number; cd: number } | null;
+  reflect: number;
+  deathGuard: { pct: number; once?: boolean } | null;
+  maxHpBonus: number; meditation: number; lifesteal: number; bloodFeast: number;
+  lifeConvert: { mana: number; noLife?: boolean } | null;
+  lifeFlow: { pct: number; interval: number; pause: number } | null;
+  manaBlood: { lifestealToMana: number; lifestealBonus: number } | null;
+  owned: string[];
 }
 interface CombatView {
   layer: number; nodeType: string;
@@ -41,7 +71,15 @@ interface NodeResp {
   level?: number;
   equipped?: Record<string, any>;
   skills?: string[];
-  pendingSkills?: any[] | null;
+  pendingSkills?: PassiveCard[] | null;
+  // V2.2 被动状态
+  passives?: PassiveEntry[];
+  passiveStats?: PassiveStats | null;
+  tempShield?: number;
+  voidCdUntil?: number;
+  ironWillUsed?: number;
+  deathGuardUsed?: boolean;
+  hits?: { eid: string; name: string; dmg: number; killed: boolean }[];
   autoCorrect?: boolean;
   message?: string;
   combat?: CombatView | null;
@@ -137,6 +175,10 @@ const SKILL_META: Record<string, { name: string; icon: string; cost: number; typ
   s_aegis: { name: "圣盾", icon: "🪬", cost: 6, type: "defense", tier: 3, desc: "抵挡两次答错" },
   s_phoenix: { name: "凤凰祝福", icon: "🦅", cost: 8, type: "heal", tier: 3, desc: "回复全部生命" },
 };
+// V2.2 被动树 / 稀有度中文标签（配色由 CSS 的 tree-* / rar-* 类负责）
+const TREE_LABEL: Record<string, string> = { attack: "攻击", spell: "法术", defense: "防御", sustain: "续航" };
+const RARITY_LABEL: Record<string, string> = { common: "普通", rare: "稀有", epic: "史诗" };
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export default function RoguelikePage() {
   const router = useRouter();
@@ -180,7 +222,16 @@ export default function RoguelikePage() {
   // V1.6 战斗状态
   const [equipped, setEquipped] = useState<Record<string, any>>({});
   const [skills, setSkills] = useState<string[]>([]);
-  const [pendingSkills, setPendingSkills] = useState<any[] | null>(null);
+  const [pendingSkills, setPendingSkills] = useState<PassiveCard[] | null>(null);
+  // ===== V2.2 被动技能状态 =====
+  const [passives, setPassives] = useState<PassiveEntry[]>([]);
+  const [passiveStats, setPassiveStats] = useState<PassiveStats | null>(null);
+  const [passiveMeta, setPassiveMeta] = useState<Record<string, PassiveMeta>>({});
+  const [tempShield, setTempShield] = useState(0);
+  const [voidCdUntil, setVoidCdUntil] = useState(0);
+  const [ironWillUsed, setIronWillUsed] = useState(0);
+  const [deathGuardUsed, setDeathGuardUsed] = useState(false);
+  const [passiveOpen, setPassiveOpen] = useState(false); // 被动详情展开
   const [mana, setMana] = useState(10);
   const [maxMana, setMaxMana] = useState(10);
   const [level, setLevel] = useState(1);
@@ -235,19 +286,7 @@ export default function RoguelikePage() {
       if (typeof d.hp === "number") setRun((r) => (r ? { ...r, hp: d.hp!, combo: d.combo ?? r.combo } : r));
       applyCombat(d);
       applyCombatView(d);
-      for (const ev of d.events || []) {
-        if (ev.type === "enemy_hit") {
-          pushEnemyFloat(ev.eid, ev.blocked ? "格挡" : `${ev.dmg}`, ev.blocked ? "block" : "dmg");
-          setAttackingIds((prev) => ({ ...prev, [ev.eid]: true }));
-          setTimeout(() => setAttackingIds((prev) => ({ ...prev, [ev.eid]: false })), 450);
-          if (!fxReduced) setShake(Date.now());
-          playSfx("wrong");
-        } else if (ev.type === "timeout") {
-          pushEnemyFloat(ev.eid, ev.blocked ? "格挡" : `${ev.dmg}`, ev.blocked ? "block" : "dmg");
-          if (!fxReduced) setShake(Date.now());
-          playSfx("wrong");
-        }
-      }
+      applyEvents(d.events);
       if (d.timedOut) {
         setTimeoutFlash(true);
         setTimeout(() => setTimeoutFlash(false), 500);
@@ -292,6 +331,18 @@ export default function RoguelikePage() {
     api.get<{ run: Run | null }>("/roguelike/active").then((d) => setHasActive(!!d.run)).catch(() => {});
   }, []);
 
+  // 被动图鉴只拉一次：后端是唯一数据源，前端不再维护第二份技能清单
+  useEffect(() => {
+    api
+      .get<{ passives: PassiveMeta[] }>("/roguelike/meta/passives")
+      .then((d) => {
+        const m: Record<string, PassiveMeta> = {};
+        for (const p of d.passives || []) m[p.id] = p;
+        setPassiveMeta(m);
+      })
+      .catch(() => {});
+  }, []);
+
   // Phase B:Boss 节点出现时触发横幅 + 低鸣音
   useEffect(() => {
     if (nodeType === "boss") {
@@ -330,6 +381,13 @@ export default function RoguelikePage() {
     if (res.maxMana !== undefined) setMaxMana(res.maxMana);
     if (res.level !== undefined) setLevel(res.level);
     if (res.autoCorrect !== undefined) setAutoArmed(!!res.autoCorrect);
+    // V2.2 被动状态
+    if (res.passives !== undefined) setPassives(res.passives || []);
+    if (res.passiveStats !== undefined) setPassiveStats(res.passiveStats || null);
+    if (res.tempShield !== undefined) setTempShield(res.tempShield || 0);
+    if (res.voidCdUntil !== undefined) setVoidCdUntil(res.voidCdUntil || 0);
+    if (res.ironWillUsed !== undefined) setIronWillUsed(res.ironWillUsed || 0);
+    if (res.deathGuardUsed !== undefined) setDeathGuardUsed(!!res.deathGuardUsed);
   }
   // 应用后端战斗视图：同步敌人/计时窗口，并重置本地倒计时
   function applyCombatView(res: any) {
@@ -358,6 +416,51 @@ export default function RoguelikePage() {
         return np;
       });
     }, 950);
+  }
+  // 统一消费后端战斗事件（心跳 / 答题补算 / 主动被动都会带 events）
+  function applyEvents(events: any[] | undefined) {
+    for (const ev of events || []) {
+      if (ev.type === "enemy_hit") {
+        const text = ev.dodged ? "闪避" : ev.ironWill ? "意志!" : ev.blocked ? "格挡" : `${ev.dmg}`;
+        const kind = ev.dodged || ev.blocked || ev.ironWill ? "block" : "dmg";
+        pushEnemyFloat(ev.eid, text, kind);
+        setAttackingIds((prev) => ({ ...prev, [ev.eid]: true }));
+        setTimeout(() => setAttackingIds((prev) => ({ ...prev, [ev.eid]: false })), 450);
+        if (!fxReduced && kind === "dmg") setShake(Date.now());
+        playSfx(ev.dodged || ev.blocked ? "shield" : "wrong");
+      } else if (ev.type === "timeout") {
+        // 超时事件后端不带 eid，落到第一个存活敌人身上
+        const eid = ev.eid || combatRef.current?.enemies.find((e) => e.hp > 0)?.eid;
+        if (eid) pushEnemyFloat(eid, ev.blocked ? "格挡" : `${ev.dmg}`, ev.blocked ? "block" : "dmg");
+        if (!fxReduced) setShake(Date.now());
+        playSfx("wrong");
+      } else if (ev.type === "splash") {
+        // 分裂斩：冲击波打前方多敌
+        pushEnemyFloat(ev.eid, `⚔${ev.dmg}`, "hit");
+      } else if (ev.type === "spell_splash") {
+        // 元素爆裂：法术范围伤害
+        pushEnemyFloat(ev.eid, `💥${ev.dmg}`, "hit");
+      } else if (ev.type === "scatter") {
+        // 法力弹散射副弹
+        pushEnemyFloat(ev.eid, `✦${ev.dmg}`, "hit");
+      } else if (ev.type === "burn_apply") {
+        pushEnemyFloat(ev.eid, "🔥灼烧", "hit");
+      } else if (ev.type === "lifesteal") {
+        if (!fxReduced) setCombatNum({ key: Date.now() + Math.random(), text: `+${ev.dmg}`, kind: "heal" });
+      } else if (ev.type === "burn") {
+        // 蓝焰灼烧 DoT：敌人身上跳橙色伤害
+        pushEnemyFloat(ev.eid, `🔥${ev.dmg}`, "hit");
+      } else if (ev.type === "reflect") {
+        // 反弹外壳：把伤害弹回敌人
+        pushEnemyFloat(ev.eid, `↩${ev.dmg}`, "hit");
+      } else if (ev.type === "barrier") {
+        // 魔力屏障刷新
+        setToast(`🔮 魔力屏障:获得 ${ev.shield} 点护盾`);
+      } else if (ev.type === "lifeflow") {
+        // 生命奔流回血
+        if (!fxReduced) setCombatNum({ key: Date.now() + Math.random(), text: `+${ev.heal}`, kind: "heal" });
+      }
+    }
   }
   // 本地推算敌人蓄力进度(0-1)：根据剩余时间反推当前累计节拍
   function windupOf(e: EnemyView, c: CombatView | null, remain: number): number {
@@ -416,6 +519,8 @@ export default function RoguelikePage() {
       feedbackRef.current = true;
       // 应用最新战斗视图(新一波敌人 / 新计时窗口)
       applyCombatView(d);
+      // 被动触发的连锁效果(溅射/爆裂/散射/灼烧/吸血)与心跳空档补算
+      applyEvents(d.events);
       // 浮动战斗数字(减少动效时跳过)
       if (!fxReduced) {
         if (d.correct && d.heal) setCombatNum({ key: Date.now(), text: `+${d.heal}`, kind: "heal" });
@@ -564,6 +669,33 @@ export default function RoguelikePage() {
     }
   }
 
+  // 释放需手动触发的被动(目前只有虚空魔弹:穿透全场)
+  async function usePassive(passiveId: string) {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const d = await api.post<NodeResp>(`/roguelike/${run.id}/use-passive`, { passiveId });
+      if (d.message) setToast(d.message);
+      playSfx("boss");
+      burstCenter("gold");
+      for (const h of d.hits || []) {
+        pushEnemyFloat(h.eid, `🌌${h.dmg}`, "hit");
+        setHitFlashIds((prev) => ({ ...prev, [h.eid]: true }));
+        setTimeout(() => setHitFlashIds((prev) => ({ ...prev, [h.eid]: false })), 260);
+      }
+      setRun((r) => (r ? { ...r, hp: d.hp ?? r.hp, status: d.status ?? r.status } : r));
+      applyCombat(d);
+      applyCombatView(d);
+      applyEvents(d.events);
+      if (d.runOver) setTimeout(() => setPhase("result"), 1100);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "释放失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // 升级三选一
   async function chooseSkill(skillId: string) {
     if (!run) return;
@@ -610,6 +742,15 @@ export default function RoguelikePage() {
     setRewardClaimKey(0);
     setVictoryOn(false);
     setDeathOn(false);
+    // V2.2 被动状态复位(避免下一局残留)
+    setPassives([]);
+    setPassiveStats(null);
+    setTempShield(0);
+    setVoidCdUntil(0);
+    setIronWillUsed(0);
+    setDeathGuardUsed(false);
+    setPassiveOpen(false);
+    setPendingSkills(null);
   }
 
   async function abandonActiveRun() {
@@ -629,6 +770,37 @@ export default function RoguelikePage() {
   }
 
   const maxHp = run ? run.maxHp : 5;
+  // 本地推算当前累计节拍（心跳之间平滑），用于主动被动冷却倒数
+  const curBeat =
+    combat && combat.beatMs > 0
+      ? combat.qStartBeat + Math.max(0, combat.qLimitMs - remainMs) / combat.beatMs
+      : 0;
+  const voidCdLeft = Math.max(0, voidCdUntil - curBeat);
+  // 需手动释放的被动 id 从图鉴里取（后端唯一数据源），拿不到时兜底
+  const voidPassiveId = Object.values(passiveMeta).find((m) => m.active)?.id || "p_void_bolt";
+  // 由 passiveStats 派生的实时状态图标（只显示真正生效的）
+  const buffs: { key: string; icon: string; text: string; cls: string; title: string }[] = [];
+  if (passiveStats) {
+    const s = passiveStats;
+    if (tempShield > 0) buffs.push({ key: "shield", icon: "🛡", text: `${tempShield}`, cls: "buff-shield", title: `临时护盾:可吸收 ${tempShield} 点伤害` });
+    if (s.dmgReduce > 0) buffs.push({ key: "dr", icon: "🪨", text: pct(s.dmgReduce), cls: "buff-def", title: "受到的所有伤害减免" });
+    if (s.playerArmor > 0) buffs.push({ key: "armor", icon: "🥋", text: `${s.playerArmor}`, cls: "buff-def", title: "护甲:每次受击减免固定伤害" });
+    if (s.dodge > 0) buffs.push({ key: "dodge", icon: "🌀", text: pct(s.dodge), cls: "buff-def", title: "闪避率:完全免疫本次伤害" });
+    if (s.reflect > 0) buffs.push({ key: "reflect", icon: "↩", text: pct(s.reflect), cls: "buff-def", title: "反弹外壳:受击弹回伤害" });
+    if (s.ironWill > 0) buffs.push({ key: "iron", icon: "🛑", text: `${Math.max(0, s.ironWill - ironWillUsed)}`, cls: "buff-def", title: `钢铁意志:致命伤保留 1 血,剩余 ${Math.max(0, s.ironWill - ironWillUsed)} 次` });
+    if (s.deathGuard && !deathGuardUsed) buffs.push({ key: "dg", icon: "💀", text: "待发", cls: "buff-def", title: `濒死守护:血量过低时瞬发 ${pct(s.deathGuard.pct)} 最大生命的护盾(一局一次)` });
+    if (s.physAtkMult > 0) buffs.push({ key: "phys", icon: "⚔️", text: `+${pct(s.physAtkMult)}`, cls: "buff-atk", title: "物理伤害加成(数学/物理/TMUA/ESAT 题)" });
+    if (s.spellMult > 0) buffs.push({ key: "spell", icon: "✨", text: `+${pct(s.spellMult)}`, cls: "buff-spell", title: "法术伤害加成(化学/生物题)" });
+    if (s.critChance > 0) buffs.push({ key: "crit", icon: "🎯", text: `${pct(s.critChance)}/${s.critMult.toFixed(1)}x`, cls: "buff-atk", title: "暴击率 / 暴击倍率" });
+    if (s.armorPen > 0) buffs.push({ key: "pen", icon: "🔩", text: pct(s.armorPen), cls: "buff-atk", title: "破甲:无视敌人护甲比例" });
+    if (s.lifesteal > 0) buffs.push({ key: "ls", icon: "🩸", text: pct(s.lifesteal), cls: "buff-sus", title: "吸血:物理命中按比例回复生命" });
+    if (s.meditation > 0) buffs.push({ key: "med", icon: "🧘", text: `+${s.meditation}/拍`, cls: "buff-sus", title: "冥想:战斗中持续回蓝" });
+    if (s.lifeFlow) buffs.push({ key: "lf", icon: "💗", text: `${pct(s.lifeFlow.pct)}/${s.lifeFlow.interval}拍`, cls: "buff-sus", title: "生命奔流:周期回血,受伤后暂停" });
+    if (s.manaBarrier) buffs.push({ key: "mb", icon: "🔮", text: `${pct(s.manaBarrier.pct)}蓝`, cls: "buff-spell", title: "魔力屏障:周期消耗法力生成护盾" });
+    if (s.burn) buffs.push({ key: "burn", icon: "🔥", text: pct(s.burn.pct), cls: "buff-spell", title: `蓝焰灼烧:命中后 ${s.burn.dur} 拍持续伤害` });
+    if (s.overload) buffs.push({ key: "ovl", icon: "⚡", text: mana > 0 ? `+${pct(s.overload.mult)}` : "熄火", cls: mana > 0 ? "buff-spell" : "buff-off", title: mana > 0 ? "魔力过载:法术增伤中,持续耗蓝" : "魔力过载:蓝量归零,增伤失效" });
+    if (s.manaBlood) buffs.push({ key: "mbld", icon: "🧛", text: `+${pct(s.manaBlood.lifestealBonus)}`, cls: "buff-sus", title: "魔力血祭:停止自然回蓝,吸血额外转化为法力" });
+  }
 
   return (
     <div className="space-y-4">
@@ -790,7 +962,7 @@ export default function RoguelikePage() {
                         <div className="enemy-sprite-wrap">
                           <img
                             src={enemySpriteFor(e)}
-                            className={`enemy-sprite ${e.kind === "boss" ? "enemy-sprite-boss" : "enemy-sprite-normal"} ${attackingIds[e.eid] ? "enemy-attack" : ""} ${hitFlashIds[e.eid] ? "enemy-hit" : ""}`}
+                            className={`enemy-sprite ${e.kind === "boss" ? "enemy-sprite-boss" : "enemy-sprite-normal"} ${attackingIds[e.eid] ? "enemy-attack" : ""} ${hitFlashIds[e.eid] ? "enemy-hit" : ""} ${e.burning ? "is-burning" : ""}`}
                             alt={e.name}
                           />
                           {/* 攻击蓄力预警环(本地推算平滑) */}
@@ -802,6 +974,10 @@ export default function RoguelikePage() {
                               style={{ strokeDasharray: 2 * Math.PI * 15.5, strokeDashoffset: 2 * Math.PI * 15.5 * (1 - w) }}
                             />
                           </svg>
+                          {/* 灼烧标记(蓝焰灼烧 DoT 生效中) */}
+                          {e.burning && (
+                            <span className="enemy-burn" title={`灼烧中,剩余 ${e.burnLeft ?? 0} 拍`}>🔥</span>
+                          )}
                           {/* 敌人飘字(命中/格挡/受伤) */}
                           {floats.map((f) => (
                             <span key={f.key} className={`enemy-float ${f.kind}`}>{f.text}</span>
@@ -858,6 +1034,17 @@ export default function RoguelikePage() {
                 <span key={combatNum.key} className={`combat-float ${combatNum.kind}`}>{combatNum.text}</span>
               )}
             </div>
+            {/* 被动状态条:由 passiveStats 实时折算,只显示真正生效的效果 */}
+            {buffs.length > 0 && (
+              <div className="hud-buffs">
+                {buffs.map((b) => (
+                  <span key={b.key} className={`buff-chip ${b.cls}`} title={b.title}>
+                    <span className="bc-icon">{b.icon}</span>
+                    <span className="bc-text">{b.text}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             {/* 身上穿戴 */}
             <div className="hud-equipped">
               {["weapon", "armor", "trinket"].map((slot) => (
@@ -904,7 +1091,47 @@ export default function RoguelikePage() {
                 })}
               </div>
             )}
-            <p className="hud-hint">答错随机扣血(护盾可抵挡) · 答对随机回血 · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 消灭怪物掉装备/物品</p>
+            {/* 主动被动:虚空魔弹(穿透全场) */}
+            {passiveStats?.voidBolt && (
+              <div className="hud-items">
+                <span className="hud-section-label">主动被动</span>
+                <button
+                  onClick={() => usePassive(voidPassiveId)}
+                  disabled={loading || mana < passiveStats.voidBolt.cost || voidCdLeft > 0}
+                  className={`hud-item void-bolt ${voidCdLeft > 0 ? "on-cd" : ""} ${mana < passiveStats.voidBolt.cost ? "no-mana" : ""}`}
+                  title={`虚空魔弹:贯穿全场所有敌人 · 耗蓝 ${passiveStats.voidBolt.cost} · 冷却 ${passiveStats.voidBolt.cd} 拍`}
+                >
+                  🌌 虚空魔弹 <span className="skill-cost">🔵{passiveStats.voidBolt.cost}</span>
+                  {voidCdLeft > 0 && <span className="void-cd">{Math.ceil(voidCdLeft)}</span>}
+                </button>
+              </div>
+            )}
+            {/* 已习得被动(点击展开完整说明) */}
+            {passives.length > 0 && (
+              <div className="hud-passives">
+                <button className="hud-section-label passive-toggle" onClick={() => setPassiveOpen((v) => !v)}>
+                  被动 {passives.length} 项 · 共 {passives.reduce((n, p) => n + (p.stacks || 1), 0)} 层 {passiveOpen ? "▾" : "▸"}
+                </button>
+                <div className={`passive-list ${passiveOpen ? "open" : ""}`}>
+                  {passives.map((p) => {
+                    const m = passiveMeta[p.ref];
+                    return (
+                      <span
+                        key={p.ref}
+                        className={`passive-chip tree-${m?.tree || "attack"} rar-${m?.rarity || "common"}`}
+                        title={`${m?.name || p.ref}${p.stacks > 1 ? ` ×${p.stacks}` : ""} · ${RARITY_LABEL[m?.rarity || ""] || ""}\n${m?.desc || ""}`}
+                      >
+                        <span className="pc-icon">{m?.icon || "✦"}</span>
+                        <span className="pc-name">{m?.name || p.ref}</span>
+                        {p.stacks > 1 && <span className="pc-stacks">×{p.stacks}</span>}
+                        {passiveOpen && m?.desc && <span className="pc-desc">{m.desc}</span>}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <p className="hud-hint">答错随机扣血(护盾可抵挡) · 答对随机回血 · 答对回蓝 · 每 5 层 Boss · 每 3 层奖励 · 升级可选被动(可叠加)</p>
           </div>
 
           {/* 奖励节点面板（中列内） */}
@@ -961,15 +1188,26 @@ export default function RoguelikePage() {
           {pendingSkills && pendingSkills.length > 0 && (
             <div className="skill-modal-mask">
               <div className="skill-modal">
-                <h3 className="skill-modal-title">🎉 升级!选择一项技能</h3>
+                <h3 className="skill-modal-title">🎉 升级!选择一项被动</h3>
+                <p className="skill-modal-sub">被动永久生效,可叠加的被动重复选择会继续增强</p>
                 <div className="skill-choices">
-                  {pendingSkills.map((s: any) => (
-                    <button key={s.id} onClick={() => chooseSkill(s.id)} className="skill-choice" disabled={loading}>
+                  {pendingSkills.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => chooseSkill(s.id)}
+                      className={`skill-choice passive-card tree-${s.tree} rar-${s.rarity}`}
+                      disabled={loading}
+                    >
+                      <span className={`pcard-rarity rar-${s.rarity}`}>{RARITY_LABEL[s.rarity] || s.rarity}</span>
                       <span className="sc-icon">{s.icon}</span>
                       <span className="sc-name">{s.name}</span>
-                      <span className="sc-tier">T{s.tier} · {s.type}</span>
+                      <span className="sc-tier">{TREE_LABEL[s.tree] || s.tree}</span>
                       <span className="sc-desc">{s.desc}</span>
-                      <span className="sc-cost">🔵 {s.cost}</span>
+                      {s.newStacks > 1 ? (
+                        <span className="pcard-up">叠加至 {s.newStacks} 层</span>
+                      ) : (
+                        <span className="pcard-new">新获得</span>
+                      )}
                     </button>
                   ))}
                 </div>
