@@ -7,6 +7,7 @@ import { planAutoFix } from "../lib/autofix.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
+import { parseImportFile } from "../lib/parse-import-file.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, createdAt: true, updatedAt: true };
@@ -173,6 +174,55 @@ router.post(
     ok(
       res,
       { imported, failed: errors.length, errors: errors.slice(0, 20), papers },
+      `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
+    );
+  })
+);
+
+// POST /api/questions/import-file — 上传文件批量导入(Excel/Word)
+// 接收 { filename, data }(data 为 base64,可带 data: 前缀),服务端解析后复用 importRows。
+router.post(
+  "/import-file",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { filename, data } = req.body || {};
+    if (!filename || !data) return fail(res, 400, "请提供 filename 与 data(base64)");
+    let buf;
+    try {
+      const b64 = String(data).includes(",") ? String(data).split(",")[1] : String(data);
+      buf = Buffer.from(b64, "base64");
+    } catch {
+      return fail(res, 400, "data 不是合法的 base64");
+    }
+    if (buf.length === 0) return fail(res, 400, "文件内容为空");
+    if (buf.length > 15 * 1024 * 1024) return fail(res, 400, "文件过大(上限 15MB)");
+
+    let rows;
+    try {
+      rows = await parseImportFile(filename, buf);
+    } catch (e) {
+      return fail(res, 400, "解析失败:" + e.message);
+    }
+    if (!rows.length) return fail(res, 400, "未从文件中解析出任何题目(请检查模板/表头)");
+
+    const { imported, errors, created } = await importRows(req, rows);
+
+    let papers = [];
+    const autoPaper = req.body?.autoPaper !== false;
+    if (autoPaper && created.length) {
+      papers = await syncAutoPaperSets(created, {
+        title: req.body?.paperTitle,
+        mode: req.body?.paperMode,
+        durationMin: req.body?.paperDurationMin,
+      });
+    }
+    const paperMsg = papers.length
+      ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
+      : "";
+    ok(
+      res,
+      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length },
       `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
     );
   })

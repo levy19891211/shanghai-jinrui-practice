@@ -47,11 +47,15 @@ export default function TeacherPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [importOpen, setImportOpen] = useState(false);
-  const [importMode, setImportMode] = useState<"json" | "csv">("json");
+  const [importMode, setImportMode] = useState<"json" | "csv" | "file">("json");
   const [importText, setImportText] = useState("");
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[] } | null>(null);
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  // 文件批量导入(Excel/Word)
+  const fileImportRef = useRef<HTMLInputElement>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importUploading, setImportUploading] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewQ, setReviewQ] = useState<Question | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -241,6 +245,34 @@ export default function TeacherPage() {
       setImportError(e instanceof Error ? e.message : "导入失败(请检查格式)");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function doImportFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportError("");
+    setImportResult(null);
+    setImportUploading(true);
+    setImportFileName(file.name);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
+      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[] }>(
+        "/questions/import-file",
+        { filename: file.name, data: dataUrl }
+      );
+      setImportResult(r);
+      await load();
+    } catch (err: any) {
+      setImportError(err?.message || "导入失败(请检查文件格式/模板)");
+    } finally {
+      setImportUploading(false);
     }
   }
 
@@ -515,13 +547,13 @@ export default function TeacherPage() {
               <button onClick={() => setImportOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="mt-4 flex gap-2">
-              {(["json", "csv"] as const).map((m) => (
+              {(["json", "csv", "file"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setImportMode(m)}
                   className={`rounded-lg px-4 py-1.5 text-sm ${importMode === m ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}
                 >
-                  {m === "json" ? "JSON 数组" : "CSV 文本"}
+                  {m === "json" ? "JSON 数组" : m === "csv" ? "CSV 文本" : "上传文件"}
                 </button>
               ))}
             </div>
@@ -535,7 +567,7 @@ export default function TeacherPage() {
                 />
                 <p className="mt-2 text-xs text-slate-400">字段:subject 必填,topic 必填,stem 必填,options 至少 2 个,answer 必填;其余可选</p>
               </>
-            ) : (
+            ) : importMode === "csv" ? (
               <>
                 <textarea
                   className={`${input} mt-3 h-48 font-mono text-xs`}
@@ -544,6 +576,52 @@ export default function TeacherPage() {
                   placeholder={"subject,paper,topic,difficulty,type,stem,options(分号分隔),answer,solution,source,status\nTMUA,Paper 1,代数,3,SINGLE_CHOICE,\"题干...\",A;B;C;D,A,解析,来源,PUBLISHED"}
                 />
                 <p className="mt-2 text-xs text-slate-400">首行为表头;options 用分号分隔;含逗号的字段用双引号包裹</p>
+              </>
+            ) : (
+              <>
+                <div className="mt-3 rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-center">
+                  <input
+                    ref={fileImportRef}
+                    type="file"
+                    accept=".xlsx,.xls,.docx"
+                    className="hidden"
+                    onChange={doImportFile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileImportRef.current?.click()}
+                    disabled={importUploading}
+                    className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {importUploading ? "解析中..." : "选择文件 (.xlsx / .xls / .docx)"}
+                  </button>
+                  {importFileName && !importUploading && (
+                    <p className="mt-3 text-xs text-slate-500">已选:{importFileName}</p>
+                  )}
+                </div>
+                <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+                  <p className="font-semibold text-slate-700">Excel 列说明(首行表头,一行一题):</p>
+                  <p>subject, paper, topic, difficulty, type, stem, options(分号分隔), answer, solution, source, status</p>
+                  <p className="font-semibold text-slate-700">Word 模板(每题之间用单独一行的 --- 分隔):</p>
+                  <pre className="overflow-x-auto rounded bg-white p-2 text-[11px] text-slate-700">{`---
+Subject: TMUA
+Paper: 2016 P1
+Topic: 代数
+Difficulty: 3
+Type: SINGLE_CHOICE
+
+题干,可含 $LaTeX$ 公式。
+
+A. 选项一
+B. 选项二
+C. 选项三
+D. 选项四
+
+Answer: B
+
+解析内容(可选)。`}</pre>
+                  <p>answer 写字母(A/B/C/D)或选项文本均可,系统会自动对齐。</p>
+                </div>
               </>
             )}
             {importError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{importError}</p>}
@@ -559,9 +637,11 @@ export default function TeacherPage() {
             )}
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setImportOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
-              <button onClick={doImport} disabled={importing} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-                {importing ? "导入中..." : "开始导入"}
-              </button>
+              {importMode !== "file" && (
+                <button onClick={doImport} disabled={importing} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                  {importing ? "导入中..." : "开始导入"}
+                </button>
+              )}
             </div>
           </div>
         </div>
