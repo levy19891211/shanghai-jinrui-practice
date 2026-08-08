@@ -362,8 +362,12 @@ router.get(
     const select = isTeacher
       ? { ...PUBLIC_FIELDS, answer: true, solution: true, reviewNote: true, reviewedAt: true, autoFixLog: true }
       : PUBLIC_FIELDS;
-    // 按试卷审核时用录入顺序(第 1 题在前),普通列表用最新在前
-    const orderBy = req.query.paperId ? { createdAt: "asc" } : { createdAt: "desc" };
+    // 排序:?sort=difficulty|createdAt + ?order=asc|desc;默认最新在前(按试卷审核时按录入顺序)
+    let orderBy;
+    const dir = req.query.order === "asc" ? "asc" : "desc";
+    if (req.query.sort === "difficulty") orderBy = [{ difficulty: dir }, { createdAt: "desc" }];
+    else if (req.query.sort === "createdAt") orderBy = { createdAt: dir };
+    else orderBy = req.query.paperId ? { createdAt: "asc" } : { createdAt: "desc" };
     const [list, total] = await Promise.all([
       prisma.question.findMany({
         where,

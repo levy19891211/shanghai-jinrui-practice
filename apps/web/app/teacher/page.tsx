@@ -65,6 +65,11 @@ export default function TeacherPage() {
   const [list, setList] = useState<Question[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState("");
+  // 筛选与排序:知识点 / 难度 / 排序
+  const [kpFilter, setKpFilter] = useState("");
+  const [diffFilter, setDiffFilter] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt_desc");
+  const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -183,10 +188,25 @@ export default function TeacherPage() {
     const qs = new URLSearchParams({ pageSize: "50" });
     if (statusFilter) qs.set("status", statusFilter);
     if (paperId) qs.set("paperId", paperId);
+    if (kpFilter) qs.set("knowledgePointId", kpFilter);
+    if (diffFilter) qs.set("difficulty", diffFilter);
+    const [sort, order] = sortBy.split("_");
+    if (sort === "createdAt" || sort === "difficulty") {
+      qs.set("sort", sort);
+      qs.set("order", order);
+    }
     const d = await api.get<QuestionList>(`/questions?${qs.toString()}`);
     setList(d.list);
     setTotal(d.total);
-  }, [statusFilter, paperId]);
+  }, [statusFilter, paperId, kpFilter, diffFilter, sortBy]);
+
+  // 加载知识点库(供筛选下拉)
+  useEffect(() => {
+    api
+      .get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points")
+      .then((d) => setAllKps(d.list || []))
+      .catch(() => setAllKps([]));
+  }, []);
 
   // 读取 ?paperId=,进入「按试卷审核」模式
   useEffect(() => {
@@ -467,7 +487,7 @@ export default function TeacherPage() {
           <h1 className="text-xl font-bold">题库管理</h1>
           <p className="mt-1 text-sm text-slate-500">共 {total} 道题目</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => setStatusFilter("PENDING_REVIEW")} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusFilter === "PENDING_REVIEW" ? "bg-blue-600 text-white" : "border border-blue-300 text-blue-600 hover:bg-blue-50"}`}>
             审核队列
           </button>
@@ -481,6 +501,28 @@ export default function TeacherPage() {
             <option value="PUBLISHED">已发布</option>
             <option value="REJECTED">已退回</option>
             <option value="ARCHIVED">已下架</option>
+          </select>
+          {/* 筛选:知识点 / 难度 */}
+          <select value={kpFilter} onChange={(e) => setKpFilter(e.target.value)} className="max-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
+            <option value="">全部知识点</option>
+            {allKps.map((kp) => (
+              <option key={kp.id} value={kp.id}>[{kp.subject}] {kp.name}</option>
+            ))}
+          </select>
+          <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
+            <option value="">全部难度</option>
+            <option value="1">难度 1</option>
+            <option value="2">难度 2</option>
+            <option value="3">难度 3</option>
+            <option value="4">难度 4</option>
+            <option value="5">难度 5</option>
+          </select>
+          {/* 排序 */}
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select">
+            <option value="createdAt_desc">导入时间 最新在前</option>
+            <option value="createdAt_asc">导入时间 最早在前</option>
+            <option value="difficulty_desc">难度 高到低</option>
+            <option value="difficulty_asc">难度 低到高</option>
           </select>
           <button onClick={openCreate} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
             + 新建题目
