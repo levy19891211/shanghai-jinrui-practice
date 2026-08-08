@@ -4,6 +4,14 @@
 > 版本号同步维护三处：根目录 `VERSION` 文件、`apps/web/lib/version.ts`、本文件。
 > 每次发布必须在本文件顶部追加一条记录（日期 + 版本 + 变更摘要）。
 
+## V1.5 (2026-08-08)
+- 「冒险模式」Phase C 打磨：
+  - **多 Boss/敌人素材**：每 5 层不同 Boss(巨眼魔像/血翼蝠王/暗影蝠王/灭世魔像)，普通敌人 3 档进阶(火焰怪→绿外星→粉外星)，横幅显示 Boss 名，Kenney CC0 素材扩展 4 张。
+  - **体验设置**：setup 页「✨ 粒子特效」「🔊 音效」开关，localStorage 持久化(`rogue_fx_reduced`/`rogue_sfx_muted`)；关粒子时跳过 Canvas 爆发/横幅/幕布/金币雨/震动(纯 CSS 常驻动画经 `.fx-reduced` 容器禁用)。
+  - **移动端性能**：粒子数按 `prefers-reduced-motion`(→1/4)/宽<480(→0.4)/宽<768(→0.65) 自动降级，最少 8 个保证有反馈；`@media (prefers-reduced-motion: reduce)` 全局禁用常驻动画。
+  - **粒子调优**：confetti 120→100、coins 45→40、gold/red 65→60；banner 移动端字号/位置适配。
+  - 零新依赖，可回滚。
+
 ## V1.4 (2026-08-08)
 - 「冒险模式」Phase B 事件特效：
   - **Boss 战氛围**：红色暗角背景叠加 + 像素 Boss 头像(光晕浮动) + 「⚔ BOSS 出现了!」横幅 + 「🏆 BOSS 击破!」横幅 + 低鸣 boss_appear 音。
