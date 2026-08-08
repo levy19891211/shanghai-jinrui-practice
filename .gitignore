@@ -17,3 +17,8 @@ npm-debug.log*
 tsconfig.tsbuildinfo
 # 动态上传的图片(由 /api/uploads 写入 web/public/uploads,不入库)
 apps/web/public/uploads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
