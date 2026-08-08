@@ -23,7 +23,17 @@ import {
   speedTier,
   syncCombat,
   timeoutStrike,
+  computePlayerDamage,
+  applyBurn,
+  EMPTY_STATS,
 } from "../lib/rogue-combat.js";
+import {
+  computeStats,
+  pickThreePassives,
+  addPassive,
+  passiveGainStats,
+  PASSIVE_BY_ID,
+} from "../lib/rogue-skills.js";
 
 const router = Router();
 
@@ -98,6 +108,10 @@ function defaultItems() {
     equipped: {}, skills: [], pendingSkills: null, pendingCount: 0,
     autoCorrect: false, pendingScoreBonus: 0, shield: false, shieldCount: 0, berserk: false,
     test: false,
+    passives: [], // V2.1：已拥有被动 [{ ref, stacks }]
+    // V2.1 被动相关的战斗状态
+    tempShield: 0, ironWillUsed: 0, deathGuardUsed: false,
+    lifeFlowNextBeat: null, lifeFlowPauseUntil: 0, barrierNextBeat: 0, voidCdUntil: 0,
     combat: null, // V2.0 即时制战斗状态（敌人 / 节拍时钟 / 本题窗口）
   };
 }
@@ -124,18 +138,36 @@ function parseItems(raw) {
       shieldCount: typeof v.shieldCount === "number" ? v.shieldCount : 0,
       berserk: !!v.berserk,
       test: !!v.test,
+      passives: Array.isArray(v.passives) ? v.passives : d.passives,
+      tempShield: typeof v.tempShield === "number" ? v.tempShield : 0,
+      ironWillUsed: typeof v.ironWillUsed === "number" ? v.ironWillUsed : 0,
+      deathGuardUsed: !!v.deathGuardUsed,
+      lifeFlowNextBeat: v.lifeFlowNextBeat == null ? null : v.lifeFlowNextBeat,
+      lifeFlowPauseUntil: typeof v.lifeFlowPauseUntil === "number" ? v.lifeFlowPauseUntil : 0,
+      barrierNextBeat: typeof v.barrierNextBeat === "number" ? v.barrierNextBeat : 0,
+      voidCdUntil: typeof v.voidCdUntil === "number" ? v.voidCdUntil : 0,
       combat: v.combat && typeof v.combat === "object" ? v.combat : null,
     };
   } catch {
     return defaultItems();
   }
 }
+// 计算当前被动折算（供战斗内核与前端使用）
+function computePassiveStats(items) {
+  const stats = computeStats(items.passives);
+  // 魔力过载仅在蓝量 > 0 时生效（内核据此决定倍率）
+  stats._manaActive = items.mana > 0;
+  return stats;
+}
 // 把战斗状态额外字段附到响应里，前端统一读取
 function extraState(items) {
+  const stats = computePassiveStats(items);
   return {
     mana: items.mana, maxMana: items.maxMana, level: items.level,
     equipped: items.equipped, skills: items.skills, pendingSkills: items.pendingSkills,
     inventory: items.inventory, autoCorrect: items.autoCorrect,
+    passives: items.passives,
+    passiveStats: stats,
     combat: combatView(items),
   };
 }
@@ -248,7 +280,7 @@ function comboReward(combo) {
   return { coins: 0, heal: 0, items: [] };
 }
 
-// 升级判定：xp 达到 level*3 升级，触发技能三选一
+// 升级判定：xp 达到 level*3 升级，触发被动三选一
 function checkLevelUp(items) {
   let leveled = false;
   while (items.xp >= items.level * 3) {
@@ -256,18 +288,12 @@ function checkLevelUp(items) {
     items.level += 1;
     leveled = true;
     if (!items.pendingSkills || items.pendingSkills.length === 0) {
-      items.pendingSkills = pickThreeSkills(items.skills);
+      items.pendingSkills = pickThreePassives(items.passives);
     } else {
       items.pendingCount += 1;
     }
   }
   return leveled;
-}
-function pickThreeSkills(owned) {
-  const avail = SKILL_POOL.filter((s) => !owned.includes(s.id));
-  const pool = avail.length >= 3 ? avail : SKILL_POOL.slice();
-  const sh = pool.slice().sort(() => Math.random() - 0.5);
-  return sh.slice(0, 3).map((s) => ({ id: s.id, name: s.name, icon: s.icon, cost: s.cost, type: s.type, tier: s.tier, desc: s.desc }));
 }
 
 // 掉落：消灭怪物随机掉落装备或物品
@@ -377,6 +403,7 @@ router.post(
     if (!questionId) return fail(res, 400, "questionId 必填");
     const items = parseItems(run.items);
     const nodeType = items.map[run.layer - 1] || "normal";
+    const stats = computePassiveStats(items); // V2.1 被动折算
 
     let question;
     if (items.test && questionId === TEST_QUESTION.id) {
@@ -392,7 +419,7 @@ router.post(
 
     // 先把心跳空档期补算掉:防止玩家靠「不发心跳」白嫖时间
     {
-      const sim = simulate(items, hp, now);
+      const sim = simulate(items, hp, now, { stats, maxHp: run.maxHp });
       hp = sim.hp;
       events.push(...sim.events);
     }
@@ -439,19 +466,72 @@ router.post(
       let raw = base * tier.mult * (0.9 + Math.random() * 0.2);
       if (items.berserk) raw *= 2;
 
+      // V2.1：按学科决定物理/法术倍率，应用血刃狂攻、暴击、过载
+      const hpRatio = run.maxHp > 0 ? 1 - hp / run.maxHp : 0;
+      const dmg = computePlayerDamage(stats, raw, question.subject, hpRatio);
       const target = c ? aliveEnemies(c)[0] : null;
       if (target) {
-        const d = damageEnemy(target, raw);
+        const others = c ? aliveEnemies(c).filter((e) => e.eid !== target.eid) : [];
+        // 主目标
+        const d = damageEnemy(target, dmg.amount, stats.armorPen);
         attack = {
           dmg: d.dealt, killed: d.killed, eid: target.eid, name: target.name,
           speed: tier.label, speedText: tier.text, mult: tier.mult,
+          type: dmg.type, crit: dmg.crit,
         };
-        if (d.killed) {
-          kills.push({ eid: target.eid, name: target.name, kind: target.kind });
-          items.xp += target.kind === "boss" ? 5 : 2;
-          coins += target.kind === "boss" ? 5 : 1;
-          const dd = rollDrop(items, target.kind === "boss");
-          if (dd.length) drops.push(...dd);
+        const hitEnemies = [{ enemy: target, res: d }];
+        // 分裂斩（物理溅射打前方多敌）
+        if (dmg.type === "phys" && stats.splash > 0) {
+          for (const e of others) {
+            const sd = damageEnemy(e, dmg.amount * stats.splash, stats.armorPen);
+            hitEnemies.push({ enemy: e, res: sd });
+            events.push({ type: "splash", eid: e.eid, name: e.name, dmg: sd.dealt });
+          }
+        }
+        // 元素爆裂（法术范围爆炸）
+        if (dmg.type === "spell" && stats.spellSplash > 0) {
+          for (const e of others) {
+            const sd = damageEnemy(e, dmg.amount * stats.spellSplash, 0);
+            hitEnemies.push({ enemy: e, res: sd });
+            events.push({ type: "spell_splash", eid: e.eid, name: e.name, dmg: sd.dealt });
+          }
+        }
+        // 法力弹散射（额外副弹）
+        if (dmg.type === "spell" && stats.scatterCount > 0) {
+          for (let i = 0; i < Math.min(stats.scatterCount, others.length); i++) {
+            const e = others[i];
+            const sd = damageEnemy(e, dmg.amount * stats.scatterDmg, stats.armorPen);
+            events.push({ type: "scatter", eid: e.eid, name: e.name, dmg: sd.dealt });
+          }
+        }
+        // 蓝焰灼烧：法术命中附灼烧 DoT
+        if (dmg.type === "spell" && stats.burn) {
+          applyBurn(target, dmg.amount, stats, c.totalBeat);
+          events.push({ type: "burn_apply", eid: target.eid, name: target.name });
+        }
+        // 吸血打击（物理命中）：吸血转生命，魔力血祭额外回蓝
+        if (dmg.type === "phys" && stats.lifesteal > 0) {
+          const ls = stats.lifesteal * (stats.manaBlood ? 1 + stats.manaBlood.lifestealBonus : 1);
+          const healAmt = Math.round(d.dealt * ls);
+          if (healAmt > 0) {
+            hp = Math.min(run.maxHp, hp + healAmt);
+            resHeal = Math.max(resHeal, healAmt);
+            events.push({ type: "lifesteal", dmg: healAmt });
+            if (stats.manaBlood) items.mana = Math.min(items.maxMana, items.mana + Math.round(healAmt * stats.manaBlood.lifestealToMana));
+          }
+        }
+        // 击杀结算（主目标 + 溅射目标）
+        for (const { enemy, res } of hitEnemies) {
+          if (res.killed) {
+            kills.push({ eid: enemy.eid, name: enemy.name, kind: enemy.kind });
+            items.xp += enemy.kind === "boss" ? 5 : 2;
+            coins += enemy.kind === "boss" ? 5 : 1;
+            if (stats.killMana) items.mana = Math.min(items.maxMana, items.mana + stats.killMana);
+            if (stats.bloodFeast && !stats.lifeConvert) hp = Math.min(run.maxHp, hp + stats.bloodFeast);
+            if (stats.lifeConvert) items.mana = Math.min(items.maxMana, items.mana + stats.lifeConvert.mana);
+            const dd = rollDrop(items, enemy.kind === "boss");
+            if (dd.length) drops.push(...dd);
+          }
         }
       }
 
@@ -462,7 +542,8 @@ router.post(
       score += gain;
       items.pendingScoreBonus = 0;
       items.berserk = false;
-      items.mana = Math.min(items.maxMana, items.mana + 1 + trinketRegen(items));
+      // 自然回蓝（魔力血祭会停止）
+      if (!stats.manaBlood) items.mana = Math.min(items.maxMana, items.mana + 1 + trinketRegen(items));
       items.xp += 1;
       leveled = checkLevelUp(items);
 
@@ -488,7 +569,7 @@ router.post(
       const target = c ? aliveEnemies(c)[0] : null;
       if (target) {
         const raw = target.atk * (1 + Math.random() * 0.2) * (overtime ? 1.5 : 1);
-        const r = damagePlayer(items, hp, raw);
+        const r = damagePlayer(items, hp, raw, { stats, maxHp: run.maxHp, totalBeat: c.totalBeat });
         hp = r.hp;
         shieldUsed = r.blocked;
         counter = { dmg: r.dealt, blocked: r.blocked, name: target.name, timeout: overtime };
@@ -575,19 +656,20 @@ router.post(
     const now = Date.now();
     let { layer, hp, combo, score, coins, status } = run;
     const nodeType = items.map[layer - 1] || "normal";
+    const stats = computePassiveStats(items); // V2.1 被动折算
     const events = [];
     let timedOut = false;
     let nextNodeInfo = { nodeType: null, question: null };
 
     if (items.combat) {
-      const sim = simulate(items, hp, now);
+      const sim = simulate(items, hp, now, { stats, maxHp: run.maxHp });
       hp = sim.hp;
       events.push(...sim.events);
 
       if (hp > 0 && isTimedOut(items.combat, now)) {
         timedOut = true;
         combo = 0;
-        const t = timeoutStrike(items, hp);
+        const t = timeoutStrike(items, hp, { stats, maxHp: run.maxHp, totalBeat: items.combat.totalBeat });
         hp = t.hp;
         events.push({ type: "timeout", dmg: t.dmg, blocked: t.blocked, name: t.name });
         if (hp > 0) {
@@ -688,9 +770,10 @@ router.post(
     let runOver = false;
     let nextNodeInfo = { nodeType: null, question: null };
     // 即时制:用道具也要走时间,先补算这段时间里敌人的攻击
+    const stats = computePassiveStats(items);
     const tickEvents = [];
     {
-      const sim = simulate(items, hp, Date.now());
+      const sim = simulate(items, hp, Date.now(), { stats, maxHp: run.maxHp });
       hp = sim.hp;
       tickEvents.push(...sim.events);
     }
@@ -793,9 +876,10 @@ router.post(
     let payload = {};
     let hintExclude = null;
     // 即时制:放技能同样消耗真实时间
+    const stats = computePassiveStats(items);
     const tickEvents = [];
     {
-      const sim = simulate(items, hp, Date.now());
+      const sim = simulate(items, hp, Date.now(), { stats, maxHp: run.maxHp });
       hp = sim.hp;
       tickEvents.push(...sim.events);
     }
@@ -846,37 +930,97 @@ router.post(
   })
 );
 
-// POST /api/roguelike/:runId/choose-skill — 升级三选一
+// POST /api/roguelike/:runId/choose-skill — 升级三选一（V2.1：选择被动技能）
+// 兼容别名 choose-passive 见下方。
+async function handleChoosePassive(req, res) {
+  const run = await prisma.roguelikeRun.findUnique({ where: { id: req.params.runId } });
+  if (!run || run.studentId !== req.user.id) return fail(res, 404, "冒险不存在");
+  if (run.status !== "ACTIVE") return fail(res, 400, "冒险已结束");
+
+  const skillId = String(req.body?.skillId || "");
+  const items = parseItems(run.items);
+  if (!Array.isArray(items.pendingSkills) || !items.pendingSkills.length) return fail(res, 400, "当前没有待选择的被动");
+  if (!items.pendingSkills.some((s) => s.id === skillId)) return fail(res, 400, "该被动不在可选列表中");
+
+  // 获得被动：叠加 / 新增，并即时结算最大生命 / 最大蓝
+  const gain = passiveGainStats(skillId);
+  items.passives = addPassive(items.passives, skillId);
+  if (gain.maxHp) { run.maxHp += gain.maxHp; run.hp = Math.min(run.maxHp, run.hp + gain.maxHp); }
+  if (gain.maxMana) { items.maxMana += gain.maxMana; items.mana = Math.min(items.maxMana, items.mana + gain.maxMana); }
+
+  // 还有排队的选择则继续给三个
+  if (items.pendingCount > 0) {
+    items.pendingCount -= 1;
+    items.pendingSkills = pickThreePassives(items.passives);
+  } else {
+    items.pendingSkills = null;
+  }
+
+  await prisma.roguelikeRun.update({
+    where: { id: run.id },
+    data: { maxHp: run.maxHp, items: JSON.stringify(items) },
+  });
+
+  const m = PASSIVE_BY_ID[skillId];
+  ok(res, { message: `习得被动:${m?.name || skillId}`, ...extraState(items) }, "被动已选择");
+}
+router.post("/:runId/choose-skill", requireAuth, asyncHandler(handleChoosePassive));
+router.post("/:runId/choose-passive", requireAuth, asyncHandler(handleChoosePassive));
+
+// POST /api/roguelike/:runId/use-passive — 手动释放需主动触发的被动（虚空魔弹）
 router.post(
-  "/:runId/choose-skill",
+  "/:runId/use-passive",
   requireAuth,
   asyncHandler(async (req, res) => {
     const run = await prisma.roguelikeRun.findUnique({ where: { id: req.params.runId } });
     if (!run || run.studentId !== req.user.id) return fail(res, 404, "冒险不存在");
     if (run.status !== "ACTIVE") return fail(res, 400, "冒险已结束");
 
-    const skillId = String(req.body?.skillId || "");
+    const passiveId = String(req.body?.passiveId || "");
     const items = parseItems(run.items);
-    if (!Array.isArray(items.pendingSkills) || !items.pendingSkills.length) return fail(res, 400, "当前没有待选择的技能");
-    if (!items.pendingSkills.some((s) => s.id === skillId)) return fail(res, 400, "该技能不在可选列表中");
-    if (items.skills.includes(skillId)) return fail(res, 400, "已习得该技能");
+    const stats = computePassiveStats(items);
+    if (!stats.voidBolt) return fail(res, 400, "尚未拥有可主动释放的被动");
+    if (items.mana < stats.voidBolt.cost) return fail(res, 400, `蓝量不足(需要 ${stats.voidBolt.cost},现有 ${items.mana})`);
 
-    items.skills.push(skillId);
-    // 还有排队的选择则继续给三个
-    if (items.pendingCount > 0) {
-      items.pendingCount -= 1;
-      items.pendingSkills = pickThreeSkills(items.skills);
-    } else {
-      items.pendingSkills = null;
+    // 冷却（按战斗秒）：用 barrierNextBeat 复用一套冷却计时（每 run 仅一个主动被动，无冲突）
+    const c = items.combat;
+    const nowBeat = c ? c.totalBeat : 0;
+    if (items.voidCdUntil && nowBeat < items.voidCdUntil) {
+      return fail(res, 400, `冷却中(${Math.ceil(items.voidCdUntil - nowBeat)} 拍)`);
     }
+    items.mana -= stats.voidBolt.cost;
+    items.voidCdUntil = nowBeat + stats.voidBolt.cd;
+
+    // 即时制：先补算心跳空档
+    const tickEvents = [];
+    {
+      const sim = simulate(items, run.hp, Date.now(), { stats, maxHp: run.maxHp });
+      run.hp = sim.hp;
+      tickEvents.push(...sim.events);
+    }
+    // 穿透全部敌人
+    const hits = [];
+    if (c) {
+      for (const e of aliveEnemies(c)) {
+        const d = damageEnemy(e, 40 + items.level * 4, stats.armorPen);
+        hits.push({ eid: e.eid, name: e.name, dmg: d.dealt, killed: d.killed });
+        if (d.killed) {
+          items.xp += e.kind === "boss" ? 5 : 2;
+          const dd = rollDrop(items, e.kind === "boss");
+          if (dd.length) items.inventory.push(...dd);
+        }
+      }
+    }
+
+    let runOver = false;
+    if (run.hp <= 0) { run.hp = 0; run.status = "DEAD"; runOver = true; }
 
     await prisma.roguelikeRun.update({
       where: { id: run.id },
-      data: { items: JSON.stringify(items) },
+      data: { hp: run.hp, status: run.status, items: JSON.stringify(items) },
     });
 
-    const m = SKILL_BY_ID[skillId];
-    ok(res, { message: `习得技能:${m?.name || skillId}`, ...extraState(items) }, "技能已选择");
+    ok(res, { message: "虚空魔弹！贯穿全场", hits, hp: run.hp, events: tickEvents, runOver, status: run.status, ...extraState(items) }, "虚空魔弹已释放");
   })
 );
 
