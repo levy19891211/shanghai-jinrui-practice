@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
-import { plainText } from "@/lib/rich";
+import { renderRich } from "@/lib/rich";
 import type { Question } from "@/lib/types";
 
 interface KnowledgePoint {
@@ -20,6 +20,8 @@ const SUBJECT_COLOR: Record<string, string> = {
   物理: "bg-emerald-50 text-emerald-600",
   化学: "bg-amber-50 text-amber-600",
   生物: "bg-rose-50 text-rose-600",
+  TMUA: "bg-violet-50 text-violet-600",
+  ESAT: "bg-teal-50 text-teal-600",
 };
 const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
 const STATUS_BADGE: Record<string, string> = {
@@ -243,16 +245,37 @@ export default function KnowledgePage() {
             ) : viewList.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">该知识点下暂无题目</p>
             ) : (
-              <div className="mt-4 max-h-[60vh] space-y-2 overflow-y-auto">
-                {viewList.map((q) => (
-                  <div key={q.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className={`rounded px-1.5 py-0.5 font-medium ${SUBJECT_COLOR[q.subject] || "bg-slate-100 text-slate-600"}`}>{q.subject}</span>
-                      <span className={`rounded px-1.5 py-0.5 ${STATUS_BADGE[q.status] || "bg-slate-100 text-slate-500"}`}>{STATUS_LABEL[q.status] || q.status}</span>
-                      <span className="text-slate-400">难度 {q.difficulty}</span>
-                      {q.paper && <span className="truncate text-slate-400">{q.paper}</span>}
+              <div className="mt-4 max-h-[62vh] space-y-3 overflow-y-auto">
+                {viewList.map((q, idx) => (
+                  <div key={q.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    {/* 头部信息条 */}
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                        {idx + 1}
+                      </span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${SUBJECT_COLOR[q.subject] || "bg-slate-100 text-slate-600"}`}>
+                        {q.subject}
+                      </span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_BADGE[q.status] || "bg-slate-100 text-slate-500"}`}>
+                        {STATUS_LABEL[q.status] || q.status}
+                      </span>
+                      <span className="text-xs text-slate-400">难度 {q.difficulty}</span>
+                      {q.paper && <span className="max-w-[200px] truncate text-xs text-slate-400">{q.paper}</span>}
                     </div>
-                    <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{plainText(q.stem)}</p>
+                    {/* 题干 + 选项(公式用 KaTeX 渲染) */}
+                    <div className="px-4 py-3">
+                      <div className="text-[15px] leading-relaxed text-slate-800">{renderRich(q.stem)}</div>
+                      {q.options?.length ? (
+                        <div className="mt-2.5 space-y-1.5">
+                          {q.options.map((opt, j) => (
+                            <div key={j} className="flex items-start gap-2 text-sm text-slate-600">
+                              <span className="mt-0.5 shrink-0 font-bold text-slate-400">{String.fromCharCode(65 + j)}.</span>
+                              <span className="leading-relaxed">{renderRich(String(opt))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
