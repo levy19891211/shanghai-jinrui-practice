@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import { api, getUser } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
-import type { SessionSummary, WrongItem, StatsData } from "@/lib/types";
+import type { SessionSummary, WrongItem, StatsData, GrowthData } from "@/lib/types";
 
 type Assignment = {
   id: string;
@@ -46,6 +46,8 @@ const SKILL_COLOR: Record<string, string> = {
   LISTENING: "#1f6fb2", READING: "#2e6f40", WRITING: "#b8860b", SPEAKING: "#7a3b8f", FULL: "#a14a3a",
 };
 
+const SUBJECT_LINE_COLORS = ["#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#a855f7", "#14b8a6"];
+
 type Tab = "assignments" | "grades" | "analysis" | "wrong";
 
 export default function PersonalSpacePage() {
@@ -62,6 +64,7 @@ export default function PersonalSpacePage() {
   const [byDifficulty, setByDifficulty] = useState<{ difficulty: number; attempts: number; correctRate: number }[]>([]);
   const [overallRate, setOverallRate] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
+  const [growth, setGrowth] = useState<GrowthData | null>(null);
   const [wrongList, setWrongList] = useState<WrongItem[]>([]);
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,13 +79,14 @@ export default function PersonalSpacePage() {
     (async () => {
       setLoading(true);
       try {
-        const [a, s, ls, stats, w, kps] = await Promise.all([
+        const [a, s, ls, stats, w, kps, growthData] = await Promise.all([
           api.get<{ list: Assignment[] }>("/me/assignments").catch(() => ({ list: [] as Assignment[] })),
           api.get<{ list: SessionSummary[] }>("/me/sessions").catch(() => ({ list: [] as SessionSummary[] })),
           api.get<{ list: LangSession[] }>("/language/sessions").catch(() => ({ list: [] as LangSession[] })),
           api.get<StatsData>("/me/stats").catch(() => ({ byTopic: [], totalAnswered: 0, correctAnswered: 0, overallRate: 0, bySubject: [], byMode: [], byDifficulty: [] })),
           api.get<{ list: WrongItem[] }>("/me/wrongbook").catch(() => ({ list: [] as WrongItem[] })),
           api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").catch(() => ({ list: [] as { id: string; name: string; subject: string }[] })),
+          api.get<GrowthData>("/me/growth").catch(() => ({ points: [], milestones: [], coach: { encouragement: "", suggestions: [] }, summary: { hasData: false } })),
         ]);
         setAssignments(a.list || []);
         setSubjectSessions(s.list || []);
@@ -93,6 +97,7 @@ export default function PersonalSpacePage() {
         setByDifficulty(stats.byDifficulty || []);
         setOverallRate(stats.overallRate || 0);
         setTotalAnswered(stats.totalAnswered || 0);
+        setGrowth(growthData);
         setWrongList(w.list || []);
         setAllKps(kps.list || []);
       } catch (e) {
@@ -486,6 +491,77 @@ export default function PersonalSpacePage() {
             <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">还没有作答记录,先做几道题,系统会生成你的学情分析报告。</p>
           ) : (
             <>
+              {/* 成长图谱 */}
+              {growth && growth.summary?.hasData && growth.points.length > 0 && (
+                <section className="space-y-6">
+                  {/* 正确率变化折线图 */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-sm font-medium text-slate-700">成长图谱 · 正确率变化轨迹</h2>
+                      <span className="text-xs text-slate-400">
+                        {growth.summary.spanDays} 天 · 共 {growth.summary.totalAnswered} 题 · 峰值 {growth.summary.peakRate}%
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">折线为累计正确率,清楚看见你每个阶段的进步。</p>
+                    <div className="mt-4 h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={growth.points} margin={{ top: 8, right: 12, bottom: 0, left: -20 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
+                          <Line type="monotone" dataKey="overallRate" name="总体" stroke="#6366f1" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                          {Object.keys(growth.points[growth.points.length - 1].subjects || {}).map((s, i) => (
+                            <Line key={s} type="monotone" dataKey={`subjects.${s}`} name={s} stroke={SUBJECT_LINE_COLORS[i % SUBJECT_LINE_COLORS.length]} strokeWidth={1.5} dot={false} connectNulls />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* 成长教练:鼓励 + 建议 */}
+                  {growth.coach && (growth.coach.encouragement || (growth.coach.suggestions || []).length > 0) && (
+                    <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-sm">
+                      <h2 className="flex items-center gap-2 text-sm font-semibold text-indigo-700">💡 成长教练</h2>
+                      {growth.coach.encouragement && (
+                        <p className="mt-2 text-sm leading-relaxed text-slate-700">{growth.coach.encouragement}</p>
+                      )}
+                      {(growth.coach.suggestions || []).length > 0 && (
+                        <ul className="mt-3 space-y-2">
+                          {growth.coach.suggestions.map((sg, i) => (
+                            <li key={i} className="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm text-slate-700">
+                              <span className="mt-0.5 shrink-0 font-bold text-indigo-500">✓</span>
+                              <span>{sg}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 成就 & 高光时刻 时间轴 */}
+                  {growth.milestones && growth.milestones.length > 0 && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <h2 className="text-sm font-medium text-slate-700">成就 &amp; 高光时刻 ({growth.milestones.length})</h2>
+                      <p className="mt-1 text-xs text-slate-400">每一个值得记住的节点,都在这里留痕。</p>
+                      <ol className="relative mt-4 space-y-4 border-l-2 border-indigo-100 pl-5">
+                        {growth.milestones.map((m) => (
+                          <li key={m.id} className="relative">
+                            <span className={`absolute -left-[27px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${m.highlight ? "bg-amber-400 text-white ring-2 ring-amber-200" : "bg-indigo-100 text-indigo-600"}`}>{m.icon}</span>
+                            <div className={`rounded-xl p-3 ${m.highlight ? "bg-amber-50" : "bg-slate-50"}`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className={`text-sm font-semibold ${m.highlight ? "text-amber-700" : "text-slate-800"}`}>{m.title}</p>
+                                <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
+                              </div>
+                              <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </section>
+              )}
+
               {/* 总览指标卡 */}
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <MetricCard label="总答题数" value={`${totalAnswered}`} sub="道" />

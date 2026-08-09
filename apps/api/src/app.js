@@ -6,6 +6,7 @@ import authRouter from "./routes/auth.js";
 import questionsRouter from "./routes/questions.js";
 import sessionsRouter from "./routes/sessions.js";
 import meRouter from "./routes/me.js";
+import growthRouter from "./routes/growth.js";
 import teacherRouter from "./routes/teacher.js";
 import papersRouter from "./routes/papers.js";
 import interviewRouter from "./routes/interview.js";
@@ -29,6 +30,7 @@ export function createApp() {
   app.use("/api/questions", questionsRouter);
   app.use("/api/sessions", sessionsRouter);
   app.use("/api/me", meRouter);
+  app.use("/api/me", growthRouter);
   app.use("/api/teacher", teacherRouter);
   app.use("/api/papers", papersRouter);
   app.use("/api/interview", interviewRouter);

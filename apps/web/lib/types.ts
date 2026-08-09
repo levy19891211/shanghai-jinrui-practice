@@ -124,6 +124,43 @@ export interface StatsData {
   byDifficulty: { difficulty: number; attempts: number; correctRate: number }[];
 }
 
+// ---- 成长图谱(GET /api/me/growth) ----
+export interface GrowthPoint {
+  period: string;
+  label: string;
+  overallRate: number;
+  subjects: Record<string, number | null>;
+  attempts: number;
+}
+export interface Milestone {
+  id: string;
+  date: string;
+  type: string;
+  icon: string;
+  title: string;
+  desc: string;
+  highlight?: boolean;
+}
+export interface Coach {
+  encouragement: string;
+  suggestions: string[];
+}
+export interface GrowthData {
+  points: GrowthPoint[];
+  milestones: Milestone[];
+  coach: Coach;
+  summary?: {
+    hasData?: boolean;
+    firstDate?: string;
+    lastDate?: string;
+    spanDays?: number;
+    totalAnswered?: number;
+    totalSessions?: number;
+    peakRate?: number;
+    maxStreak?: number;
+  };
+}
+
 // ---- 试卷(含套题自动组卷) ----
 
 /** 卷内题目的审核分布 */
