@@ -99,10 +99,18 @@ router.delete(
       await prisma.answerRecord.deleteMany({ where: { sessionId: { in: sessionIds } } });
       await prisma.session.deleteMany({ where: { id: { in: sessionIds } } });
     }
+    // 1b) 语言模块:语言会话 → 作答记录
+    const langSessions = await prisma.languageSession.findMany({ where: { studentId: student.id }, select: { id: true } });
+    const langSessionIds = langSessions.map((s) => s.id);
+    if (langSessionIds.length) {
+      await prisma.languageAnswerRecord.deleteMany({ where: { sessionId: { in: langSessionIds } } });
+      await prisma.languageSession.deleteMany({ where: { id: { in: langSessionIds } } });
+    }
     // 2) 作业分发目标
     await prisma.assignmentStudent.deleteMany({ where: { studentId: student.id } });
     // 3) 错题本 / 爬塔记录
     await prisma.wrongBook.deleteMany({ where: { studentId: student.id } });
+    await prisma.languageWrongBook.deleteMany({ where: { studentId: student.id } });
     await prisma.roguelikeRun.deleteMany({ where: { studentId: student.id } });
     // 4) 学生账号
     await prisma.user.delete({ where: { id: student.id } });
@@ -120,6 +128,7 @@ router.get(
       where: { teacherId: req.user.id },
       include: {
         paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        languagePaper: { select: { id: true, title: true, examType: true, skill: true } },
         targets: { select: { status: true, submittedAt: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -131,7 +140,8 @@ router.get(
         const inProgress = a.targets.filter((t) => t.status === "IN_PROGRESS").length;
         return {
           id: a.id, title: a.title, note: a.note, mode: a.mode, dueAt: a.dueAt, status: a.status, createdAt: a.createdAt,
-          paper: { title: a.paper?.title, mode: a.paper?.mode, subject: a.paper?.subject, sourceType: a.paper?.sourceType },
+          paper: a.paper ? { title: a.paper.title, mode: a.paper.mode, subject: a.paper.subject, sourceType: a.paper.sourceType } : null,
+          languagePaper: a.languagePaper ? { id: a.languagePaper.id, title: a.languagePaper.title, examType: a.languagePaper.examType, skill: a.languagePaper.skill } : null,
           stats: { total, submitted, inProgress, pending: total - submitted - inProgress },
         };
       }),
@@ -140,28 +150,41 @@ router.get(
 );
 
 // POST /api/teacher/assignments — 创建作业/考试分发(选试卷 + 选学生 + 可选 DDL)
+// paperId: 学科卷;languagePaperId: 语言卷(雅思等)。二者选一
 router.post(
   "/assignments",
   asyncHandler(async (req, res) => {
-    const { paperId, title, note, studentIds, dueAt, mode } = req.body || {};
-    if (!paperId) return fail(res, 400, "请选择试卷");
+    const { paperId, languagePaperId, title, note, studentIds, dueAt, mode } = req.body || {};
+    if (!paperId && !languagePaperId) return fail(res, 400, "请选择试卷");
     if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名学生");
-    const paper = await prisma.paper.findUnique({ where: { id: paperId } });
-    if (!paper) return fail(res, 404, "试卷不存在");
+
+    let paperTitle = "";
+    if (paperId) {
+      const paper = await prisma.paper.findUnique({ where: { id: paperId } });
+      if (!paper) return fail(res, 404, "试卷不存在");
+      paperTitle = paper.title;
+    }
+    let languagePaper = null;
+    if (languagePaperId) {
+      languagePaper = await prisma.languagePaper.findUnique({ where: { id: languagePaperId } });
+      if (!languagePaper) return fail(res, 404, "语言试卷不存在");
+      paperTitle = languagePaper.title;
+    }
 
     // 校验学生存在且都是 STUDENT
     const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT" } });
     if (students.length !== studentIds.length) return fail(res, 400, "存在无效的学生");
 
-    const aMode = mode === "EXAM" ? "EXAM" : paper.mode === "EXAM" ? "EXAM" : "PRACTICE";
+    const aMode = mode === "EXAM" ? "EXAM" : languagePaper?.mode === "EXAM" || (paperId && (await prisma.paper.findUnique({ where: { id: paperId } }))?.mode === "EXAM") ? "EXAM" : "PRACTICE";
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
 
     const assignment = await prisma.assignment.create({
       data: {
         teacherId: req.user.id,
-        paperId: paper.id,
-        title: String(title || "").trim() || paper.title,
+        paperId: paperId || null,
+        languagePaperId: languagePaperId || null,
+        title: String(title || "").trim() || paperTitle,
         note: note ? String(note).trim() : null,
         mode: aMode,
         dueAt: parsedDue,
@@ -181,6 +204,7 @@ router.delete(
     await prisma.assignmentStudent.deleteMany({ where: { assignmentId: assignment.id } });
     // 学生已开的作业会话保留(不删作答记录),仅解除作业关联
     await prisma.session.updateMany({ where: { assignmentId: assignment.id }, data: { assignmentId: null } });
+    await prisma.languageSession.updateMany({ where: { assignmentId: assignment.id }, data: { assignmentId: null } });
     await prisma.assignment.delete({ where: { id: assignment.id } });
     ok(res, { id: assignment.id }, "作业已删除");
   })
@@ -194,6 +218,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        languagePaper: { select: { id: true, title: true, examType: true, skill: true } },
         targets: {
           include: { student: { select: { id: true, name: true, email: true } } },
         },
@@ -204,6 +229,7 @@ router.get(
       id: assignment.id, title: assignment.title, note: assignment.note, mode: assignment.mode, dueAt: assignment.dueAt,
       status: assignment.status, createdAt: assignment.createdAt,
       paper: assignment.paper,
+      languagePaper: assignment.languagePaper,
       targets: assignment.targets.map((t) => ({
         studentId: t.studentId, name: t.student.name, email: t.student.email,
         status: t.status, submittedAt: t.submittedAt,

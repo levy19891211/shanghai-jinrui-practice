@@ -12,6 +12,7 @@ import interviewRouter from "./routes/interview.js";
 import uploadsRouter from "./routes/uploads.js";
 import knowledgePointsRouter from "./routes/knowledge-points.js";
 import roguelikeRouter from "./routes/roguelike.js";
+import languageRouter from "./routes/language.js";
 
 export function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ export function createApp() {
   app.use("/api/uploads", uploadsRouter);
   app.use("/api/knowledge-points", knowledgePointsRouter);
   app.use("/api/roguelike", roguelikeRouter);
+  app.use("/api/language", languageRouter);
 
   // 404 兜底
   app.use((req, res) => fail(res, 404, "not found"));
