@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -13,7 +13,11 @@ export default function StudentHome() {
   const router = useRouter();
   const user = getUser();
   const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "", knowledgePointId: "", difficulty: "" });
-  const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number }[]>([]);
+  const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[]>([]);
+  // 试卷库筛选/排序(与教师端试卷管理一致)
+  const [libSubject, setLibSubject] = useState("");
+  const [libKind, setLibKind] = useState("");
+  const [libSort, setLibSort] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [allSessions, setAllSessions] = useState<SessionSummary[]>([]);
@@ -27,7 +31,7 @@ export default function StudentHome() {
       setAllSessions(d.list);
     }).catch(() => {});
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
-    api.get<{ list: { id: string; title: string; mode: string; questionCount: number }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
+    api.get<{ list: { id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
     // 知识点库(供知识点下拉与掌握度"针对练习")
     api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
   }, []);
@@ -71,6 +75,38 @@ export default function StudentHome() {
       setLoading(false);
     }
   }
+
+  // 从试卷库直接开始一张卷(PRACTICE 卷练题 / EXAM 卷模考,时长跟随试卷)
+  async function startPaper(p: { id: string; title: string; mode: string; questionCount: number }) {
+    setError("");
+    setLoading(true);
+    try {
+      const data = await api.post<CreateSessionData>("/sessions", {
+        mode: p.mode === "EXAM" ? "EXAM" : "PRACTICE",
+        paperId: p.id,
+      });
+      sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
+      router.push(`/app/practice/${data.sessionId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "开卷失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 试卷库:筛选(学科/套题类型) + 排序(最新/名称自然序),与教师端一致
+  const libPapers = useMemo(() => {
+    let arr = papers.filter((p) => {
+      if (libSubject && p.subject !== libSubject) return false;
+      if (libKind && p.kind !== libKind) return false;
+      return true;
+    });
+    if (libSort === "nameAsc" || libSort === "nameDesc") {
+      const dir = libSort === "nameAsc" ? 1 : -1;
+      arr = [...arr].sort((a, b) => dir * String(a.title).localeCompare(String(b.title), undefined, { numeric: true, sensitivity: "base" }));
+    }
+    return arr;
+  }, [papers, libSubject, libKind, libSort]);
 
   const input =
     "h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select";
@@ -189,6 +225,78 @@ export default function StudentHome() {
         </div>
         {form.mode === "EXAM" && <p className="mt-3 text-xs text-slate-400">模拟考模式下,时间到将自动交卷,超时后无法继续作答。</p>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      </div>
+
+      {/* 试卷库:与教师端试卷管理一致的筛选(学科/套题类型) + 排序,点击直接开卷 */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <h2 className="mr-2 text-sm font-medium text-slate-700">试卷库</h2>
+          {[{ v: "", l: "全部" }, { v: "数学", l: "数学" }, { v: "物理", l: "物理" }, { v: "化学", l: "化学" }, { v: "生物", l: "生物" }].map((t) => (
+            <button
+              key={t.v}
+              onClick={() => setLibSubject(t.v)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                libSubject === t.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t.l}
+            </button>
+          ))}
+          <span className="mx-1 text-xs text-slate-300">|</span>
+          {[{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "CUSTOM", l: "组卷套题" }].map((t) => (
+            <button
+              key={t.v}
+              onClick={() => setLibKind(t.v)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                libKind === t.v ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t.l}
+            </button>
+          ))}
+          <select
+            value={libSort}
+            onChange={(e) => setLibSort(e.target.value as "createdDesc" | "nameAsc" | "nameDesc")}
+            className="ml-auto h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-600 outline-none focus:border-indigo-500 ui-select"
+            aria-label="排序方式"
+          >
+            <option value="createdDesc">最新优先</option>
+            <option value="nameAsc">名称 A→Z</option>
+            <option value="nameDesc">名称 Z→A</option>
+          </select>
+        </div>
+
+        {libPapers.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">该分类下暂无试卷。</p>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {libPapers.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => startPaper(p)}
+                disabled={loading}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-60"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
+                    {p.kind === "OFFICIAL" ? (
+                      <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[11px] font-medium text-teal-600">原版</span>
+                    ) : (
+                      <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">组卷</span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {p.questionCount} 题 · {p.mode === "EXAM" ? "模拟考" : "练习"}
+                    {p.sourceType ? ` · ${p.sourceType}` : ""}
+                    {p.subject ? ` · ${p.subject}` : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-medium text-indigo-600">{p.mode === "EXAM" ? "开始模考 →" : "开始练习 →"}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {stats && stats.totalAnswered > 0 && (

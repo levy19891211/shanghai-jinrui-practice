@@ -127,6 +127,7 @@ router.get(
         list: list.map((p) => ({
           id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
           durationMin: p.durationMin, questionCount: parseIds(p).length, createdAt: p.createdAt,
+          kind: p.kind, origin: p.origin, source: p.source,
         })),
       });
     }
