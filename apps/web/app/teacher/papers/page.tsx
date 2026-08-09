@@ -14,7 +14,9 @@ interface Facets {
   combos: { topic: string | null; difficulty: number | null; count: number }[];
 }
 
-const SUBJECT_OPTIONS = ["TMUA", "ESAT"];
+const SUBJECT_OPTIONS = ["数学", "物理", "化学", "生物"];
+// 手动组卷可选的题源(TMUA/ESAT/NSAA...);可多选,不选 = 全部题源
+const SOURCE_TYPE_OPTIONS = ["TMUA", "ESAT", "NSAA"];
 const DIFF_LABEL: Record<number, string> = { 1: "入门", 2: "基础", 3: "中等", 4: "较难", 5: "困难" };
 
 const PAPER_STATUS_LABEL: Record<string, string> = {
@@ -66,10 +68,11 @@ export default function TeacherPapersPage() {
   const [facets, setFacets] = useState<Facets | null>(null);
   const [form, setForm] = useState({
     title: "",
-    subject: "TMUA",
+    subject: "数学",
+    sourceTypes: [] as string[], // 题源多选;空 = 全部
     mode: "PRACTICE",
-    durationMin: 40,
-    count: 10,
+    durationMin: "40", // 字符串受控,避免 number input 删 0 时被 Number("") 回写为 0
+    count: "10",
   });
   const [topics, setTopics] = useState<string[]>([]);
   const [difficulties, setDifficulties] = useState<number[]>([]);
@@ -158,6 +161,12 @@ export default function TeacherPapersPage() {
   function toggleDiff(d: number) {
     setDifficulties((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
   }
+  function toggleSourceType(t: string) {
+    setForm((prev) => ({
+      ...prev,
+      sourceTypes: prev.sourceTypes.includes(t) ? prev.sourceTypes.filter((x) => x !== t) : [...prev.sourceTypes, t],
+    }));
+  }
 
   function flash(text: string) {
     setMessage(text);
@@ -176,11 +185,12 @@ export default function TeacherPapersPage() {
       const payload = {
         title: form.title,
         subject: form.subject,
+        sourceTypes: form.sourceTypes,
         mode: form.mode,
         durationMin: form.mode === "EXAM" ? Number(form.durationMin) : undefined,
         topics,
         difficulties,
-        count: Number(form.count),
+        count: Math.max(1, Number(form.count) || 1),
       };
       const r = await api.post<{ title: string; questionCount: number }>("/papers/generate", payload);
       flash(`组卷成功:「${r.title}」共 ${r.questionCount} 题`);
@@ -427,11 +437,11 @@ export default function TeacherPapersPage() {
               <label className="mb-1 block text-sm text-slate-600">题目数量</label>
               <input
                 className={input}
-                type="number"
-                min={1}
-                max={50}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={form.count}
-                onChange={(e) => setForm({ ...form, count: Number(e.target.value) })}
+                onChange={(e) => setForm({ ...form, count: e.target.value.replace(/[^0-9]/g, "") })}
               />
             </div>
             {form.mode === "EXAM" && (
@@ -439,13 +449,38 @@ export default function TeacherPapersPage() {
                 <label className="mb-1 block text-sm text-slate-600">限时(分钟)</label>
                 <input
                   className={input}
-                  type="number"
-                  min={1}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.durationMin}
-                  onChange={(e) => setForm({ ...form, durationMin: Number(e.target.value) })}
+                  onChange={(e) => setForm({ ...form, durationMin: e.target.value.replace(/[^0-9]/g, "") })}
                 />
               </div>
             )}
+          </div>
+
+          {/* 题源:可多选,不选 = 全部题源 */}
+          <div className="mt-5">
+            <div className="mb-2 flex items-center gap-2">
+              <label className="text-sm text-slate-600">题源(可多选)</label>
+              <span className="text-xs text-slate-400">不选 = 全部题源</span>
+              {form.sourceTypes.length > 0 && (
+                <button onClick={() => setForm((f) => ({ ...f, sourceTypes: [] }))} className="text-xs text-indigo-600 hover:underline">
+                  清空({form.sourceTypes.length})
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SOURCE_TYPE_OPTIONS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => toggleSourceType(t)}
+                  className={`${chipBase} ${form.sourceTypes.includes(t) ? chipOn : chipOff}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 知识点:只列出该科目已发布题目中真实存在的值,避免手填导致匹配不到 */}
@@ -522,7 +557,7 @@ export default function TeacherPapersPage() {
             disabled={generating || available === 0}
             className="mt-4 h-9 rounded-lg bg-indigo-600 px-6 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {generating ? "组卷中..." : `生成试卷(取 ${Math.min(form.count, available)} 题)`}
+            {generating ? "组卷中..." : `生成试卷(取 ${Math.min(Number(form.count) || 1, available)} 题)`}
           </button>
         </div>
       )}
@@ -762,10 +797,11 @@ export default function TeacherPapersPage() {
                           </select>
                           {settingsDraft.mode === "EXAM" ? (
                             <input
-                              type="number"
-                              min={1}
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
                               value={settingsDraft.durationMin}
-                              onChange={(e) => setSettingsDraft({ ...settingsDraft, durationMin: e.target.value })}
+                              onChange={(e) => setSettingsDraft({ ...settingsDraft, durationMin: e.target.value.replace(/[^0-9]/g, "") })}
                               className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
                               placeholder="限时(分钟)"
                             />

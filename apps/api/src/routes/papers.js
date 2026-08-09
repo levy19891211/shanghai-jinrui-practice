@@ -42,9 +42,14 @@ router.post(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { title, subject, sourceType, mode, durationMin, topics, difficulties, count } = req.body || {};
+    const { title, subject, sourceTypes, mode, durationMin, topics, difficulties, count } = req.body || {};
     if (!title || !subject) return fail(res, 400, "title、subject 必填");
     const where = { status: "PUBLISHED", subject };
+    // 题源多选:sourceTypes 数组非空时限定题目题源
+    if (Array.isArray(sourceTypes) && sourceTypes.length) {
+      const sts = sourceTypes.map((s) => String(s).trim()).filter(Boolean);
+      if (sts.length) where.sourceType = { in: sts };
+    }
     if (Array.isArray(topics) && topics.length) where.topic = { in: topics };
     if (Array.isArray(difficulties) && difficulties.length) where.difficulty = { in: difficulties.map(Number) };
     const total = Math.max(1, Number(count) || 10);
@@ -82,7 +87,8 @@ router.post(
       data: {
         title,
         subject,
-        sourceType: sourceType || null,
+        // 手动组卷的卷题源:只选了一个题源时带上,多选/不选留空(可在详情设置里改)
+        sourceType: Array.isArray(sourceTypes) && sourceTypes.length === 1 ? String(sourceTypes[0]).trim() : null,
         mode: mode === "EXAM" ? "EXAM" : "PRACTICE",
         durationMin: Number(durationMin) || null,
         questionIds: JSON.stringify(picked.map((q) => q.id)),
