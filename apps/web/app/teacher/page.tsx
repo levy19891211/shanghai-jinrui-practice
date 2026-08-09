@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
+import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架" };
@@ -1138,14 +1139,36 @@ Answer: B
               <p className="mb-2 text-xs font-medium text-slate-400">题干</p>
               <div className="text-sm leading-relaxed text-slate-800">{renderRich(reviewQ.stem)}</div>
               <div className="mt-3 space-y-1">
-                {(reviewQ.options || []).map((opt, i) => (
-                  <div key={i} className={`flex gap-2 rounded-lg px-3 py-2 text-sm ${opt === reviewQ.answer ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "text-slate-700"}`}>
-                    <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
-                    <span className="flex-1">{renderRich(opt)}</span>
-                    {opt === reviewQ.answer && <span className="text-xs font-medium text-emerald-600">✓ 正确答案</span>}
-                  </div>
-                ))}
+                {(reviewQ.options || []).map((opt, i) => {
+                  const isAns = isAnswerOption(opt, reviewQ.answer, reviewQ.options);
+                  return (
+                    <div
+                      key={i}
+                      className={`flex gap-2 rounded-lg px-3 py-2 text-sm ${
+                        isAns
+                          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                      <span className="flex-1">{renderRich(opt)}</span>
+                      {isAns && <span className="shrink-0 text-xs font-medium text-emerald-600">✓ 正确答案</span>}
+                    </div>
+                  );
+                })}
               </div>
+              {(() => {
+                const ansText = letterToOption(reviewQ.answer, reviewQ.options);
+                if (!ansText) return null;
+                return (
+                  <p className="mt-2 text-xs text-slate-500">
+                    答案:<b className="text-emerald-700">{ansText}</b>
+                    {ansText !== String(reviewQ.answer || "").trim() && (
+                      <span className="ml-1 text-slate-400">(原字段:{String(reviewQ.answer || "").trim()})</span>
+                    )}
+                  </p>
+                );
+              })()}
               {reviewQ.solution && (
                 <div className="mt-3">
                   <p className="mb-1 text-xs font-medium text-slate-400">解析</p>

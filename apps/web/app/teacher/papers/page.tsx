@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
+import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { PaperManageDetail, PaperRow, PaperStats, Question } from "@/lib/types";
 
 interface Facets {
@@ -892,18 +893,33 @@ export default function TeacherPapersPage() {
                         <>
                           <div className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(q.stem ?? "")}</div>
                           <div className="mt-2 space-y-1">
-                            {(q.options ?? []).map((opt, i) => (
-                              <div
-                                key={i}
-                                className={`flex gap-2 rounded px-2 py-1 text-sm ${
-                                  opt === q.answer ? "bg-emerald-50 text-emerald-700" : "text-slate-600"
-                                }`}
-                              >
-                                <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
-                                <span className="flex-1">{renderRich(opt)}</span>
-                              </div>
-                            ))}
+                            {(q.options ?? []).map((opt, i) => {
+                              const isAns = isAnswerOption(opt, q.answer, q.options);
+                              return (
+                                <div
+                                  key={i}
+                                  className={`flex gap-2 rounded px-2 py-1 text-sm ${
+                                    isAns ? "bg-emerald-50 text-emerald-700" : "text-slate-600"
+                                  }`}
+                                >
+                                  <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                                  <span className="flex-1">{renderRich(opt)}</span>
+                                </div>
+                              );
+                            })}
                           </div>
+                          {(() => {
+                            const ansText = letterToOption(q.answer, q.options);
+                            if (!ansText) return null;
+                            return (
+                              <p className="mt-2 text-xs text-slate-500">
+                                答案:<b className="text-emerald-700">{ansText}</b>
+                                {ansText !== String(q.answer || "").trim() && (
+                                  <span className="ml-1 text-slate-400">(原字段:{String(q.answer || "").trim()})</span>
+                                )}
+                              </p>
+                            );
+                          })()}
                           {q.status === "REJECTED" && q.reviewNote && (
                             <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600">
                               退回原因:{q.reviewNote}
