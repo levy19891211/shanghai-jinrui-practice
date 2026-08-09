@@ -84,6 +84,8 @@ export default function TeacherPapersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
+  const [settingsDraft, setSettingsDraft] = useState<{ subject: string; mode: string; durationMin: string } | null>(null);
 
   const load = useCallback(async () => {
     const d = await api.get<{ list: PaperRow[] }>("/papers");
@@ -188,11 +190,29 @@ export default function TeacherPapersPage() {
       const d = await api.get<PaperManageDetail>(`/papers/${id}/manage`);
       setDetail(d);
       setTitleDraft(d.title);
+      setSettingsDraft({ subject: d.subject, mode: d.mode, durationMin: String(d.durationMin ?? "") });
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取试卷失败");
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  // 保存详情抽屉里的科目/模式/限时修改
+  async function saveSettings() {
+    if (!detail || !settingsDraft) return;
+    setError("");
+    const body: Record<string, unknown> = {};
+    if (settingsDraft.subject && settingsDraft.subject !== detail.subject) body.subject = settingsDraft.subject;
+    if (settingsDraft.mode !== detail.mode) body.mode = settingsDraft.mode;
+    const dm = Number(settingsDraft.durationMin);
+    if (settingsDraft.mode === "EXAM" && !(dm > 0)) {
+      setError("模拟考模式必须填写限时(分钟)");
+      return;
+    }
+    if (dm > 0 && dm !== detail.durationMin) body.durationMin = dm;
+    if (Object.keys(body).length === 0) return;
+    await patchPaper(detail.id, body, "试卷设置已更新");
   }
 
   async function patchPaper(id: string, body: Record<string, unknown>, okText: string) {
@@ -605,6 +625,60 @@ export default function TeacherPapersPage() {
                       </span>
                       {detail.source && <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-500">{detail.source}</span>}
                     </div>
+
+                    {/* 试卷设置:改科目 / 改模式 / 调限时 */}
+                    {settingsDraft && (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-500">试卷设置(可修改名称/科目/模式)</span>
+                          {(settingsDraft.subject !== detail.subject ||
+                            settingsDraft.mode !== detail.mode ||
+                            Number(settingsDraft.durationMin) !== (detail.durationMin ?? 0)) && (
+                            <button
+                              onClick={saveSettings}
+                              disabled={detailBusy}
+                              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                            >
+                              {detailBusy ? "保存中..." : "保存设置"}
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          <select
+                            value={settingsDraft.subject}
+                            onChange={(e) => setSettingsDraft({ ...settingsDraft, subject: e.target.value })}
+                            className="ui-select h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
+                          >
+                            {["TMUA", "ESAT", "数学", "物理", "化学", "生物"].map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={settingsDraft.mode}
+                            onChange={(e) => setSettingsDraft({ ...settingsDraft, mode: e.target.value })}
+                            className="ui-select h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
+                          >
+                            <option value="PRACTICE">练习(不限时)</option>
+                            <option value="EXAM">模拟考(限时)</option>
+                          </select>
+                          {settingsDraft.mode === "EXAM" ? (
+                            <input
+                              type="number"
+                              min={1}
+                              value={settingsDraft.durationMin}
+                              onChange={(e) => setSettingsDraft({ ...settingsDraft, durationMin: e.target.value })}
+                              className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
+                              placeholder="限时(分钟)"
+                            />
+                          ) : (
+                            <div className="flex h-8 items-center text-xs text-slate-400">练习模式不限时</div>
+                          )}
+                        </div>
+                        {detail.origin === "AUTO_SET" && settingsDraft.subject !== detail.subject && (
+                          <p className="mt-2 text-xs text-amber-600">套题自动卷改科目会同步更新卷的唯一标识(sourceKey)。</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-600">
                     ✕

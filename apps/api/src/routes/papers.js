@@ -225,7 +225,7 @@ function safeParse(v) {
   }
 }
 
-// PATCH /api/papers/:id — 编辑试卷(改名/换模式/调限时/上下架/移除题目)
+// PATCH /api/papers/:id — 编辑试卷(改名/换科目/换模式/调限时/上下架/移除题目)
 router.patch(
   "/:id",
   requireAuth,
@@ -236,6 +236,9 @@ router.patch(
     const b = req.body || {};
     const data = {};
     if (typeof b.title === "string" && b.title.trim()) data.title = b.title.trim();
+    // 科目:只接受合法科目;更新 subject 时同步 sourceKey(subject::paper::source),否则下次导入同套题会建新卷
+    const VALID_SUBJECTS = ["TMUA", "ESAT", "数学", "物理", "化学", "生物"];
+    if (typeof b.subject === "string" && VALID_SUBJECTS.includes(b.subject)) data.subject = b.subject;
     if (b.mode === "EXAM" || b.mode === "PRACTICE") data.mode = b.mode;
     if (b.durationMin !== undefined) data.durationMin = Number(b.durationMin) || null;
     if (Array.isArray(b.questionIds)) data.questionIds = JSON.stringify(b.questionIds);
@@ -244,6 +247,16 @@ router.patch(
     if (b.status === "ACTIVE" && paper.status === "ARCHIVED") data.status = "DRAFT";
     if (data.mode === "EXAM" && !(data.durationMin ?? paper.durationMin)) {
       return fail(res, 400, "模拟考试卷必须设置限时(分钟)");
+    }
+    // 改科目时检查 sourceKey 冲突,避免与已有套卷撞唯一键
+    if (data.subject && paper.sourceKey) {
+      const [, p, s] = paper.sourceKey.split("::");
+      const newKey = [data.subject, p, s].join("::");
+      if (newKey !== paper.sourceKey) {
+        const clash = await prisma.paper.findUnique({ where: { sourceKey: newKey } });
+        if (clash) return fail(res, 400, `已存在「${clash.title}」套卷(${newKey}),改科目会与之冲突。可先删除/改名该卷再操作。`);
+      }
+      data.sourceKey = newKey;
     }
     const updated = await prisma.paper.update({ where: { id: paper.id }, data });
     const r = await recalcPaper(updated.id); // 移除题目/恢复上架后重新推导就绪度
