@@ -259,59 +259,6 @@ function QuestionForm({ initial, onSaved, onClose }: { initial?: LangQ | null; o
   );
 }
 
-// —— 材料管理弹窗 ——
-function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ examType: "IELTS", skill: "READING", title: "", content: "" });
-  const [err, setErr] = useState("");
-  const [saving, setSaving] = useState(false);
-  const col = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none";
-
-  async function save() {
-    if (!f.content.trim()) return setErr("材料内容必填");
-    setSaving(true);
-    try {
-      await api.post("/language/materials", f);
-      onSaved();
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 text-lg font-bold text-slate-800">新增材料(阅读文章/写作任务/口语提示)</h3>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-          <label className="text-xs text-slate-500">考试类型
-            <select className={col} value={f.examType} onChange={(e) => setF({ ...f, examType: e.target.value })}>
-              {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-slate-500">用途
-            <select className={col} value={f.skill} onChange={(e) => setF({ ...f, skill: e.target.value })}>
-              {SKILLS.filter((s) => s !== "LISTENING").map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-slate-500">标题(选填)
-            <input className={col} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="如 Passage 1: ..." />
-          </label>
-        </div>
-        <label className="mt-3 block text-xs text-slate-500">材料正文 <span className="text-red-500">*</span>
-          <textarea className={col} rows={10} value={f.content} onChange={(e) => setF({ ...f, content: e.target.value })} />
-        </label>
-        {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-100" onClick={onClose}>取消</button>
-          <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" onClick={save} disabled={saving}>{saving ? "保存中..." : "保存"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // —— 阅读篇章编辑弹窗(一篇文章 + 绑定它的若干题目) ——
 const CHOICE_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"];
 const READING_QTYPES = QTYPES.READING;
@@ -905,7 +852,6 @@ function AssignmentModal({ papers, initialPaperId, onClose, onSaved }: { papers:
 
 export default function TeacherLanguagePage() {
   const [tab, setTab] = useState<"questions" | "papers" | "grading" | "assign">("questions");
-  const [questions, setQuestions] = useState<LangQ[]>([]);
   const [papers, setPapers] = useState<LangPaper[]>([]);
   const [review, setReview] = useState<ReviewSession[]>([]);
   const [assigns, setAssigns] = useState<any[]>([]);
@@ -914,16 +860,13 @@ export default function TeacherLanguagePage() {
 
   // 题库筛选
   const [examType, setExamType] = useState("");
-  const [skill, setSkill] = useState("");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
-  const [editing, setEditing] = useState<LangQ | null | "new">(null);
-  const [showMaterial, setShowMaterial] = useState(false);
+  const [editing, setEditing] = useState<LangQ | null>(null);
   const [showPaper, setShowPaper] = useState(false);
   // 阅读篇章视图
   const [passages, setPassages] = useState<Passage[]>([]);
   const [pubQuestions, setPubQuestions] = useState<LangQ[]>([]);
-  const [qView, setQView] = useState<"list" | "passage">("list");
   const [editingPassage, setEditingPassage] = useState<Passage | null | "new">(null);
   const [passageDraft, setPassageDraft] = useState<PassageDraft | null>(null);
   const [showPassageImport, setShowPassageImport] = useState(false);
@@ -932,16 +875,6 @@ export default function TeacherLanguagePage() {
   const [assignPaperId, setAssignPaperId] = useState<string | undefined>(undefined);
   const [gradingSession, setGradingSession] = useState<string | null>(null);
   const [assignDetail, setAssignDetail] = useState<any>(null);
-
-  const loadQuestions = useCallback(async () => {
-    const qs = new URLSearchParams();
-    if (examType) qs.set("examType", examType);
-    if (skill) qs.set("skill", skill);
-    if (status) qs.set("status", status);
-    if (q) qs.set("q", q);
-    const d = await api.get<{ list: LangQ[] }>(`/language/questions?${qs.toString()}`);
-    setQuestions(d.list);
-  }, [examType, skill, status, q]);
 
   const loadPassages = useCallback(async () => {
     const qs = new URLSearchParams({ skill: "READING" });
@@ -977,38 +910,19 @@ export default function TeacherLanguagePage() {
     (async () => {
       setLoading(true);
       try {
-        await Promise.all([loadQuestions(), loadPassages(), loadPub(), loadPapers(), loadReview(), loadAssigns()]);
+        await Promise.all([loadPassages(), loadPub(), loadPapers(), loadReview(), loadAssigns()]);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "加载失败");
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadQuestions, loadPassages, loadPub, loadPapers, loadReview, loadAssigns]);
-
-  async function reviewQuestion(id: string, pass: boolean) {
-    try {
-      await api.post(`/language/questions/${id}/review`, { pass });
-      loadQuestions();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "操作失败");
-    }
-  }
-
-  async function delQuestion(id: string) {
-    if (!window.confirm("确认删除该题目?其作答记录与错题本数据将一并删除。")) return;
-    try {
-      await api.del(`/language/questions/${id}`);
-      loadQuestions();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "删除失败");
-    }
-  }
+  }, [loadPassages, loadPub, loadPapers, loadReview, loadAssigns]);
 
   async function reviewPassage(id: string, pass: boolean) {
     try {
       await api.post(`/language/passages/${id}/review`, { pass });
-      await Promise.all([loadPassages(), loadQuestions()]);
+      await Promise.all([loadPassages(), loadPub()]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "操作失败");
     }
@@ -1018,7 +932,7 @@ export default function TeacherLanguagePage() {
     if (!window.confirm(`确认删除整篇「${p.title || "未命名篇章"}」?其 ${p.questionCount} 道绑定题目及相关作答/错题记录将一并删除。`)) return;
     try {
       await api.del(`/language/passages/${p.id}`);
-      await Promise.all([loadPassages(), loadQuestions()]);
+      await Promise.all([loadPassages(), loadPub()]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "删除失败");
     }
@@ -1048,16 +962,10 @@ export default function TeacherLanguagePage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-slate-800">语言学习</h1>
         <div className="flex flex-wrap gap-2">
-          {tab === "questions" && qView === "passage" && (
+          {tab === "questions" && (
             <>
               <button className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200" onClick={() => setShowPassageImport(true)}>导入阅读篇章(PDF)</button>
               <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => { setPassageDraft(null); setEditingPassage("new"); }}>+ 新建阅读篇章</button>
-            </>
-          )}
-          {tab === "questions" && qView === "list" && (
-            <>
-              <button className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200" onClick={() => setShowMaterial(true)}>+ 新增材料</button>
-              <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setEditing("new")}>+ 新增题目</button>
             </>
           )}
           {tab === "papers" && <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setShowPaper(true)}>+ 新建语言卷</button>}
@@ -1084,28 +992,17 @@ export default function TeacherLanguagePage() {
               <option value="">全部考试</option>
               {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
             </select>
-            <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={qView === "passage" ? "READING" : skill}
-              onChange={(e) => { const v = e.target.value; setSkill(v); setQView(v === "READING" ? "passage" : "list"); }}>
-              <option value="">全部技能</option>
-              {SKILLS.map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
-            </select>
             <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">全部状态</option>
               {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder={qView === "passage" ? "搜索篇章标题/正文..." : "搜索题干..."} value={q} onChange={(e) => setQ(e.target.value)} />
-            <div className="ml-auto flex gap-1 rounded-lg bg-slate-100 p-1">
-              <button className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${qView === "list" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}
-                onClick={() => { setQView("list"); if (skill === "READING") setSkill(""); }}>逐题视图</button>
-              <button className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${qView === "passage" ? "bg-white text-teal-700 shadow-sm" : "text-slate-500"}`}
-                onClick={() => { setQView("passage"); setSkill("READING"); }}>阅读篇章视图</button>
-            </div>
+            <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder="搜索篇章标题/正文..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <span className="ml-auto self-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">阅读篇章 {passages.length} 篇</span>
           </div>
-          {qView === "passage" && (
-            <div className="space-y-3 p-3">
-              {passages.length === 0 && (
-                <p className="py-8 text-center text-sm text-slate-400">暂无阅读篇章,点右上「+ 新建阅读篇章」或「导入阅读篇章(PDF)」</p>
-              )}
+          <div className="space-y-3 p-3">
+            {passages.length === 0 && (
+              <p className="py-8 text-center text-sm text-slate-400">暂无阅读篇章,点右上「+ 新建阅读篇章」或「导入阅读篇章(PDF)」</p>
+            )}
               {passages.map((p) => {
                 const open = !!expanded[p.id];
                 const pending = (p.statusCount.PENDING_REVIEW || 0) + (p.statusCount.REJECTED || 0);
@@ -1157,41 +1054,7 @@ export default function TeacherLanguagePage() {
                   </div>
                 );
               })}
-            </div>
-          )}
-          {qView === "list" && (
-          <div className="divide-y divide-slate-100">
-            {questions.length === 0 && <p className="py-8 text-center text-sm text-slate-400">暂无题目</p>}
-            {questions.map((item) => (
-              <div key={item.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{EXAM_LABEL[item.examType]}</span>
-                    <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-600">{SKILL_LABEL[item.skill]}</span>
-                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{QTYPE_LABEL[item.qType]}</span>
-                    {item.audioUrl && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600">🔊 音频</span>}
-                    <span className={`rounded-md px-1.5 py-0.5 text-xs ${item.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600" : item.status === "REJECTED" ? "bg-red-50 text-red-600" : item.status === "PENDING_REVIEW" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
-                      {STATUS_LABEL[item.status] || item.status}
-                    </span>
-                  </div>
-                  {item.groupTitle && <p className="text-xs font-semibold text-slate-500">{item.groupTitle}</p>}
-                  <p className="line-clamp-2 text-sm text-slate-700">{item.stem}</p>
-                  {item.reviewNote && <p className="mt-0.5 text-xs text-red-500">退回原因: {item.reviewNote}</p>}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {item.status === "PENDING_REVIEW" || item.status === "REJECTED" ? (
-                    <>
-                      <button className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700" onClick={() => reviewQuestion(item.id, true)}>通过</button>
-                      <button className="rounded-md bg-red-100 px-2.5 py-1 text-xs text-red-600 hover:bg-red-200" onClick={() => reviewQuestion(item.id, false)}>退回</button>
-                    </>
-                  ) : null}
-                  <button className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setEditing(item)}>编辑</button>
-                  <button className="rounded-md bg-red-50 px-2.5 py-1 text-xs text-red-500 hover:bg-red-100" onClick={() => delQuestion(item.id)}>删除</button>
-                </div>
-              </div>
-            ))}
           </div>
-          )}
         </div>
       )}
 
@@ -1288,12 +1151,11 @@ export default function TeacherLanguagePage() {
 
       {editing && (
         <QuestionForm
-          initial={editing === "new" ? null : editing}
-          onSaved={() => { loadQuestions(); loadPassages(); loadPub(); }}
+          initial={editing}
+          onSaved={() => { loadPassages(); loadPub(); }}
           onClose={() => setEditing(null)}
         />
       )}
-      {showMaterial && <MaterialModal onSaved={() => { loadPassages(); }} onClose={() => setShowMaterial(false)} />}
       {showPaper && (
         <PaperForm
           allQuestions={pubQuestions}
@@ -1312,7 +1174,7 @@ export default function TeacherLanguagePage() {
         <PassageForm
           initial={editingPassage === "new" ? null : editingPassage}
           draft={editingPassage === "new" ? passageDraft : null}
-          onSaved={() => { loadPassages(); loadQuestions(); loadPub(); }}
+          onSaved={() => { loadPassages(); loadPub(); }}
           onClose={() => { setEditingPassage(null); setPassageDraft(null); }}
         />
       )}
