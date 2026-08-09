@@ -744,6 +744,7 @@ router.get(
     }
     ok(res, {
       id: session.id, examType: session.examType, skill: session.skill, mode: session.mode,
+      allowReplay: session.mode !== "EXAM",
       durationMin: session.durationMin, score: session.score, total: session.total,
       correctCount: session.correctCount, band: session.band,
       startedAt: session.startedAt, submittedAt: session.submittedAt,

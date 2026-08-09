@@ -69,6 +69,14 @@ const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${Str
 
 const isObjective = (q: LQ) => ["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING", "TRUE_FALSE_NG", "YES_NO_NG"].includes(q.qType);
 
+// 计时器颜色: <60s 闪烁红, <5min 红, 其余常规
+function timerClass(left: number | null) {
+  if (left === null) return "text-slate-700";
+  if (left < 60) return "timer-blink text-red-600";
+  if (left < 300) return "text-red-500";
+  return "text-slate-700";
+}
+
 // 口语录音组件
 function Recorder({ onUploaded, existingUrl }: { onUploaded: (url: string) => void; existingUrl?: string | null }) {
   const [recording, setRecording] = useState(false);
@@ -144,7 +152,9 @@ export default function LanguagePracticePage() {
   const router = useRouter();
   const [data, setData] = useState<SessionData | null>(null);
   const [answers, setAnswers] = useState<Record<string, { selected?: string; text?: string; audioUrl?: string }>>({});
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [current, setCurrent] = useState(0);
+  const [filter, setFilter] = useState<"ALL" | "UNANSWERED" | "FLAGGED">("ALL");
   const [result, setResult] = useState<{ score: number; total: number; correctCount: number; band: number | null; needsReview: boolean } | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,8 +162,20 @@ export default function LanguagePracticePage() {
   const [error, setError] = useState("");
   const [remaining, setRemaining] = useState<number | null>(null);
   const [segRemaining, setSegRemaining] = useState<number | null>(null);
+  const [restoreHint, setRestoreHint] = useState(false);
+  const [saveHint, setSaveHint] = useState("");
+  const [volume, setVolume] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const v = Number(sessionStorage.getItem("lang-audio-volume"));
+    return isNaN(v) ? 1 : v;
+  });
+  const [audioDisabled, setAudioDisabled] = useState(false);
+
   const submittedRef = useRef(false);
   const segStartRef = useRef(Date.now());
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const answersRef = useRef(answers);
+  const pendingRef = useRef<Record<string, boolean>>({});
 
   // 分段信息:根据题目 skill 切段
   const segmentsInfo = useMemo(() => {
@@ -171,10 +193,13 @@ export default function LanguagePracticePage() {
     return segs;
   }, [data]);
 
-  const currentSeg = useMemo(() => {
-    if (!segmentsInfo) return null;
-    return segmentsInfo.find((s) => current >= s.start && current < s.end) || segmentsInfo[0];
+  const currentSegIdx = useMemo(() => {
+    if (!segmentsInfo) return -1;
+    const i = segmentsInfo.findIndex((s) => current >= s.start && current < s.end);
+    return i < 0 ? 0 : i;
   }, [segmentsInfo, current]);
+
+  const currentSeg = segmentsInfo ? segmentsInfo[currentSegIdx] : null;
 
   // 初始化:读缓存,或从后端恢复已提交会话
   useEffect(() => {
@@ -186,6 +211,15 @@ export default function LanguagePracticePage() {
         if (parsed?.sessionId) {
           cached = parsed;
           setData(parsed);
+          setRestoreHint(true);
+          setTimeout(() => setRestoreHint(false), 4000);
+          const restored = parsed.answers || {};
+          if (Object.keys(restored).length) {
+            setAnswers(restored);
+            answersRef.current = restored;
+          }
+          const restoredFlags = parsed.flags || {};
+          if (Object.keys(restoredFlags).length) setFlags(restoredFlags);
         }
       }
     } catch {
@@ -213,6 +247,12 @@ export default function LanguagePracticePage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // 进入新题时同步音量 & 重置模考音频禁用
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+    setAudioDisabled(false);
+  }, [current, volume]);
 
   // 倒计时
   useEffect(() => {
@@ -254,25 +294,72 @@ export default function LanguagePracticePage() {
     return () => clearInterval(iv);
   }, [data, currentSeg, segmentsInfo, current]);
 
+  // 自动保存心跳:2s 防抖批量回传脏数据
+  useEffect(() => {
+    if (!data || result) return;
+    const iv = setInterval(async () => {
+      const keys = Object.keys(pendingRef.current);
+      if (!keys.length) return;
+      setSaveHint("● 正在自动保存...");
+      for (const qid of keys) {
+        const v = answersRef.current[qid];
+        if (!v) continue;
+        try {
+          if (v.text !== undefined || v.audioUrl !== undefined) {
+            await api.post(`/language/sessions/${id}/answer/text`, { questionId: qid, text: v.text, audioUrl: v.audioUrl });
+          } else {
+            await api.post(`/language/sessions/${id}/answer`, { questionId: qid, selected: v.selected });
+          }
+        } catch {
+          // 静默,下次心跳重试(不清除脏标记)
+          return;
+        }
+      }
+      pendingRef.current = {};
+      setSaveHint("✓ 已自动保存");
+    }, 2000);
+    return () => clearInterval(iv);
+  }, [data, result, id]);
+
   const q = data?.questions[current];
 
-  async function saveAnswer(qid: string, selected?: string, text?: string, audioUrl?: string) {
-    setAnswers((p) => ({ ...p, [qid]: { selected, text, audioUrl } }));
-    const body = { questionId: qid };
-    if (text !== undefined || audioUrl !== undefined) {
-      (body as any).text = text;
-      (body as any).audioUrl = audioUrl;
-    } else {
-      (body as any).selected = selected;
+  // 写入本地 state 并标记脏,交给心跳回传
+  function queueSave(qid: string, val: { selected?: string; text?: string; audioUrl?: string }) {
+    setAnswers((p) => {
+      const next = { ...p, [qid]: val };
+      answersRef.current = next;
+      return next;
+    });
+    pendingRef.current[qid] = true;
+    setSaveHint("● 有未保存的改动");
+    if (data) {
+      sessionStorage.setItem(`lang-session-${id}`, JSON.stringify({ ...data, answers: answersRef.current, flags }));
     }
+  }
+
+  function saveAnswer(qid: string, selected?: string, text?: string, audioUrl?: string) {
+    queueSave(qid, { selected, text, audioUrl });
+  }
+
+  function toggleFlag(qid: string) {
+    setFlags((p) => {
+      const next = { ...p, [qid]: !p[qid] };
+      if (data) sessionStorage.setItem(`lang-session-${id}`, JSON.stringify({ ...data, answers: answersRef.current, flags: next }));
+      return next;
+    });
+  }
+
+  // 阅读高亮:用 mark 包裹当前选区(仅视觉,不持久化)
+  function highlightSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const mark = document.createElement("mark");
+    mark.className = "reading-mark";
     try {
-      if (text !== undefined || audioUrl !== undefined) {
-        await api.post(`/language/sessions/${id}/answer/text`, body);
-      } else {
-        await api.post(`/language/sessions/${id}/answer`, body);
-      }
+      sel.getRangeAt(0).surroundContents(mark);
+      sel.removeAllRanges();
     } catch {
-      // 静默,本地已记录
+      window.alert("请选择同一段落内的连续文本进行高亮");
     }
   }
 
@@ -372,10 +459,27 @@ export default function LanguagePracticePage() {
 
   const isObj = isObjective(q);
   const curAnswer = answers[q.id] || {};
+  const isDone = !!(curAnswer.selected || curAnswer.text || curAnswer.audioUrl);
+  const answeredCount = data.questions.filter((item) => {
+    const a = answers[item.id];
+    return !!(a?.selected || a?.text || a?.audioUrl);
+  }).length;
+
+  const navItems = data.questions
+    .map((item, i) => ({ item, i }))
+    .filter(({ item }) => {
+      if (filter === "ALL") return true;
+      const a = answers[item.id];
+      const done = !!(a?.selected || a?.text || a?.audioUrl);
+      if (filter === "UNANSWERED") return !done;
+      return !!flags[item.id];
+    });
 
   // —— 作答视图 ——
   return (
     <div className="mx-auto max-w-4xl">
+      <style>{`.timer-blink{animation:tmblink 1s steps(2,start) infinite}@keyframes tmblink{50%{opacity:.25}}.reading-mark{background:#fde68a;color:inherit;border-radius:2px}`}</style>
+
       {/* 顶部栏 */}
       <div className="sticky top-0 z-10 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -385,44 +489,126 @@ export default function LanguagePracticePage() {
           </div>
           <div className="flex items-center gap-3">
             {segmentsInfo && currentSeg && (
-              <span className="text-xs text-slate-500">
+              <span className={`text-xs ${timerClass(segRemaining)}`}>
                 {SKILL_LABEL[currentSeg.skill]}段 · {segRemaining !== null ? fmt(segRemaining) : "--"}
               </span>
             )}
-            {remaining !== null && !segmentsInfo && <span className="text-sm font-bold text-red-500">{fmt(remaining)}</span>}
+            {remaining !== null && !segmentsInfo && <span className={`text-sm font-bold ${timerClass(remaining)}`}>{fmt(remaining)}</span>}
             <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" onClick={() => submit()} disabled={saving}>
               {saving ? "交卷中..." : "交卷"}
             </button>
           </div>
         </div>
+        {/* 分段进度条 */}
+        {segmentsInfo && (
+          <div className="mt-2">
+            <div className="flex gap-1.5">
+              {segmentsInfo.map((s, i) => (
+                <div key={i} className="flex-1">
+                  <div
+                    className="h-1.5 rounded-full"
+                    style={{
+                      background: i === currentSegIdx ? "#4f46e5" : i < currentSegIdx ? "#a5b4fc" : "#e2e8f0",
+                      transition: "background-color 0.5s ease",
+                    }}
+                  />
+                  <div className={`mt-1 text-center text-[10px] ${i === currentSegIdx ? "font-semibold text-indigo-600" : "text-slate-400"}`}>
+                    {SKILL_LABEL[s.skill] || s.skill}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {restoreHint && (
+          <p className="mt-2 text-center text-xs text-amber-600">📥 已从本地恢复上次作答进度</p>
+        )}
+        {saveHint && (
+          <p className="mt-1 text-right text-[11px] text-slate-400">{saveHint}</p>
+        )}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {data.questions.map((item, i) => (
-          <button
-            key={item.id}
-            onClick={() => setCurrent(i)}
-            className={`h-8 w-8 rounded-lg text-xs font-medium transition ${i === current ? "bg-indigo-600 text-white" : answers[item.id]?.selected || answers[item.id]?.text || answers[item.id]?.audioUrl ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
-          >
-            {i + 1}
-          </button>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {data.questions.map((item, i) => {
+            const a = answers[item.id];
+            const done = !!(a?.selected || a?.text || a?.audioUrl);
+            const flagged = !!flags[item.id];
+            return (
+              <button
+                key={item.id}
+                onClick={() => setCurrent(i)}
+                title={flagged ? "已标记" : undefined}
+                className={`relative h-8 w-8 rounded-lg text-xs font-medium transition ${i === current ? "bg-indigo-600 text-white" : done ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
+              >
+                {i + 1}
+                {flagged && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400 ring-1 ring-white" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-slate-400">已答 {answeredCount}/{data.questions.length}</span>
+          <div className="flex overflow-hidden rounded-lg border border-slate-200">
+            {(["ALL", "UNANSWERED", "FLAGGED"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2 py-1 ${filter === f ? "bg-indigo-50 text-indigo-600" : "text-slate-500 hover:bg-slate-50"}`}
+              >
+                {f === "ALL" ? "全部" : f === "UNANSWERED" ? "未作答" : "已标记"}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* 阅读分屏:材料 + 题目 */}
       <div className={q.skill === "READING" && q.material ? "grid gap-4 lg:grid-cols-2" : ""}>
         {q.skill === "READING" && q.material && (
           <div className="max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-[#fbfaf7] p-5 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400">阅读材料</span>
+              <button className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100" onClick={highlightSelection}>🖍 高亮选中</button>
+            </div>
             {q.material.title && <p className="mb-2 text-sm font-bold text-slate-700">{q.material.title}</p>}
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{q.material.content}</p>
           </div>
         )}
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          {/* 听力音频 */}
+          {/* 听力音频 + 音量 */}
           {q.skill === "LISTENING" && q.audioUrl && (
             <div className="mb-3 rounded-xl bg-slate-50 p-3">
-              <audio className="w-full" controls src={q.audioUrl} />
+              {!audioDisabled ? (
+                <audio
+                  ref={audioRef}
+                  className="w-full"
+                  controls
+                  src={q.audioUrl}
+                  onEnded={() => { if (data.mode === "EXAM") setAudioDisabled(true); }}
+                />
+              ) : (
+                <div className="rounded-lg bg-slate-200 px-3 py-2 text-xs text-slate-600">模考音频仅可播放一次,本段音频已结束</div>
+              )}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-slate-500">音量</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setVolume(v);
+                    if (audioRef.current) audioRef.current.volume = v;
+                    sessionStorage.setItem("lang-audio-volume", String(v));
+                  }}
+                  className="w-32"
+                />
+                <span className="text-xs text-slate-400">{Math.round(volume * 100)}%</span>
+              </div>
             </div>
           )}
           {/* 写作/口语材料(任务描述/提示卡) */}
@@ -477,6 +663,16 @@ export default function LanguagePracticePage() {
               )}
             </div>
           )}
+
+          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+            <button
+              onClick={() => toggleFlag(q.id)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${flags[q.id] ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+            >
+              {flags[q.id] ? "★ 已标记" : "☆ 标记此题"}
+            </button>
+            <span className="text-xs text-slate-400">第 {current + 1} / {data.questions.length} 题</span>
+          </div>
         </div>
       </div>
 
