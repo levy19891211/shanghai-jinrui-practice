@@ -531,13 +531,15 @@ router.put(
   asyncHandler(async (req, res) => {
     const existed = await prisma.languageMaterial.findUnique({
       where: { id: req.params.id },
-      include: { questions: { select: { id: true, status: true } } },
+      include: { questions: { select: { id: true, status: true, part: true }, orderBy: { createdAt: "asc" } } },
     });
     if (!existed) return fail(res, 404, "篇章不存在");
     const b = req.body || {};
     const examType = b.examType || existed.examType;
     const skill = b.skill || existed.skill;
     const part = b.part !== undefined ? (b.part ? Number(b.part) : null) : undefined;
+    // 未显式传 part 时,新增题目继承篇内已有题目的 Passage 序号,避免排序错乱
+    const inheritPart = existed.questions.find((x) => x.part !== null && x.part !== undefined)?.part ?? null;
     const groupTitle = b.title !== undefined ? (b.title ? String(b.title) : null) : undefined;
 
     let normed = null;
@@ -581,7 +583,7 @@ router.put(
           await tx.languageQuestion.update({ where: { id: nq.id }, data });
         } else {
           await tx.languageQuestion.create({
-            data: { ...data, part: part ?? null, groupTitle: groupTitle ?? null, materialId: existed.id, status: "PENDING_REVIEW", createdBy: req.user.id },
+            data: { ...data, part: part !== undefined ? part : inheritPart, groupTitle: groupTitle ?? null, materialId: existed.id, status: "PENDING_REVIEW", createdBy: req.user.id },
           });
         }
       }
