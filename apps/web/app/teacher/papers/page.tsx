@@ -84,6 +84,8 @@ export default function TeacherPapersPage() {
   const [filter, setFilter] = useState<"ALL" | "READY" | "DRAFT" | "ARCHIVED" | "AUTO_SET">("ALL");
   // 学科筛选(空 = 全部,与题库的学科 Tab 一致)
   const [subjectFilter, setSubjectFilter] = useState("");
+  // 列表排序:createdDesc(最新在前,默认) / nameAsc(名称字母·数字升序) / nameDesc(降序)
+  const [sortBy, setSortBy] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
 
   // 试卷详情抽屉
   const [detail, setDetail] = useState<PaperManageDetail | null>(null);
@@ -146,10 +148,18 @@ export default function TeacherPapersPage() {
   }, [facets]);
 
   const shown = useMemo(() => {
-    if (filter === "ALL") return list;
-    if (filter === "AUTO_SET") return list.filter((p) => p.origin === "AUTO_SET");
-    return list.filter((p) => (p.status ?? "READY") === filter);
-  }, [list, filter]);
+    let arr;
+    if (filter === "ALL") arr = list;
+    else if (filter === "AUTO_SET") arr = list.filter((p) => p.origin === "AUTO_SET");
+    else arr = list.filter((p) => (p.status ?? "READY") === filter);
+    if (sortBy === "nameAsc" || sortBy === "nameDesc") {
+      const dir = sortBy === "nameAsc" ? 1 : -1;
+      // localeCompare + numeric:true 让 "Paper 2" 排在 "Paper 10" 前,按字母/数字自然序
+      arr = [...arr].sort((a, b) => dir * String(a.title).localeCompare(String(b.title), undefined, { numeric: true, sensitivity: "base" }));
+    }
+    // createdDesc 为默认(后端已按创建时间倒序返回,这里保持原序)
+    return arr;
+  }, [list, filter, sortBy]);
 
   const counts = useMemo(() => {
     const c = { ALL: list.length, READY: 0, DRAFT: 0, ARCHIVED: 0, AUTO_SET: 0 };
@@ -584,7 +594,7 @@ export default function TeacherPapersPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -596,6 +606,17 @@ export default function TeacherPapersPage() {
               {t.label}
             </button>
           ))}
+          {/* 排序:按名称字母/数字顺序 或 按创建时间 */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "createdDesc" | "nameAsc" | "nameDesc")}
+            className="ml-auto h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-600 outline-none focus:border-indigo-500 ui-select"
+            aria-label="排序方式"
+          >
+            <option value="createdDesc">最新优先</option>
+            <option value="nameAsc">名称 A→Z</option>
+            <option value="nameDesc">名称 Z→A</option>
+          </select>
         </div>
 
         {shown.length === 0 ? (
