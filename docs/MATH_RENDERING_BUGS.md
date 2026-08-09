@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 29 | **选项里罗马数字 `I` 被吞**——`I only`→`only`、`I and II only`→`and II only`、`I and IV only`→`and IV only`;线上 46 道含 `only` 的题中 **10 道** 中招(如 `cmslhyim70005k9n8qqzs1ld7`、`cmsles85u000cfqh19eiutve8`)。TMUA/ESAT 的「以下哪些正确」题型几乎全用 `I/II/III` 选项,影响面大且**改变题意**(学生看到的选项与原卷不一致) | `cleanOptionPrefix` 正则字母类 `[A-Ja-j]` **包含了 `I`**;而 `I only` 恰好是「大写字母 + 空格分隔符」,完全符合"选项字母前缀"的模式(等价于 `I. only`)→ 被当前缀删除。**这是 #17 的同一函数第二次踩坑**:#17 修 `*`→`+` 解决了"零分隔符"的误删,但没意识到 `I` 本身既是英文单词/罗马数字**又是合法选项字母**,只要它后面跟空格就必然误判——`+` 量词救不了 | ① `questions.js` `cleanOptionPrefix` 字母类改为 `[A-HJ-Za-hj-z]`,把 `I/i` 排除在可清洗前缀之外(第 9 个选项标签 `I.` 极少出现,宁可漏清洗也不能吞题意);② 线上脚本扫描全部含 `only` 的选项,按 `only`→`I only`、`and <罗马数字> only`→`I and <罗马数字> only` 规则回填修正 10 道题;③ 修复后复扫,损坏数 0 | 5acb124 |
 | 28 | **题干/解析多个独立公式挤在同一行、序号(I/II/III)贴在一起**:2022 TMUA Q10(`cmslcv3o0000zqayx5`)「I $y = x^3 - 3x^2 + 9x - 27$ II $y = x^3 - 9x^2 + 27x - 3$ III $y = 27x^3 - 9x^2 + x - 3$」、2022 TMUA Q3(`cmslcv3mn000sqayx16edoft6`)「- f''(x)=a for all x- f(0)=1,f(1)=2- ∫₀¹f(x)dx=1」等——**数据里每个公式独立一行(含 `\n`),但渲染出来全挤在一行** | `rich.tsx` text 包裹层用 `<span>{text}</span>`,HTML 默认 `white-space: normal` **把 `\n` 折叠为单个空格** → 多行数据渲染成一行 | `rich.tsx` 三处 `<span>` 加 `whitespace-pre-wrap` 类(L110/L111 renderRich 的 text token 包裹、L267 smartMath flushText),保留 `\n` 换行。短文本(无 `\n`)无影响。**注意**:V2.3.24 commit 曾因 push 遗漏导致线上未生效(用户复测仍坏),必须验证服务器 commit + grep 到改动才可交付 | this |
 | 26 | **AI 生成英文解析格式/公式显示错乱**:解析出现 `## Solution Steps`、`- ` 列表、`**bold**` 字面显示,且英文正文段落被渲染成斜体(如 "never touches or crosses the $x$-axis" 整段数学化) | ① V2.3.17 的解析 prompt 要求「用 Markdown headings ## 组织」,但渲染层 `renderRich` 不解析 Markdown,`##`/`- `/`**` 原样显示;② `renderRich` 默认对非公式文本走 `smartMath`(为题干设计),英文长段落被误判成数学斜体 | ① `rich.tsx` `renderRich` 新增 `opts.smart=false` 参数,非公式文本原样输出——题干/选项仍 smartMath,解析类长文本(`reviewQ.solution`/`d.solution`/`w.solution`)传 `{smart:false}`;② `questions.js` 两处解析 prompt 改为「plain text + 简单换行分段,禁止 ##/- /**,公式只用 $...$/$$...$$,禁止 \\( \\[ \\text \\begin \\\\」;③ 一次性脚本清洗存量解析的 `##`/`- `(行首)/`**` 标记 | this |
 | 25 | **公式块级/行内混用 + 裸 LaTeX 源码不渲染**:如 2017 第 11 题(cmsladx3n000a88r5027kxs8g)题干渲染为:`$$x_1 = 7$$` 居中独占一行,紧接着的 `x_{n+1} = \frac{23x_n - 53}{5x_n + 1}` 完全是裸 LaTeX 源码(KaTeX 不渲染,显示 `x_{n+1}` `\frac` 等源码),末尾的 `$$\n` 是孤儿 display math(开 `$$` 但找不到闭合 `$$`)→ 整段排版错乱 | 视觉模型对短公式习惯用 `$$...$$` 块级,但紧跟的下一行公式忘了加 `$` 包裹直接裸写,又用 `$$\n` 试图开新块级却没闭合;**`vision.js` SYSTEM_PROMPT 第 46 行只笼统说「开 `$$` 必有闭 `$$`,不要在公式中间出现孤立的 `$`」——过于抽象,模型没遵守** | ① 一次性 UPDATE 该题 stem,把 `$$x_1 = 7$$` → `$x_1 = 7$`、裸 `x_{n+1} = \frac{...}{...}` → `$...$` 包裹、删孤儿 `$$\n`;② `vision.js` SYSTEM_PROMPT 新增「**公式定界符选择**」规则(显式定义短公式用 `$...$` 行内、复杂表达式才用 `$$...$$`、严禁块级与行内混用/半边定界符) | this |
@@ -68,6 +69,9 @@
 15. **含 Unicode 上下标的 token 一律判文本**(`HAS_UNI_SUP_SUB` 命中即 false),化学式/单位(`AgNO₃`、`mol⁻¹`、`cm³`)不得进数学模式。
 16. **纯小写英文用 `/` 连接的组合**(`is/are`、`and/or`、`either/or`)一律判文本,防止 `/`(OP_TOKEN)把英文词带进数学模式变斜体。
 17. **清洗正则里的量词要审查**:允许"零个"的量词(`*`、`?`)常导致误删(见 #17:`[A-Ja-j][分隔符]*` 变成"删任意单字母")。凡"必须要有 X 才删"的规则,分隔符量词用 `+`。
+29. **选项前缀清洗必须排除 `I/i`**(见 #29):`cleanOptionPrefix` 的字母类固定为 `[A-HJ-Za-hj-z]`,**永远不要把 `I` 加回去**。理由:`I` 同时是英文单词(`I have...`)、罗马数字(`I only`、`I and II only`)和合法选项字母,三义重叠且无法从上下文可靠区分;而 TMUA/ESAT 大量使用 `I/II/III` 罗马数字选项,一旦误删就**改变题意**且用户很难发现。第 9 个选项标签 `I.` 出现概率远低于罗马数字选项,**宁可漏清洗,不可吞正文**。
+    - 同理,任何"按开头字符删前缀"的清洗都必须先问:**这个字符本身有没有可能是正文的一部分?** 有则加白名单排除,而不是靠加严分隔符规则(#17 的 `*`→`+` 就救不了 `I only`)。
+    - **清洗类改动必须配套扫库验证**:改完 `cleanOptionPrefix` 之类的函数,要用脚本扫全库对比清洗前后差异(至少抽查含罗马数字、化学式、英文短语的选项),而不只是单测几个字符串。
 18. **括号内的化学状态/罗马数字判文本**(见 #18):smartMath 把 `(` `)` 当 OP_TOKEN,容易把 `(aq)` `(II)` 这类带进数学模式。`isMathToken` 增加:`/^\(([a-z]{2,}|[IVX]+)\)$/i` → 文本。单字母 `(x)` 不命中,保留数学。
 19. **句子末尾括号注释也容易整体被吞**(见 #19):`(Ignore ions produced by dissociation of water.)` 因末尾 `water.)` 含 `)` 被 `MIXED_LET` 判数学,整段渲染走样。`isMathToken` 增加:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` → 文本(英文开头 + 末尾 `)`)。
 20. **化学式裸下标要清洗**(见 #20):视觉模型输出 `HNO_3`/`CuNO_3`/`H_2O`/`NO_2`,前端渲染显示 `X_n` 字面。`cleanUnits` 增加:`/([A-Z][a-z]?)_(\d+)/g` → Unicode 下标(`HNO₃` 等);`x_n` 数学变量不误伤(`x` 不匹配 `[A-Z]`)。
@@ -180,6 +184,22 @@ $$f(x) - g(x) = 2\sin x$$f(x)g(x) = \cos^2 x$ for all real numbers x . Across al
                                                         (结果:行内公式正常渲染,$ 字符不可见,英文保持正文)
 $ f(x) = x^{\frac{1}{7}}(x^2 - x + 1) $                 ($ 后带空格仍正确渲染,且 $ 不可见)
 选项: 5 | 10 | 15 | 3\pi | 9\pi | 12\pi                 (裸 \pi 仍须渲染,不露出 $)
+```
+
+**#29 回归样本(`cleanOptionPrefix` 输入 → 期望输出,罗马数字选项一字不得少):**
+
+```
+"I only"              → "I only"              (不得变 "only")
+"I and II only"       → "I and II only"       (不得变 "and II only")
+"I and IV only"       → "I and IV only"
+"I, II and III"       → "I, II and III"
+"II only"             → "II only"
+"III only"            → "III only"
+"It has a maximum."   → "It has a maximum."   (英文句子开头的 I 也不得吞)
+"A. 1/25"             → "1/25"                (真前缀仍须清洗)
+"(A) 1/25"            → "1/25"
+"A 1/25"              → "1/25"
+"Covalent bonds"      → "Covalent bonds"      (#17 样本,回归保留)
 ```
 
 ## 四、运行验证
