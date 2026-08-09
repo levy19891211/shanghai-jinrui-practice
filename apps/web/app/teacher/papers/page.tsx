@@ -84,6 +84,8 @@ export default function TeacherPapersPage() {
   const [filter, setFilter] = useState<"ALL" | "READY" | "DRAFT" | "ARCHIVED" | "AUTO_SET">("ALL");
   // 学科筛选(空 = 全部,与题库的学科 Tab 一致)
   const [subjectFilter, setSubjectFilter] = useState("");
+  // 套题类型筛选(空 = 全部):OFFICIAL 官方原版套题 / CUSTOM 组卷套题(手动组卷或自编导入)
+  const [kindFilter, setKindFilter] = useState("");
   // 列表排序:createdDesc(最新在前,默认) / nameAsc(名称字母·数字升序) / nameDesc(降序)
   const [sortBy, setSortBy] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
 
@@ -108,10 +110,11 @@ export default function TeacherPapersPage() {
   const load = useCallback(async () => {
     const qs = new URLSearchParams();
     if (subjectFilter) qs.set("subject", subjectFilter);
+    if (kindFilter) qs.set("kind", kindFilter);
     const q = qs.toString();
     const d = await api.get<{ list: PaperRow[] }>(`/papers${q ? `?${q}` : ""}`);
     setList(d.list);
-  }, [subjectFilter]);
+  }, [subjectFilter, kindFilter]);
 
   const loadFacets = useCallback(async (subject: string) => {
     const d = await api.get<Facets>(`/papers/facets?subject=${encodeURIComponent(subject)}`);
@@ -586,6 +589,19 @@ export default function TeacherPapersPage() {
             onClick={() => setSubjectFilter(t.v)}
             className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
               subjectFilter === t.v ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
+        {/* 套题类型筛选:官方原版套题 / 组卷套题 */}
+        <span className="mx-1 self-center text-xs text-slate-300">|</span>
+        {[{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "CUSTOM", l: "组卷套题" }].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setKindFilter(t.v)}
+            className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+              kindFilter === t.v ? "bg-teal-600 text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             {t.l}

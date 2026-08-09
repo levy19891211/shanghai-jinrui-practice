@@ -147,6 +147,8 @@ export interface PaperRow {
   source?: string | null;
   /** MANUAL = 手动组卷;AUTO_SET = 套题录入自动成卷 */
   origin?: "MANUAL" | "AUTO_SET";
+  /** OFFICIAL = 官方原版套题(如 PDF 导入真题);CUSTOM = 组卷套题(手动组卷或自编导入) */
+  kind?: "OFFICIAL" | "CUSTOM";
   /** DRAFT = 还有题没审完;READY = 全部通过,学生可作答;ARCHIVED = 已下架 */
   status?: "DRAFT" | "READY" | "ARCHIVED";
   stats?: PaperStats;

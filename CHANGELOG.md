@@ -1,5 +1,17 @@
 # 版本历史
 
+## V2.3.28 (2026-08-09) — 试卷管理分类筛选新增「套题类型」(原版套题 / 组卷套题)
+- **功能**:试卷管理学科筛选旁新增**套题类型 Tab**:全部套题 / **原版套题** / **组卷套题**。
+  - **原版套题**(OFFICIAL):导入的官方原版套题(PDF 导入的 TMUA/ESAT 真题等);
+  - **组卷套题**(CUSTOM):手动组卷生成的题目、或导入的自编套题(JSON/CSV 粘贴)。
+- **实现**:
+  - `schema.prisma` Paper 新增 `kind` 字段(`OFFICIAL`/`CUSTOM`,默认 CUSTOM),db push + prisma generate;
+  - 打标:手动组卷(generate)→ CUSTOM;PDF 双文件导入 → OFFICIAL;JSON/CSV 粘贴导入 → CUSTOM;上传文件导入 → 按 source 自动判断(isOfficialSource:真题/PDF 导入/Official 等为 OFFICIAL);
+  - 存量回填:origin=MANUAL → CUSTOM;AUTO_SET 按 source 判定(11 张官方卷全部 → OFFICIAL);
+  - 后端 `GET /papers` 支持 `?kind=` 过滤,响应带 `kind` 字段;
+  - 前端 `papers/page.tsx` 加 `kindFilter` state + 套题类型 Tab,与学科 Tab、状态 Tab、排序叠加生效。
+- **验证**:db push + generate 成功;11 张存量卷回填正确;tsc 通过;api node --check 通过。
+
 ## V2.3.27 (2026-08-09) — 批量导入可撤销/删除已选文件
 - **功能**:批量导入面板中三种文件选择都支持**撤销/删除已选文件**:
   - 「上传文件」模式(.xlsx/.xls/.docx/.pdf):已选文件后显示「撤销」按钮;
