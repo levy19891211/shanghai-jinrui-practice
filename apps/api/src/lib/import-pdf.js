@@ -178,6 +178,11 @@ export async function parsePdf(filename, buffer) {
   if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
   const pages = await rasterize(buffer);
   const raws = await extractQuestionsFromPdfPages(pages);
+  // 丢题预警:TMUA/ESAT 等官方卷一页通常 1-2 题;若题目页数明显多于提取题数,大概率有题没识别到
+  // (视觉模型偶发漏题是已知问题,2022 Paper 2 曾丢 Q7-Q10 整整 4 题)。此时打日志并在结果里带 warning。
+  const questionPageCount = pages.filter((p) => !/^\s*(BLANK|PAGE)\b/i.test(String(p.text || ""))).length;
+  const warning = questionPageCount > raws.length + 2 ? `:识别到 ${raws.length} 题,但题目页有 ${questionPageCount} 页,可能漏题(建议核对原卷题数)` : "";
+  if (warning) console.warn(`[import-pdf] ${filename}${warning}`);
   // 文件级统一 subject/paper:同一份 PDF 的所有题必须是同一套卷,视觉模型逐题误判
   // (如把物理题判成 ESAT)不应导致拆卷。详见 unifyFileMeta。
   const unified = unifyFileMeta(raws, filename);

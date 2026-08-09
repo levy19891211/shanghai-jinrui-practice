@@ -85,6 +85,50 @@ export function parseJsonArray(text) {
   return [];
 }
 
+// 单批页面的视觉提取(内部复用,便于逐批重试)
+async function callChunkVision(chunk, idx) {
+  const content = [
+    {
+      type: "text",
+      text: "请从以下页面的试卷图片中提取所有选择题,严格按系统提示要求的 JSON 数组格式输出。",
+    },
+  ];
+  let textHint = "";
+  chunk.forEach((p, ci) => {
+    content.push({ type: "image_url", image_url: { url: `data:image/png;base64,${p.image}` } });
+    if (p.text) textHint += `\n[第 ${ci + 1} 页纯文本参考]\n${p.text}\n`;
+  });
+  if (textHint) {
+    content.push({
+      type: "text",
+      text: "各页纯文本(公式可能不准,仅用于辅助判断题号与结构,数学以图片为准):" + textHint,
+    });
+  }
+  const resp = await fetch(`${baseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.VISION_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: model(),
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content },
+      ],
+      temperature: 0.1,
+      max_tokens: 16000,
+    }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error(`视觉模型请求失败 ${resp.status}: ${t.slice(0, 300)}`);
+  }
+  const json = await resp.json();
+  const text = json?.choices?.[0]?.message?.content || "";
+  return parseJsonArray(text);
+}
+
 export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = {}) {
   // 每次调用的页数:页太多会让模型丢题/截断。默认 4 页,可用 VISION_MAX_PAGES 调整。
   const perCall = Math.max(1, Math.min(16, Number(maxPagesPerCall) || Number(process.env.VISION_MAX_PAGES) || 4));
@@ -94,48 +138,29 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = 
     chunks.push(pages.slice(i, i + perCall));
   }
   const all = [];
-  for (const chunk of chunks) {
-    const content = [
-      {
-        type: "text",
-        text: "请从以下页面的试卷图片中提取所有选择题,严格按系统提示要求的 JSON 数组格式输出。",
-      },
-    ];
-    let textHint = "";
-    chunk.forEach((p, idx) => {
-      content.push({ type: "image_url", image_url: { url: `data:image/png;base64,${p.image}` } });
-      if (p.text) textHint += `\n[第 ${idx + 1} 页纯文本参考]\n${p.text}\n`;
-    });
-    if (textHint) {
-      content.push({
-        type: "text",
-        text: "各页纯文本(公式可能不准,仅用于辅助判断题号与结构,数学以图片为准):" + textHint,
-      });
+  const RETRIES = 3; // 每批最多重试次数:视觉模型偶发漏题/截断时重试
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    let batch = [];
+    let attempt = 0;
+    // 重试策略:提取为空 / 请求异常 → 重试;单批多页时若只识别出极少题也可重试一次
+    for (; attempt < RETRIES; attempt++) {
+      try {
+        batch = await callChunkVision(chunk, ci);
+        // 空结果视为模型没读到,重试;非空且数量合理则接受
+        if (batch.length > 0) break;
+        if (attempt === 0) console.warn(`[vision] chunk ${ci + 1} 提取为空,重试(${attempt + 1}/${RETRIES})`);
+      } catch (e) {
+        // 请求异常:瞬时失败,等待后重试
+        if (attempt < RETRIES - 1) {
+          console.warn(`[vision] chunk ${ci + 1} 请求失败:${e.message},重试(${attempt + 1}/${RETRIES})`);
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        } else {
+          throw e;
+        }
+      }
     }
-
-    const resp = await fetch(`${baseUrl()}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.VISION_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: model(),
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content },
-        ],
-        temperature: 0.1,
-        max_tokens: 16000,
-      }),
-    });
-    if (!resp.ok) {
-      const t = await resp.text().catch(() => "");
-      throw new Error(`视觉模型请求失败 ${resp.status}: ${t.slice(0, 300)}`);
-    }
-    const json = await resp.json();
-    const text = json?.choices?.[0]?.message?.content || "";
-    all.push(...parseJsonArray(text));
+    all.push(...batch);
   }
   return all;
 }
