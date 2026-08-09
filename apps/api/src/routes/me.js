@@ -73,23 +73,41 @@ router.get(
   asyncHandler(async (req, res) => {
     const records = await prisma.answerRecord.findMany({
       where: { session: { studentId: req.user.id }, isCorrect: { not: null } },
-      include: { question: { select: { topic: true } } },
+      include: {
+        question: { select: { topic: true, subject: true, difficulty: true } },
+        session: { select: { mode: true } },
+      },
     });
-    const agg = new Map();
+    const byTopic = new Map();
+    const bySubject = new Map();
+    const byMode = new Map();
+    const byDifficulty = new Map();
+    let correctAnswered = 0;
     for (const r of records) {
+      const correct = r.isCorrect ? 1 : 0;
+      correctAnswered += correct;
       const topic = r.question.topic || "未分类";
-      const item = agg.get(topic) || { topic, attempts: 0, correct: 0 };
-      item.attempts += 1;
-      if (r.isCorrect) item.correct += 1;
-      agg.set(topic, item);
+      let t = byTopic.get(topic) || { topic, attempts: 0, correct: 0 };
+      t.attempts += 1; t.correct += correct; byTopic.set(topic, t);
+      const subject = r.question.subject || "其他";
+      let s = bySubject.get(subject) || { subject, attempts: 0, correct: 0 };
+      s.attempts += 1; s.correct += correct; bySubject.set(subject, s);
+      const mode = r.session?.mode || "PRACTICE";
+      let m = byMode.get(mode) || { mode, attempts: 0, correct: 0 };
+      m.attempts += 1; m.correct += correct; byMode.set(mode, m);
+      const diff = r.question.difficulty ?? 3;
+      let d = byDifficulty.get(diff) || { difficulty: diff, attempts: 0, correct: 0 };
+      d.attempts += 1; d.correct += correct; byDifficulty.set(diff, d);
     }
+    const rate = (o) => (o.attempts ? Math.round((o.correct / o.attempts) * 100) : 0);
     ok(res, {
-      byTopic: [...agg.values()].map(({ topic, attempts, correct }) => ({
-        topic,
-        attempts,
-        correctRate: attempts ? Math.round((correct / attempts) * 100) : 0,
-      })),
       totalAnswered: records.length,
+      correctAnswered,
+      overallRate: records.length ? Math.round((correctAnswered / records.length) * 100) : 0,
+      byTopic: [...byTopic.values()].map(({ topic, attempts, correct }) => ({ topic, attempts, correctRate: rate({ attempts, correct }) })),
+      bySubject: [...bySubject.values()].map(({ subject, attempts, correct }) => ({ subject, attempts, correctRate: rate({ attempts, correct }) })).sort((a, b) => b.correctRate - a.correctRate),
+      byMode: [...byMode.values()].map(({ mode, attempts, correct }) => ({ mode, attempts, correctRate: rate({ attempts, correct }) })),
+      byDifficulty: [...byDifficulty.values()].map(({ difficulty, attempts, correct }) => ({ difficulty, attempts, correctRate: rate({ attempts, correct }) })).sort((a, b) => a.difficulty - b.difficulty),
     });
   })
 );

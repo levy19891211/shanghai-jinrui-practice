@@ -117,6 +117,11 @@ export interface WrongItem {
 export interface StatsData {
   byTopic: { topic: string; attempts: number; correctRate: number }[];
   totalAnswered: number;
+  correctAnswered: number;
+  overallRate: number;
+  bySubject: { subject: string; attempts: number; correctRate: number }[];
+  byMode: { mode: string; attempts: number; correctRate: number }[];
+  byDifficulty: { difficulty: number; attempts: number; correctRate: number }[];
 }
 
 // ---- 试卷(含套题自动组卷) ----

@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
 } from "recharts";
 import { api, getUser } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
-import type { SessionSummary, WrongItem } from "@/lib/types";
+import type { SessionSummary, WrongItem, StatsData } from "@/lib/types";
 
 type Assignment = {
   id: string;
@@ -46,7 +46,7 @@ const SKILL_COLOR: Record<string, string> = {
   LISTENING: "#1f6fb2", READING: "#2e6f40", WRITING: "#b8860b", SPEAKING: "#7a3b8f", FULL: "#a14a3a",
 };
 
-type Tab = "assignments" | "grades" | "weak" | "wrong";
+type Tab = "assignments" | "grades" | "analysis" | "wrong";
 
 export default function PersonalSpacePage() {
   const router = useRouter();
@@ -57,6 +57,10 @@ export default function PersonalSpacePage() {
   const [subjectSessions, setSubjectSessions] = useState<SessionSummary[]>([]);
   const [langSessions, setLangSessions] = useState<LangSession[]>([]);
   const [byTopic, setByTopic] = useState<{ topic: string; attempts: number; correctRate: number }[]>([]);
+  const [bySubject, setBySubject] = useState<{ subject: string; attempts: number; correctRate: number }[]>([]);
+  const [byMode, setByMode] = useState<{ mode: string; attempts: number; correctRate: number }[]>([]);
+  const [byDifficulty, setByDifficulty] = useState<{ difficulty: number; attempts: number; correctRate: number }[]>([]);
+  const [overallRate, setOverallRate] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const [wrongList, setWrongList] = useState<WrongItem[]>([]);
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
@@ -76,7 +80,7 @@ export default function PersonalSpacePage() {
           api.get<{ list: Assignment[] }>("/me/assignments").catch(() => ({ list: [] as Assignment[] })),
           api.get<{ list: SessionSummary[] }>("/me/sessions").catch(() => ({ list: [] as SessionSummary[] })),
           api.get<{ list: LangSession[] }>("/language/sessions").catch(() => ({ list: [] as LangSession[] })),
-          api.get<{ byTopic: { topic: string; attempts: number; correctRate: number }[]; totalAnswered: number }>("/me/stats").catch(() => ({ byTopic: [], totalAnswered: 0 })),
+          api.get<StatsData>("/me/stats").catch(() => ({ byTopic: [], totalAnswered: 0, correctAnswered: 0, overallRate: 0, bySubject: [], byMode: [], byDifficulty: [] })),
           api.get<{ list: WrongItem[] }>("/me/wrongbook").catch(() => ({ list: [] as WrongItem[] })),
           api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").catch(() => ({ list: [] as { id: string; name: string; subject: string }[] })),
         ]);
@@ -84,6 +88,10 @@ export default function PersonalSpacePage() {
         setSubjectSessions(s.list || []);
         setLangSessions(ls.list || []);
         setByTopic(stats.byTopic || []);
+        setBySubject(stats.bySubject || []);
+        setByMode(stats.byMode || []);
+        setByDifficulty(stats.byDifficulty || []);
+        setOverallRate(stats.overallRate || 0);
         setTotalAnswered(stats.totalAnswered || 0);
         setWrongList(w.list || []);
         setAllKps(kps.list || []);
@@ -269,6 +277,24 @@ export default function PersonalSpacePage() {
   const radarData = byTopic.filter((t) => typeof t.correctRate === "number").map((t) => ({ topic: t.topic, rate: t.correctRate }));
   const weakTopics = useMemo(() => [...byTopic].sort((a, b) => a.correctRate - b.correctRate), [byTopic]);
 
+  // 语言学习表现:按技能聚合(前端从已有 langSessions 计算)
+  const langBySkill = useMemo(() => {
+    const map = new Map<string, { skill: string; sessions: number; bandSum: number; bandCount: number; correct: number; total: number }>();
+    langSessions.forEach((s) => {
+      const cur = map.get(s.skill) || { skill: s.skill, sessions: 0, bandSum: 0, bandCount: 0, correct: 0, total: 0 };
+      cur.sessions += 1;
+      if (s.band != null) { cur.bandSum += s.band; cur.bandCount += 1; }
+      if (s.correctCount != null && s.total) { cur.correct += s.correctCount; cur.total += s.total; }
+      map.set(s.skill, cur);
+    });
+    return Array.from(map.values()).map((x) => ({
+      skill: x.skill,
+      sessions: x.sessions,
+      avgBand: x.bandCount ? +(x.bandSum / x.bandCount).toFixed(1) : null,
+      rate: x.total ? Math.round((x.correct / x.total) * 100) : null,
+    }));
+  }, [langSessions]);
+
   // 错题本
   const visibleWrong = subjectTab ? wrongList.filter((w) => (subjectTab === "数学" ? w.subject === "数学" || w.subject === "TMUA" : w.subject === subjectTab)) : wrongList;
   const pendingWrong = visibleWrong.filter((w) => !w.mastered);
@@ -308,13 +334,13 @@ export default function PersonalSpacePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-800">个人空间</h1>
-        <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、薄弱点与错题。</p>
+        <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
         {tabBtn("grades", "📈", "成绩历史", subjectSessions.length + langSessions.length)}
-        {tabBtn("weak", "🎯", "薄弱知识点", weakTopics.filter((t) => t.correctRate < 70).length)}
+        {tabBtn("analysis", "📊", "学情分析", weakTopics.filter((t) => t.correctRate < 70).length)}
         {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
       </div>
 
@@ -454,12 +480,84 @@ export default function PersonalSpacePage() {
         </div>
       )}
 
-      {!loading && tab === "weak" && (
+      {!loading && tab === "analysis" && (
         <div className="space-y-6">
-          {totalAnswered === 0 ? (
-            <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">还没有作答记录,先做几道题,系统会分析你的薄弱知识点。</p>
+          {totalAnswered === 0 && langSessions.length === 0 ? (
+            <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">还没有作答记录,先做几道题,系统会生成你的学情分析报告。</p>
           ) : (
             <>
+              {/* 总览指标卡 */}
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <MetricCard label="总答题数" value={`${totalAnswered}`} sub="道" />
+                <MetricCard label="总体正确率" value={`${overallRate}%`} sub="全部作答" accent />
+                <MetricCard label="覆盖学科" value={`${bySubject.length}`} sub="个科目" />
+                <MetricCard label="薄弱知识点" value={`${weakTopics.filter((t) => t.correctRate < 70).length}`} sub="正确率<70%" warn={weakTopics.some((t) => t.correctRate < 70)} />
+              </div>
+
+              {/* 学科表现 */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-sm font-medium text-slate-700">学科表现(按科目正确率)</h2>
+                {bySubject.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-400">暂无学科作答数据。</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {bySubject.map((s) => (
+                      <div key={s.subject} className="flex items-center gap-3">
+                        <span className="w-12 shrink-0 text-sm font-medium text-slate-700">{s.subject}</span>
+                        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          <div className={`h-full rounded-full ${s.correctRate >= 70 ? "bg-emerald-500" : s.correctRate >= 40 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${s.correctRate}%` }} />
+                        </div>
+                        <span className={`w-32 shrink-0 text-right text-xs ${s.correctRate < 70 ? "font-medium text-red-500" : "text-slate-600"}`}>正确率 {s.correctRate}% · {s.attempts}题</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 练习/模考 + 难度表现 */}
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h2 className="text-sm font-medium text-slate-700">练习 vs 模考</h2>
+                  <div className="mt-4 space-y-3">
+                    {byMode.length === 0 ? (
+                      <p className="text-sm text-slate-400">暂无数据。</p>
+                    ) : (
+                      byMode.map((m) => (
+                        <div key={m.mode} className="flex items-center gap-3">
+                          <span className="w-12 shrink-0 text-sm font-medium text-slate-700">{m.mode === "EXAM" ? "模考" : "练习"}</span>
+                          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div className={`h-full rounded-full ${m.correctRate >= 70 ? "bg-indigo-500" : "bg-amber-500"}`} style={{ width: `${m.correctRate}%` }} />
+                          </div>
+                          <span className="w-32 shrink-0 text-right text-xs text-slate-600">正确率 {m.correctRate}% · {m.attempts}题</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h2 className="text-sm font-medium text-slate-700">难度表现(1–5 星)</h2>
+                  {byDifficulty.length === 0 ? (
+                    <p className="mt-4 text-sm text-slate-400">暂无数据。</p>
+                  ) : (
+                    <div className="mt-4 h-44">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={byDifficulty} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                          <XAxis dataKey="difficulty" tick={{ fontSize: 12 }} tickFormatter={(d: number) => `${d}星`} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} labelFormatter={(l: number) => `难度 ${l} 星`} />
+                          <Bar dataKey="correctRate" radius={[4, 4, 0, 0]}>
+                            {byDifficulty.map((d, i) => (
+                              <Cell key={i} fill={d.correctRate >= 70 ? "#6366f1" : d.correctRate >= 40 ? "#f59e0b" : "#ef4444"} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 知识点掌握雷达 + 薄弱列表 */}
               {radarData.length >= 3 && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h2 className="text-sm font-medium text-slate-700">知识点掌握度雷达图</h2>
@@ -502,6 +600,22 @@ export default function PersonalSpacePage() {
                   ))}
                 </div>
               </div>
+
+              {/* 语言学习表现 */}
+              {langSessions.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h2 className="text-sm font-medium text-slate-700">语言学习表现(按技能)</h2>
+                  <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {langBySkill.map((x) => (
+                      <div key={x.skill} className="rounded-xl bg-slate-50 p-4">
+                        <p className="text-sm font-medium text-slate-800">{SKILL_LABEL[x.skill] || x.skill}</p>
+                        <p className="mt-1 text-xs text-slate-500">{x.sessions} 次练习</p>
+                        <p className="mt-2 text-lg font-bold text-indigo-600">{x.avgBand != null ? `Band ${x.avgBand}` : x.rate != null ? `${x.rate}%` : "—"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -593,4 +707,16 @@ export default function PersonalSpacePage() {
       </div>
     );
   }
+}
+
+// 学情分析 - 总览指标卡
+function MetricCard({ label, value, sub, accent, warn }: { label: string; value: string; sub?: string; accent?: boolean; warn?: boolean }) {
+  const color = warn ? "text-red-500" : accent ? "text-indigo-600" : "text-slate-800";
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-400">{sub}</p>}
+    </div>
+  );
 }
