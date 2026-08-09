@@ -42,7 +42,7 @@ router.post(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { title, subject, mode, durationMin, topics, difficulties, count } = req.body || {};
+    const { title, subject, sourceType, mode, durationMin, topics, difficulties, count } = req.body || {};
     if (!title || !subject) return fail(res, 400, "title、subject 必填");
     const where = { status: "PUBLISHED", subject };
     if (Array.isArray(topics) && topics.length) where.topic = { in: topics };
@@ -82,6 +82,7 @@ router.post(
       data: {
         title,
         subject,
+        sourceType: sourceType || null,
         mode: mode === "EXAM" ? "EXAM" : "PRACTICE",
         durationMin: Number(durationMin) || null,
         questionIds: JSON.stringify(picked.map((q) => q.id)),
@@ -113,7 +114,7 @@ router.get(
     if (!isTeacher) {
       return ok(res, {
         list: list.map((p) => ({
-          id: p.id, title: p.title, subject: p.subject, mode: p.mode,
+          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
           durationMin: p.durationMin, questionCount: parseIds(p).length, createdAt: p.createdAt,
         })),
       });
@@ -123,7 +124,7 @@ router.get(
       list: list.map((p) => {
         const stats = statsMap.get(p.id);
         return {
-          id: p.id, title: p.title, subject: p.subject, mode: p.mode,
+          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
           durationMin: p.durationMin, questionCount: stats.total,
           source: p.source, origin: p.origin, status: p.status,
           stats, createdAt: p.createdAt,
@@ -236,9 +237,11 @@ router.patch(
     const b = req.body || {};
     const data = {};
     if (typeof b.title === "string" && b.title.trim()) data.title = b.title.trim();
-    // 科目:只接受合法科目;更新 subject 时同步 sourceKey(subject::paper::source),否则下次导入同套题会建新卷
+    // 科目:只接受合法科目(兼容历史 TMUA/ESAT 值,迁移后应使用四科);更新 subject 时同步 sourceKey(subject::paper::source)
     const VALID_SUBJECTS = ["TMUA", "ESAT", "数学", "物理", "化学", "生物"];
     if (typeof b.subject === "string" && VALID_SUBJECTS.includes(b.subject)) data.subject = b.subject;
+    // 题源/试卷类型:TMUA/ESAT/NSAA/其他,可设 null 清空
+    if (b.sourceType !== undefined) data.sourceType = b.sourceType ? String(b.sourceType).trim() : null;
     if (b.mode === "EXAM" || b.mode === "PRACTICE") data.mode = b.mode;
     if (b.durationMin !== undefined) data.durationMin = Number(b.durationMin) || null;
     if (Array.isArray(b.questionIds)) data.questionIds = JSON.stringify(b.questionIds);

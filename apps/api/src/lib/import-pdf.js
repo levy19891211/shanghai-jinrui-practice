@@ -64,9 +64,10 @@ export function paperFromFilename(filename) {
 // ——— 文件级元数据统一:彻底避免同一份 PDF 被拆成多套卷 ———
 // 视觉模型是逐题判断 subject 的,同卷内偶尔会判错(如把 NSAA 物理题判成 ESAT),
 // 导致 syncAutoPaperSets 按 subject::paper::source 三元组拆成多套卷。
-// 这里在同一份 PDF 内强制统一 subject/paper:
-//   paper:  文件名解析优先 → 文件内多数派 → 首个非空 → 保持空
-//   subject:文件名强信号(ESAT/TMUA/学科名) → 统一后 paper 组内多数派 → 文件内多数派 → 保持空
+// 这里在同一份 PDF 内强制统一 subject(科目)与 sourceType(题源):
+//   paper:     文件名解析优先 → 文件内多数派 → 首个非空 → 保持空
+//   subject:   paper 组内学科多数派 → 文件内学科多数派 → sourceType=TMUA 时兜底"数学" → 保持空
+//   sourceType:文件名题源信号(ESAT/TMUA/NSAA...) → 文件内题源多数派 → 保持空
 // 注意:subject 归一化映射须与 routes/questions.js 的 SUBJECT_NORM 保持一致。
 const SUBJECT_NORM = {
   Chemistry: "化学",
@@ -82,20 +83,15 @@ function normSubject(s) {
   return SUBJECT_NORM[v] || v;
 }
 
-// 从文件名提取强学科信号(ESAT/TMUA/中英文学科名),未命中返回 ""
-export function subjectFromFilename(filename) {
-  const f = String(filename || "");
-  if (/ESAT/i.test(f)) return "ESAT";
-  if (/TMUA/i.test(f)) return "TMUA";
-  for (const [re, subj] of [
-    [/数学|Math(?:s)?|Mathematics/i, "数学"],
-    [/物理|Physics/i, "物理"],
-    [/化学|Chemistry/i, "化学"],
-    [/生物|Biology/i, "生物"],
-  ]) {
-    if (re.test(f)) return subj;
-  }
-  return "";
+// 已知考试题源(会出现在视觉模型的 subject 字段或文件名里)。新增题源时在此扩展。
+const SOURCE_TYPE_NAMES = ["TMUA", "ESAT", "NSAA", "BMAT", "STEP", "MAT", "PAT", "ENGAA"];
+// 科目(知识学科)。视觉模型 subject 属于这些值时记入科目投票,否则若在 SOURCE_TYPE_NAMES 则记入题源投票。
+const SUBJECT_NAMES = ["数学", "物理", "化学", "生物"];
+
+// 从文件名提取题源信号(ESAT/TMUA/NSAA/BMAT/STEP/MAT/PAT/ENGAA),未命中返回 ""
+export function sourceTypeFromFilename(filename) {
+  const m = String(filename || "").match(/\b(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)\b/i);
+  return m ? m[1].toUpperCase() : "";
 }
 
 // 取列表中出现次数最多的非空值,平票取先出现的;全空返回 ""
@@ -119,34 +115,53 @@ function modeOf(list) {
 
 export function unifyFileMeta(raws, filename) {
   if (!raws.length) return raws;
-  const fnSubject = subjectFromFilename(filename);
+  const fnSourceType = sourceTypeFromFilename(filename);
   const fnPaper = paperFromFilename(filename);
 
   // 1) 统一 paper:文件名解析 → 文件内多数派 → 首个非空
   const paperVotes = raws.map((r) => String(r?.paper || "").trim());
   const paper = fnPaper || modeOf(paperVotes) || paperVotes.find(Boolean) || "";
 
-  // 2) 统一 subject:文件名强信号 → 统一后 paper 组内多数派 → 文件内多数派
-  let subject = fnSubject;
-  if (!subject) {
-    const inGroup = paper
-      ? raws.filter((r) => String(r?.paper || "").trim() === paper)
-      : raws;
-    subject = modeOf(inGroup.map((r) => normSubject(r?.subject)));
-    if (!subject) subject = modeOf(raws.map((r) => normSubject(r?.subject)));
+  // 2) 逐题归一化 subject,区分「学科信号」与「题源信号」
+  const inGroup = paper
+    ? raws.filter((r) => String(r?.paper || "").trim() === paper)
+    : raws;
+  const allSubjectVotes = [];
+  const groupSubjectVotes = [];
+  const sourceTypeVotes = [];
+  for (const r of raws) {
+    const t = normSubject(r?.subject);
+    if (!t) continue;
+    if (SOURCE_TYPE_NAMES.includes(t)) sourceTypeVotes.push(t);
+    else allSubjectVotes.push(t);
+  }
+  for (const r of inGroup) {
+    const t = normSubject(r?.subject);
+    if (t && !SOURCE_TYPE_NAMES.includes(t)) groupSubjectVotes.push(t);
   }
 
-  // 3) 应用到每一道题
+  // 3) 统一 sourceType:文件名题源信号 → 文件内题源多数派
+  const sourceType = fnSourceType || modeOf(sourceTypeVotes) || "";
+
+  // 4) 统一 subject:paper 组内学科多数派 → 文件内学科多数派 → TMUA 兜底"数学"
+  let subject = modeOf(groupSubjectVotes) || modeOf(allSubjectVotes) || "";
+  if (!subject && sourceType === "TMUA") subject = "数学";
+
+  // 5) 应用到每一道题
+  // 注意:subject/sourceType 算不出就置 null,绝不回退 r?.subject——
+  //     视觉模型的 subject 可能是题源词(如 ESAT),回退会把题源混进科目,违背「科目/题源分离」。
   return raws.map((r) => ({
     ...r,
-    subject: subject || r?.subject,
+    subject: subject || null,
     paper: paper || r?.paper,
+    sourceType: sourceType || null,
   }));
 }
 
 function normalizeRaw(r, filename) {
   return {
     subject: r?.subject,
+    sourceType: r?.sourceType || null,
     paper: paperFromFilename(filename) || r?.paper,
     topic: r?.topic,
     difficulty: r?.difficulty,

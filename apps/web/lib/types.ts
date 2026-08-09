@@ -16,6 +16,8 @@ export interface AuthData {
 export interface Question {
   id: string;
   subject: string;
+  /** 题源/试卷类型:TMUA | ESAT | NSAA | 其他(与 subject 科目区分) */
+  sourceType?: string | null;
   paper?: string | null;
   topic: string;
   topicIds?: string[] | null; // 关联知识点 id(题库管理用)
@@ -135,6 +137,8 @@ export interface PaperRow {
   id: string;
   title: string;
   subject: string;
+  /** 题源/试卷类型:TMUA | ESAT | NSAA | 其他 */
+  sourceType?: string | null;
   mode: string;
   durationMin: number | null;
   questionCount: number;
@@ -170,6 +174,8 @@ export interface PaperManageDetail {
   id: string;
   title: string;
   subject: string;
+  /** 题源/试卷类型:TMUA | ESAT | NSAA | 其他 */
+  sourceType?: string | null;
   mode: string;
   durationMin: number | null;
   source?: string | null;

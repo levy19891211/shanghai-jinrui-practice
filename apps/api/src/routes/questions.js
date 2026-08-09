@@ -12,7 +12,7 @@ import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile } from "../lib/parse-import-file.js";
 
 const router = Router();
-const PUBLIC_FIELDS = { id: true, subject: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
+const PUBLIC_FIELDS = { id: true, subject: true, sourceType: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
 
 // 解析 JSON 字符串数组(如 topicIds)
 function parseJsonIds(s) {
@@ -239,8 +239,8 @@ async function importRows(req, rows) {
       // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
       const stem = cleanUnits(String(r.stem || ""));
       const cleanOpts = options.map((o) => cleanUnits(String(o)));
-      if (!r.subject || !r.topic || !stem || cleanOpts.length < 2) {
-        throw new Error("字段不完整(需要 subject/topic/stem/options≥2)");
+      if ((!r.subject && !r.sourceType) || !r.topic || !stem || cleanOpts.length < 2) {
+        throw new Error("字段不完整(需要 subject 或 sourceType、topic、stem、options≥2)");
       }
       r.stem = stem;
       options.length = 0;
@@ -264,6 +264,7 @@ async function importRows(req, rows) {
       const q = await prisma.question.create({
         data: {
           subject: r.subject,
+          sourceType: r.sourceType || null,
           paper: r.paper || null,
           topic,
           topicIds: JSON.stringify(topicIds),
@@ -279,7 +280,7 @@ async function importRows(req, rows) {
           createdBy: req.user.id,
         },
       });
-      created.push({ id: q.id, subject: q.subject, paper: q.paper, source: q.source });
+      created.push({ id: q.id, subject: q.subject, sourceType: q.sourceType, paper: q.paper, source: q.source });
       imported++;
     } catch (e) {
       errors.push({ row: i + 1, reason: e.message });
@@ -400,6 +401,8 @@ function buildWhere(query, user) {
     if (subs.length) where.subject = { in: subs };
   }
   if (query.topic) where.topic = { contains: query.topic };
+  // 题源/试卷类型过滤(TMUA/ESAT/NSAA...)
+  if (query.sourceType) where.sourceType = query.sourceType;
   // 搜题:按题干关键词搜索(含公式/LaTeX 原文片段)
   const q = String(query.q || "").trim();
   if (q) where.stem = { contains: q };
@@ -479,15 +482,16 @@ router.post(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { subject, paper, topic, topicIds, difficulty, type, stem, options, answer, solution, source, status } = req.body || {};
-    if (!subject || !topic || !stem || !options || !answer) {
-      return fail(res, 400, "subject、topic、stem、options、answer 必填");
+    const { subject, sourceType, paper, topic, topicIds, difficulty, type, stem, options, answer, solution, source, status } = req.body || {};
+    if ((!subject && !sourceType) || !topic || !stem || !options || !answer) {
+      return fail(res, 400, "subject(或 sourceType)、topic、stem、options、answer 必填");
     }
     if (!Array.isArray(options) || options.length < 2) return fail(res, 400, "options 至少 2 个选项");
-    const kp = await normalizeTopicInput({ subject, topic, topicIds });
+    const kp = await normalizeTopicInput({ subject: subject || "", topic, topicIds });
     const q = await prisma.question.create({
       data: {
         subject,
+        sourceType: sourceType || null,
         paper: paper || null,
         topic: kp.topic,
         topicIds: JSON.stringify(kp.topicIds),
@@ -505,7 +509,7 @@ router.post(
     // 单题录入也参与套题归并:同 subject+paper+source 的题攒够 2 道就自动成卷
     let papers = [];
     if (q.paper && req.body?.autoPaper !== false) {
-      papers = await syncAutoPaperSets([{ id: q.id, subject: q.subject, paper: q.paper, source: q.source }]);
+      papers = await syncAutoPaperSets([{ id: q.id, subject: q.subject, sourceType: q.sourceType, paper: q.paper, source: q.source }]);
     }
     const msg = papers.length ? `创建成功;已归入套题试卷「${papers[0].title}」(共 ${papers[0].total} 题)` : "创建成功";
     ok(res, { ...q, papers, topicIds: parseJsonIds(q.topicIds), topics: await resolveTopics(q.topicIds) }, msg);
@@ -529,6 +533,8 @@ router.put(
       else if (key === "solution") data[key] = b[key] ? normalizeNewlines(String(b[key])) : b[key];
       else data[key] = b[key];
     }
+    // 题源类型:独立字段,可设 null 清空
+    if (b.sourceType !== undefined) data.sourceType = b.sourceType ? String(b.sourceType).trim() : null;
     if (b.options !== undefined) {
       if (!Array.isArray(b.options) || b.options.length < 2) return fail(res, 400, "options 至少 2 个选项");
       data.options = JSON.stringify(b.options.map((o) => normalizeNewlines(cleanOptionPrefix(o))));

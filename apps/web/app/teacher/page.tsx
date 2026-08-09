@@ -56,6 +56,7 @@ function parseJsonIds(v: string | string[] | null | undefined): string[] {
 interface FormState {
   id?: string;
   subject: string;
+  sourceType: string;
   paper: string;
   topic: string;
   topicIds: string[]; // 关联知识点 id(多选)
@@ -69,7 +70,7 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
-  subject: "TMUA", paper: "Paper 1", topic: "", topicIds: [], difficulty: 3, type: "SINGLE_CHOICE",
+  subject: "数学", sourceType: "TMUA", paper: "Paper 1", topic: "", topicIds: [], difficulty: 3, type: "SINGLE_CHOICE",
   stem: "", optionsText: "", answer: "", solution: "", status: "DRAFT",
 };
 
@@ -116,7 +117,7 @@ export default function TeacherPage() {
   useEffect(() => {
     if (!showForm) return;
     // 题目学科 → 知识点学科:TMUA/ESAT 归类到数学(ESAT 主要为数学与物理,按数学加载)
-    const kpSubject = form.subject === "TMUA" || form.subject === "ESAT" ? "数学" : form.subject;
+    const kpSubject = form.subject;
     api
       .get<{ list: { id: string; name: string }[] }>(`/knowledge-points?subject=${encodeURIComponent(kpSubject)}`)
       .then((d) => setKps(d.list || []))
@@ -282,7 +283,7 @@ export default function TeacherPage() {
   function openCreate() { setForm({ ...EMPTY, topicIds: [] }); setError(""); setShowForm(true); }
   function openEdit(q: Question) {
     setForm({
-      id: q.id, subject: q.subject, paper: q.paper ?? "", topic: q.topic, topicIds: parseJsonIds(q.topicIds),
+      id: q.id, subject: q.subject, sourceType: q.sourceType ?? "", paper: q.paper ?? "", topic: q.topic, topicIds: parseJsonIds(q.topicIds),
       difficulty: q.difficulty,
       type: q.type, stem: q.stem, optionsText: (q.options || []).join("\n"), answer: q.answer ?? "",
       solution: q.solution ?? "", status: q.status,
@@ -299,7 +300,7 @@ export default function TeacherPage() {
     setSaving(true);
     try {
       const payload = {
-        subject: form.subject, paper: form.paper || null, topic: form.topic, topicIds: form.topicIds,
+        subject: form.subject, sourceType: form.sourceType || null, paper: form.paper || null, topic: form.topic, topicIds: form.topicIds,
         difficulty: Number(form.difficulty),
         type: form.type, stem: form.stem, options, answer: form.answer, solution: form.solution || null, status: form.status,
       };
@@ -655,7 +656,7 @@ export default function TeacherPage() {
           <table className="w-full min-w-[1080px] text-sm">
             <thead className="bg-slate-50 text-left text-slate-400">
               <tr>
-                <th className="whitespace-nowrap px-4 py-3 font-normal">科目</th>
+                <th className="whitespace-nowrap px-4 py-3 font-normal">科目/题源</th>
                 <th className="whitespace-nowrap px-4 py-3 font-normal">知识点</th>
                 <th className="whitespace-nowrap px-4 py-3 font-normal">题干</th>
                 <th className="whitespace-nowrap px-4 py-3 font-normal">难度</th>
@@ -668,9 +669,12 @@ export default function TeacherPage() {
               {list.map((q) => (
                 <tr key={q.id} className="border-t border-slate-100">
                   <td className="px-4 py-3">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${q.subject === "TMUA" ? "bg-indigo-50 text-indigo-600" : "bg-teal-50 text-teal-600"}`}>
-                      {q.subject}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-600">{q.subject}</span>
+                      {q.sourceType && (
+                        <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{q.sourceType}</span>
+                      )}
+                    </div>
                   </td>
                   <td className="max-w-[200px] px-4 py-3">
                     {q.topics && q.topics.length ? (
@@ -866,14 +870,21 @@ Answer: B
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm text-slate-600">科目</label>
+                <label className="mb-1 block text-sm text-slate-600">科目(知识学科)</label>
                 <select className={`${input} ui-select`} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
-                  <option value="TMUA">TMUA</option>
-                  <option value="ESAT">ESAT</option>
                   <option value="数学">数学</option>
                   <option value="物理">物理</option>
                   <option value="化学">化学</option>
                   <option value="生物">生物</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">题源(考试类型)</label>
+                <select className={`${input} ui-select`} value={form.sourceType} onChange={(e) => setForm({ ...form, sourceType: e.target.value })}>
+                  <option value="">无</option>
+                  <option value="TMUA">TMUA</option>
+                  <option value="ESAT">ESAT</option>
+                  <option value="NSAA">NSAA</option>
                 </select>
               </div>
               <div>
@@ -995,7 +1006,8 @@ Answer: B
               <button onClick={() => setReviewOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-              <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{reviewQ.subject}</span>
+              <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.subject}</span>
+              {reviewQ.sourceType && <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{reviewQ.sourceType}</span>}
               {reviewQ.paper && <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.paper}</span>}
               {reviewQ.topics && reviewQ.topics.length ? (
                 reviewQ.topics.map((t) => (

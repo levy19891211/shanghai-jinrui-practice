@@ -12,7 +12,8 @@ datasource db {
 }
 
 // role 合法值:STUDENT | TEACHER | ADMIN
-// subject 合法值:TMUA | ESAT
+// subject 合法值:数学 | 物理 | 化学 | 生物(科目,知识学科)
+// sourceType 合法值:TMUA | ESAT | NSAA | 其他考试题源(题源/试卷类型,与 subject 区分;可扩展)
 // type 合法值:SINGLE_CHOICE | MULTIPLE_CHOICE | NUMERIC
 // status 合法值:DRAFT | PENDING_REVIEW | PUBLISHED | REJECTED | ARCHIVED
 //   DRAFT         草稿(老师自建,未提交)
@@ -37,7 +38,8 @@ model User {
 
 model Question {
   id         String        @id @default(cuid())
-  subject    String
+  subject    String // 科目:数学 | 物理 | 化学 | 生物
+  sourceType String? // 题源/试卷类型:TMUA | ESAT | NSAA | 其他(与 subject 区分)
   paper      String?
   topic      String // 主知识点名(兼容统计/过滤);关联库由 topicIds 决定
   topicIds   String? // 知识点 id 列表(JSON 数组),题目可归属多个知识点
@@ -101,7 +103,8 @@ model InterviewQuestion {
 model Paper {
   id          String   @id @default(cuid())
   title       String
-  subject     String
+  subject     String // 科目:数学 | 物理 | 化学 | 生物
+  sourceType  String? // 题源/试卷类型:TMUA | ESAT | NSAA | 其他(与 subject 区分)
   mode        String   @default("PRACTICE")
   durationMin Int? // EXAM 试卷的限时时长(分钟),练习卷可空
   questionIds String

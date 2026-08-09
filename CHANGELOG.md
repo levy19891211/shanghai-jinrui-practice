@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.3.8 (2026-08-09) — 科目与题源分离：新增 sourceType 字段
+- **需求**:题库每道题 + 试卷管理每套卷,都要独立显示「题源/试卷类型」(TMUA/ESAT/NSAA,后续可扩展),把**科目**(数学/物理/化学/生物)与**题源**(TMUA/ESAT...)区分开。
+- **数据模型**(`schema.prisma`):`Question.sourceType` / `Paper.sourceType`(String?,题源/试卷类型,可扩展)。subject 回归纯科目语义。
+- **导入链路**(`import-pdf.js`):`unifyFileMeta` 升级为**双字段统一**——subject 取 paper 组内学科多数派(视觉模型 subject 为 TMUA/ESAT 等题源词时记入题源投票,不再污染科目);sourceType 取文件名题源信号(ESAT/TMUA/NSAA/BMAT/STEP/MAT/PAT/ENGAA)→ 题源多数派;TMUA 题源且无学科信号时 subject 兜底"数学"。`sourceTypeFromFilename` 新增;空值统一置 null,绝不把题源词回退进 subject。
+- **后端**:`questions.js`(PUBLIC_FIELDS/单题 POST/PUT/importRows/buildWhere 支持 sourceType,字段校验放宽为「subject 或 sourceType 至少一个」)、`papers.js`(列表/详情/PATCH/generate 支持 sourceType)、`paper-set.js`(自动组卷建卷/合并时写入 sourceType)。
+- **前端**:题库管理列表「科目/题源」双徽章(科目 teal / 题源 indigo)、审核弹窗双徽章、录入表单科目下拉(4 科)+ 题源下拉(TMUA/ESAT/NSAA/无);试卷管理列表「科目/类型」双徽章、详情双徽章、试卷设置区新增题源下拉。
+- **历史数据迁移**(生产):TMUA 题/卷 → subject=数学 + sourceType=TMUA(Paper.sourceKey 同步 `TMUA::`→`数学::`,避免下次导入建新卷);PART B Physics(NSAA 2023)题/卷 → sourceType=NSAA。ESAT 混合卷科目无法自动细分时留空,老师后补。
+- **验证**:`unifyFileMeta` 22 用例全过(NSAA 案例/ESAT 混合卷/TMUA 文件名强信号/科目多数派/空值边界);tsc 通过。
+
 ## V2.3.7 (2026-08-09) — PDF 导入文件级统一 subject/paper，根治拆卷
 - **问题**:同一份 PDF 导入后被拆成多套卷。根因是视觉模型**逐题**判断 subject,同卷内偶尔判错(如 NSAA 2023 物理卷中 4 题被判成 ESAT),而 `paper-set.js` 按 `subject::paper::source` 三元组建卷,导致一份 PDF 拆成两套独立卷。
 - **修复**(`apps/api/src/lib/import-pdf.js`):`parsePdf` 中新增 `unifyFileMeta`,在视觉模型返回后对**同一份 PDF 的所有题强制统一 subject/paper**:

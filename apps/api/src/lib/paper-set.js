@@ -99,7 +99,7 @@ export async function syncAutoPaperSets(created, options = {}) {
     if (!q.paper) continue; // 没有 paper 字段 = 散题,不成卷
     const key = setKeyOf(q);
     if (!groups.has(key)) {
-      groups.set(key, { subject: q.subject, paper: q.paper, source: q.source || null, ids: [] });
+      groups.set(key, { subject: q.subject, paper: q.paper, source: q.source || null, sourceType: q.sourceType || null, ids: [] });
     }
   }
 
@@ -125,6 +125,7 @@ export async function syncAutoPaperSets(created, options = {}) {
         where: { id: existing.id },
         data: {
           questionIds: JSON.stringify(merged),
+          ...(g.sourceType ? { sourceType: g.sourceType } : {}),
           ...(mode ? { mode } : {}),
           ...(durationMin ? { durationMin } : {}),
         },
@@ -136,6 +137,7 @@ export async function syncAutoPaperSets(created, options = {}) {
         data: {
           title: (single && options.title) || titleOf(g),
           subject: g.subject,
+          sourceType: g.sourceType,
           mode: mode || (durationMin ? "EXAM" : "PRACTICE"),
           durationMin,
           questionIds: JSON.stringify(g.ids),

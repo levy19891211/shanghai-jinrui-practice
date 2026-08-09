@@ -85,7 +85,7 @@ export default function TeacherPapersPage() {
   const [detailBusy, setDetailBusy] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
-  const [settingsDraft, setSettingsDraft] = useState<{ subject: string; mode: string; durationMin: string } | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
 
   const load = useCallback(async () => {
     const d = await api.get<{ list: PaperRow[] }>("/papers");
@@ -190,7 +190,7 @@ export default function TeacherPapersPage() {
       const d = await api.get<PaperManageDetail>(`/papers/${id}/manage`);
       setDetail(d);
       setTitleDraft(d.title);
-      setSettingsDraft({ subject: d.subject, mode: d.mode, durationMin: String(d.durationMin ?? "") });
+      setSettingsDraft({ subject: d.subject, sourceType: d.sourceType ?? "", mode: d.mode, durationMin: String(d.durationMin ?? "") });
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取试卷失败");
     } finally {
@@ -198,12 +198,15 @@ export default function TeacherPapersPage() {
     }
   }
 
-  // 保存详情抽屉里的科目/模式/限时修改
+  // 保存详情抽屉里的科目/题源/模式/限时修改
   async function saveSettings() {
     if (!detail || !settingsDraft) return;
     setError("");
     const body: Record<string, unknown> = {};
     if (settingsDraft.subject && settingsDraft.subject !== detail.subject) body.subject = settingsDraft.subject;
+    if (settingsDraft.sourceType !== (detail.sourceType ?? "")) {
+      body.sourceType = settingsDraft.sourceType || null;
+    }
     if (settingsDraft.mode !== detail.mode) body.mode = settingsDraft.mode;
     const dm = Number(settingsDraft.durationMin);
     if (settingsDraft.mode === "EXAM" && !(dm > 0)) {
@@ -474,7 +477,7 @@ export default function TeacherPapersPage() {
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                   <th className="whitespace-nowrap px-4 py-3 font-medium">试卷名称</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">科目</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">科目/类型</th>
                   <th className="whitespace-nowrap px-4 py-3 font-medium">模式</th>
                   <th className="whitespace-nowrap px-4 py-3 font-medium">题数</th>
                   <th className="whitespace-nowrap px-4 py-3 font-medium">审核进度</th>
@@ -507,9 +510,16 @@ export default function TeacherPapersPage() {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
-                          {p.subject}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-600">
+                            {p.subject}
+                          </span>
+                          {p.sourceType && (
+                            <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                              {p.sourceType}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {p.mode === "EXAM" ? `模拟考 ${p.durationMin ?? "?"}min` : "练习"}
@@ -613,7 +623,10 @@ export default function TeacherPapersPage() {
                       )}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{detail.subject}</span>
+                      <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{detail.subject}</span>
+                      {detail.sourceType && (
+                        <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{detail.sourceType}</span>
+                      )}
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
                         {detail.mode === "EXAM" ? `模拟考 ${detail.durationMin ?? "?"} 分钟` : "练习"}
                       </span>
@@ -630,8 +643,9 @@ export default function TeacherPapersPage() {
                     {settingsDraft && (
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-slate-500">试卷设置(可修改名称/科目/模式)</span>
+                          <span className="text-xs font-medium text-slate-500">试卷设置(可修改名称/科目/题源/模式)</span>
                           {(settingsDraft.subject !== detail.subject ||
+                            settingsDraft.sourceType !== (detail.sourceType ?? "") ||
                             settingsDraft.mode !== detail.mode ||
                             Number(settingsDraft.durationMin) !== (detail.durationMin ?? 0)) && (
                             <button
@@ -643,15 +657,25 @@ export default function TeacherPapersPage() {
                             </button>
                           )}
                         </div>
-                        <div className="mt-2 grid grid-cols-3 gap-2">
+                        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                           <select
                             value={settingsDraft.subject}
                             onChange={(e) => setSettingsDraft({ ...settingsDraft, subject: e.target.value })}
                             className="ui-select h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
                           >
-                            {["TMUA", "ESAT", "数学", "物理", "化学", "生物"].map((s) => (
+                            {["数学", "物理", "化学", "生物"].map((s) => (
                               <option key={s} value={s}>{s}</option>
                             ))}
+                          </select>
+                          <select
+                            value={settingsDraft.sourceType}
+                            onChange={(e) => setSettingsDraft({ ...settingsDraft, sourceType: e.target.value })}
+                            className="ui-select h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
+                          >
+                            <option value="">无题源</option>
+                            <option value="TMUA">TMUA</option>
+                            <option value="ESAT">ESAT</option>
+                            <option value="NSAA">NSAA</option>
                           </select>
                           <select
                             value={settingsDraft.mode}
