@@ -77,6 +77,9 @@ export default function TeacherPage() {
   const [kpFilter, setKpFilter] = useState("");
   const [diffFilter, setDiffFilter] = useState("");
   const [sortBy, setSortBy] = useState("createdAt_desc");
+  // 搜题:输入框即时值 + 已应用的关键词(搜索题干包含该字段的题目)
+  const [searchText, setSearchText] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -215,6 +218,7 @@ export default function TeacherPage() {
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ pageSize: "50" });
     if (statusFilter) qs.set("status", statusFilter);
+    if (searchQuery) qs.set("q", searchQuery);
     if (paperId) qs.set("paperId", paperId);
     // 学科 Tab:数学 tab 包含 TMUA(数学思维考试);其余学科各自
     if (subjectTab) {
@@ -231,7 +235,7 @@ export default function TeacherPage() {
     const d = await api.get<QuestionList>(`/questions?${qs.toString()}`);
     setList(d.list);
     setTotal(d.total);
-  }, [statusFilter, paperId, subjectTab, kpFilter, diffFilter, sortBy]);
+  }, [statusFilter, searchQuery, paperId, subjectTab, kpFilter, diffFilter, sortBy]);
 
   // 加载知识点库(供筛选下拉)
   useEffect(() => {
@@ -551,6 +555,32 @@ export default function TeacherPage() {
 
       {/* 筛选工具栏:统一控件高度 */}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        {/* 搜题:按题干关键词搜索 */}
+        <input
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") setSearchQuery(searchText.trim()); }}
+          placeholder="搜索题干关键词…"
+          className="h-9 w-56 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500"
+        />
+        <button
+          onClick={() => setSearchQuery(searchText.trim())}
+          className="h-9 rounded-lg bg-slate-700 px-3 text-sm font-medium text-white hover:bg-slate-800"
+        >
+          搜索
+        </button>
+        {searchQuery && (
+          <span className="inline-flex h-9 max-w-[240px] items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 text-sm text-indigo-600">
+            <span className="truncate" title={`搜索题干包含:「${searchQuery}」`}>「{searchQuery}」</span>
+            <button
+              onClick={() => { setSearchQuery(""); setSearchText(""); }}
+              className="shrink-0 font-bold text-indigo-400 hover:text-indigo-700"
+              aria-label="清除搜索"
+            >
+              ✕
+            </button>
+          </span>
+        )}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select">
           <option value="">全部状态</option>
           <option value="DRAFT">草稿</option>

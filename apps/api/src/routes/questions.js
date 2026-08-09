@@ -400,6 +400,9 @@ function buildWhere(query, user) {
     if (subs.length) where.subject = { in: subs };
   }
   if (query.topic) where.topic = { contains: query.topic };
+  // 搜题:按题干关键词搜索(含公式/LaTeX 原文片段)
+  const q = String(query.q || "").trim();
+  if (q) where.stem = { contains: q };
   if (query.difficulty) where.difficulty = Number(query.difficulty);
   if (query.paper) where.paper = query.paper;
   if (query.knowledgePointId) where.topicIds = { contains: String(query.knowledgePointId) };
