@@ -9,7 +9,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { extractQuestionsFromPdfPages, isVisionConfigured } from "./vision.js";
+import { extractQuestionsFromPdfPages, extractAnswersFromPdfPages, isVisionConfigured } from "./vision.js";
 import { finalizeRow } from "./parse-import-file.js";
 
 const execFileAsync = promisify(execFile);
@@ -195,4 +195,22 @@ export async function parsePdf(filename, buffer) {
     throw new Error("视觉模型未从 PDF 解析出有效的选择题(可能是纯文本试卷、或公式无法识别)");
   }
   return rows;
+}
+
+// 解析独立的答案文件(PDF):返回按题号升序的 [{ question, answer }]
+export async function parseAnswerPdf(filename, buffer) {
+  if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
+  const pages = await rasterize(buffer);
+  const raws = await extractAnswersFromPdfPages(pages);
+  const map = new Map();
+  for (const r of raws) {
+    const q = parseInt(String(r?.question ?? "").replace(/^0+/, ""), 10);
+    const a = String(r?.answer ?? "").trim();
+    if (Number.isFinite(q) && q > 0 && a && !map.has(q)) map.set(q, a);
+  }
+  const out = [...map.entries()].sort((x, y) => x[0] - y[0]).map(([question, answer]) => ({ question, answer }));
+  if (!out.length) {
+    throw new Error("视觉模型未从答案文件中识别出答案表(请确认答案文件是包含题号+答案的表格/列表)");
+  }
+  return out;
 }

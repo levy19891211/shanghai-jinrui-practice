@@ -50,7 +50,7 @@ const SYSTEM_PROMPT = `你是一个考试题库录入助手。用户会给你一
 - 不要使用 \\text{}、\\emph{}、\\textit{}、\\textbf{}、\\mathit{} 等字体控制命令;化学式统一用 $\\mathrm{...}$ 形式。
 - 答案(answer)必须从试卷图片中明确给出的答案 key、答案页或解析中读取,不要自行计算;如果图片中没有任何答案/解析信息,answer 填空字符串,不要猜。
 - **答案页识别(关键)**:许多试卷的最后几页会单独列出答案表,常见两种格式——
-  1. **表格形式**(如 NSAA / A-Level 附录答案):每行形如 `Q21 A`、`22. B`、`Question 23 C` 或带学科列 `Q21 A PHYS`。**忽略学科列(若有),只取字母列**作为该题答案;
+  1. **表格形式**(如 NSAA / A-Level 附录答案):每行形如 Q21 A、22. B、Question 23 C,或带学科列 Q21 A PHYS。**忽略学科列(若有),只取字母列**作为该题答案;
   2. **逐题列答案**(部分试卷直接接在题目页下方):按题号取字母。
   请逐行扫描答案页/表格,把每个题号对应的字母填到对应题的 answer 字段。**题号 Q21 应对应第 21 题**(不是 PDF 文件序号)。多选题写字母如 "A, C"。
 - 只提取选择题;非选择题(简答/证明/填空)若无法用选项表示则跳过。
@@ -117,6 +117,69 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = 
         ],
         temperature: 0.1,
         max_tokens: 16000,
+      }),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => "");
+      throw new Error(`视觉模型请求失败 ${resp.status}: ${t.slice(0, 300)}`);
+    }
+    const json = await resp.json();
+    const text = json?.choices?.[0]?.message?.content || "";
+    all.push(...parseJsonArray(text));
+  }
+  return all;
+}
+
+// ——— 独立答案文件解析(题目 PDF 与答案 PDF 分开导入时使用) ———
+const ANSWER_PROMPT = `你是一个考试答案页识别助手。用户会给你一份考试的答案页/答案表图片(可能是表格形式,如 "Q21 A"、"21. B"、"Question 23 C",有时还带学科列 "Q21 A PHYS")。
+请逐行提取每一题的题号与答案,严格按以下 JSON 数组格式输出,不要输出任何额外说明、不要使用 markdown 代码围栏,只输出可直接解析的 JSON 数组:
+
+[
+  {"question": 21, "answer": "G"},
+  {"question": 22, "answer": "F"}
+]
+
+规则:
+- question 为题号(忽略 Q/Question 前缀,如 Q21 → 21;带零补位如 021 也归一为 21)。
+- answer 为答案字母(A-H)或选项文本;多选题写字母如 "A, C";无法识别的行跳过。
+- 若表格带学科列(如 "Q21 A PHYS" / "Q21 A Maths"),忽略学科列,只取字母列。
+- 若某页不是答案表或没有可识别答案,输出 []。
+- 确保输出的 JSON 可被直接解析。`;
+
+export async function extractAnswersFromPdfPages(pages, { maxPagesPerCall } = {}) {
+  const perCall = Math.max(1, Math.min(16, Number(maxPagesPerCall) || Number(process.env.VISION_MAX_PAGES) || 4));
+  if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
+  const chunks = [];
+  for (let i = 0; i < pages.length; i += perCall) {
+    chunks.push(pages.slice(i, i + perCall));
+  }
+  const all = [];
+  for (const chunk of chunks) {
+    const content = [
+      { type: "text", text: "请从以下图片中识别答案表/答案页,严格按系统提示要求的 JSON 数组格式输出题号与答案。" },
+    ];
+    let textHint = "";
+    chunk.forEach((p, idx) => {
+      content.push({ type: "image_url", image_url: { url: `data:image/png;base64,${p.image}` } });
+      if (p.text) textHint += `\n[第 ${idx + 1} 页纯文本参考]\n${p.text}\n`;
+    });
+    if (textHint) {
+      content.push({ type: "text", text: "各页纯文本(仅供参考,以图片为准):" + textHint });
+    }
+    const resp = await fetch(`${baseUrl()}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.VISION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: model(),
+        messages: [
+          { role: "system", content: ANSWER_PROMPT },
+          { role: "user", content },
+        ],
+        temperature: 0.1,
+        max_tokens: 8000,
       }),
     });
     if (!resp.ok) {

@@ -10,6 +10,7 @@ import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile } from "../lib/parse-import-file.js";
+import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, sourceType: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
@@ -387,6 +388,94 @@ router.post(
       res,
       { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created },
       `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
+    );
+  })
+);
+
+// POST /api/questions/import-pdf — PDF 双文件导入(题目文件 + 可选答案文件)
+// body: { filename, data, answerFilename?, answerData? } — base64 编码
+//   题目文件:必填,走 parsePdf(视觉模型提取题目,答案页也读但不可靠时留空)
+//   答案文件:可选,走 parseAnswerPdf(视觉模型识别答案表 Q21 A / 21. B / Q21 A PHYS → 忽略学科列取字母)
+//   匹配规则:答案表按题号升序,与题目入库顺序一一对应(第 i 个答案 → 第 i 题)
+router.post(
+  "/import-pdf",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { filename, data, answerFilename, answerData } = req.body || {};
+    if (!filename || !data) return fail(res, 400, "请提供题目文件 filename 与 data(base64)");
+    const toBuf = (b64) => {
+      const s = String(b64).includes(",") ? String(b64).split(",")[1] : String(b64);
+      return Buffer.from(s, "base64");
+    };
+    let buf;
+    try {
+      buf = toBuf(data);
+    } catch {
+      return fail(res, 400, "题目文件 data 不是合法的 base64");
+    }
+    if (buf.length === 0) return fail(res, 400, "题目文件内容为空");
+    if (buf.length > 15 * 1024 * 1024) return fail(res, 400, "题目文件过大(上限 15MB)");
+    let ansBuf = null;
+    if (answerData) {
+      try {
+        ansBuf = toBuf(answerData);
+      } catch {
+        return fail(res, 400, "答案文件 data 不是合法的 base64");
+      }
+      if (ansBuf.length === 0) ansBuf = null;
+      if (ansBuf && ansBuf.length > 15 * 1024 * 1024) return fail(res, 400, "答案文件过大(上限 15MB)");
+    }
+
+    let rows;
+    try {
+      rows = await parsePdf(filename, buf);
+    } catch (e) {
+      if (e.message === "VISION_NOT_CONFIGURED") {
+        return fail(res, 400, "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API");
+      }
+      return fail(res, 400, "题目文件解析失败:" + e.message);
+    }
+    if (!rows.length) return fail(res, 400, "未从题目文件解析出任何题目");
+
+    // 答案文件:提取 {question, answer} 并按题号升序,与题目入库顺序一一对应
+    let ansMatched = 0;
+    if (ansBuf) {
+      let answers = [];
+      try {
+        answers = await parseAnswerPdf(answerFilename || "answers.pdf", ansBuf);
+      } catch (e) {
+        return fail(res, 400, "答案文件解析失败:" + e.message);
+      }
+      for (let i = 0; i < Math.min(rows.length, answers.length); i++) {
+        if (answers[i] && answers[i].answer) {
+          rows[i].answer = answers[i].answer;
+          ansMatched++;
+        }
+      }
+    }
+
+    const { imported, errors, created } = await importRows(req, rows);
+
+    let papers = [];
+    const autoPaper = req.body?.autoPaper !== false;
+    if (autoPaper && created.length) {
+      papers = await syncAutoPaperSets(created, {
+        title: req.body?.paperTitle,
+        mode: req.body?.paperMode,
+        durationMin: req.body?.paperDurationMin,
+      });
+    }
+    const ansMsg = ansBuf
+      ? `;答案文件匹配 ${ansMatched} 题${ansMatched < rows.length ? `(${rows.length - ansMatched} 题未匹配,需审核页补充)` : ""}`
+      : ";未提供答案文件,答案留空,需在审核页手动补充";
+    const paperMsg = papers.length
+      ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
+      : "";
+    ok(
+      res,
+      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created, answerMatched: ansMatched },
+      `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${ansMsg}${paperMsg}`
     );
   })
 );

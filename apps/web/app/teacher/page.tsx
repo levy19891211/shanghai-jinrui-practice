@@ -103,15 +103,21 @@ export default function TeacherPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [importOpen, setImportOpen] = useState(false);
-  const [importMode, setImportMode] = useState<"json" | "csv" | "file">("json");
+  const [importMode, setImportMode] = useState<"json" | "csv" | "file" | "pdf">("json");
   const [importText, setImportText] = useState("");
-  const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number } | null>(null);
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
   // 文件批量导入(Excel/Word)
   const fileImportRef = useRef<HTMLInputElement>(null);
   const [importFileName, setImportFileName] = useState("");
   const [importUploading, setImportUploading] = useState(false);
+  // PDF 双文件导入(题目 + 可选答案)
+  const pdfFileRef = useRef<HTMLInputElement>(null);
+  const pdfAnsFileRef = useRef<HTMLInputElement>(null);
+  const [pdfFileName, setPdfFileName] = useState("");
+  const [pdfAnsFileName, setPdfAnsFileName] = useState("");
+  const [pdfUploading, setPdfUploading] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewQ, setReviewQ] = useState<Question | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -384,6 +390,44 @@ export default function TeacherPage() {
       setImportError(err?.message || "导入失败(请检查文件格式/模板)");
     } finally {
       setImportUploading(false);
+    }
+  }
+
+  // PDF 双文件导入:题目文件(必填) + 答案文件(可选),答案按题号顺序匹配
+  async function doImportPdf() {
+    const file = pdfFileRef.current?.files?.[0];
+    if (!file) {
+      setImportError("请先选择题目文件(PDF)");
+      return;
+    }
+    const ansFile = pdfAnsFileRef.current?.files?.[0] || null;
+    setImportError("");
+    setImportResult(null);
+    setPdfUploading(true);
+    try {
+      const read = (f: File) =>
+        new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(f);
+        });
+      const data = await read(file);
+      const answerData = ansFile ? await read(ansFile) : undefined;
+      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number }>(
+        "/questions/import-pdf",
+        { filename: file.name, data, answerFilename: ansFile?.name, answerData }
+      );
+      setImportResult(r);
+      setPdfFileName("");
+      setPdfAnsFileName("");
+      if (pdfFileRef.current) pdfFileRef.current.value = "";
+      if (pdfAnsFileRef.current) pdfAnsFileRef.current.value = "";
+      await load();
+    } catch (err: any) {
+      setImportError(err?.message || "导入失败(请检查 PDF 文件/视觉模型配置)");
+    } finally {
+      setPdfUploading(false);
     }
   }
 
@@ -776,14 +820,14 @@ export default function TeacherPage() {
               <h2 className="text-lg font-bold">批量导入题目</h2>
               <button onClick={() => setImportOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
-            <div className="mt-4 flex gap-2">
-              {(["json", "csv", "file"] as const).map((m) => (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(["json", "csv", "file", "pdf"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setImportMode(m)}
                   className={`rounded-lg px-4 py-1.5 text-sm ${importMode === m ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}
                 >
-                  {m === "json" ? "JSON 数组" : m === "csv" ? "CSV 文本" : "上传文件"}
+                  {m === "json" ? "JSON 数组" : m === "csv" ? "CSV 文本" : m === "file" ? "上传文件" : "PDF 双文件"}
                 </button>
               ))}
             </div>
@@ -807,7 +851,7 @@ export default function TeacherPage() {
                 />
                 <p className="mt-2 text-xs text-slate-400">首行为表头;options 用分号分隔;含逗号的字段用双引号包裹</p>
               </>
-            ) : (
+            ) : importMode === "file" ? (
               <>
                 <div className="mt-3 rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-center">
                   <input
@@ -853,7 +897,52 @@ Answer: B
                   <p>answer 写字母(A/B/C/D)或选项文本均可,系统会自动对齐。</p>
                   <p className="mt-2 font-semibold text-slate-700">PDF 导入:</p>
                   <p>系统会把 PDF 逐页渲染成图片,交给视觉模型读取渲染后的数学公式并自动转成题目(公式不需手敲 LaTeX)。PDF 导入需在服务器配置视觉模型(VISION_API_KEY 等),未配置时会提示。</p>
-                  <p className="text-amber-600">强烈建议把「试卷题目」和「答案 Key/Mark Scheme」合并成一个 PDF 后上传;这样视觉模型能同时提取正确答案和解析。如果只上传题目,答案会留空,需教师在审核页手动补充。</p>
+                  <p className="text-amber-600">若题目 PDF 与答案不在同一文件,请使用「PDF 双文件」标签页分别上传题目与答案文件;答案文件可识别 Q21 A / 21. B / Q21 A PHYS 等答案表格式。</p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* PDF 双文件导入:题目文件(必填) + 答案文件(可选) */}
+                <div className="mt-3 space-y-3 rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50/30 px-4 py-5">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">题目文件 (PDF,必填)</p>
+                    <input
+                      ref={pdfFileRef}
+                      type="file"
+                      accept=".pdf"
+                      className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700"
+                      onChange={(e) => setPdfFileName(e.target.files?.[0]?.name ?? "")}
+                    />
+                    {pdfFileName && <p className="mt-1 text-xs text-slate-500">已选题目:{pdfFileName}</p>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">
+                      答案文件 (PDF,可选)
+                      <span className="ml-1 text-xs font-normal text-slate-400">答案表如 Q21 A / 21. B / Q21 A PHYS,按题号顺序匹配;不上传则答案留空待审核页补</span>
+                    </p>
+                    <input
+                      ref={pdfAnsFileRef}
+                      type="file"
+                      accept=".pdf"
+                      className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-700"
+                      onChange={(e) => setPdfAnsFileName(e.target.files?.[0]?.name ?? "")}
+                    />
+                    {pdfAnsFileName && <p className="mt-1 text-xs text-slate-500">已选答案:{pdfAnsFileName}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={doImportPdf}
+                    disabled={pdfUploading}
+                    className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {pdfUploading ? "导入中(含视觉模型解析,约 1-2 分钟)..." : "上传并导入"}
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+                  <p className="font-semibold text-slate-700">PDF 双文件导入说明:</p>
+                  <p>· 题目文件与答案文件分开上传,视觉模型分别解析。</p>
+                  <p>· 答案文件识别「题号+答案字母」表格(可带学科列,自动忽略),按题号升序与题目一一对应。</p>
+                  <p>· 仅上传题目文件时,答案留空(审核页「缺答案」提示,补全后才能发布)。</p>
                 </div>
               </>
             )}
@@ -870,7 +959,7 @@ Answer: B
             )}
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setImportOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
-              {importMode !== "file" && (
+              {importMode !== "file" && importMode !== "pdf" && (
                 <button onClick={doImport} disabled={importing} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
                   {importing ? "导入中..." : "开始导入"}
                 </button>
