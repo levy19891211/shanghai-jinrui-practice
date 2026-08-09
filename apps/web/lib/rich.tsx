@@ -106,8 +106,9 @@ export function renderRich(text: string | null | undefined, opts?: { smart?: boo
         );
       default:
         // 普通文本:智能识别其中的数学片段并渲染为公式(解析类长文本可用 opts.smart=false 关闭)
-        if (opts?.smart === false) return <span key={key++}>{t.text}</span>;
-        return <span key={key++}>{smartMath(t.text!)}</span>;
+        // whiteSpace-pre-wrap 保留 \n 换行 — 否则多个公式挤同一行,序号/标题也挤在一起
+        if (opts?.smart === false) return <span key={key++} className="whitespace-pre-wrap">{t.text}</span>;
+        return <span key={key++} className="whitespace-pre-wrap">{smartMath(t.text!)}</span>;
     }
   });
 }
@@ -263,7 +264,7 @@ export function smartMath(text: string): React.ReactNode[] {
   };
   const flushText = () => {
     if (textBuf.length) {
-      parts.push(<span key={key++}>{textBuf.join("")}</span>);
+      parts.push(<span key={key++} className="whitespace-pre-wrap">{textBuf.join("")}</span>);
       textBuf = [];
     }
   };
