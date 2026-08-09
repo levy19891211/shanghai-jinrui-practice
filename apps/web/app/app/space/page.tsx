@@ -63,6 +63,7 @@ export default function PersonalSpacePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const [subjectTab, setSubjectTab] = useState("");
   const [openSolutions, setOpenSolutions] = useState<Set<string>>(new Set());
@@ -94,10 +95,36 @@ export default function PersonalSpacePage() {
     })();
   }, []);
 
-  function fmtDue(s?: string | null) {
+  // 存在 24 小时内截止的作业时,每秒刷新倒计时
+  useEffect(() => {
+    const hasUrgent = assignments.some((a) => {
+      if (!a.dueAt) return false;
+      const ms = new Date(a.dueAt).getTime() - Date.now();
+      return ms > 0 && ms <= URGENT_MS;
+    });
+    if (!hasUrgent) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [assignments]);
+
+  const URGENT_MS = 24 * 3600 * 1000;
+
+  function fmtDueStr(s?: string | null) {
     if (!s) return "不限时";
     const d = new Date(s);
-    return `DDL ${d.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+    return d.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+  function countdownText(dueAt: string, t: number) {
+    let ms = new Date(dueAt).getTime() - t;
+    if (ms < 0) ms = 0;
+    const total = Math.floor(ms / 1000);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (d > 0) return `剩 ${d} 天 ${h} 时 ${m} 分`;
+    if (h > 0) return `剩 ${h} 时 ${m} 分 ${s} 秒`;
+    return `剩 ${m} 分 ${s} 秒`;
   }
   function statusLabel(a: Assignment) {
     const overdue = a.dueAt && new Date(a.dueAt).getTime() < Date.now();
@@ -154,6 +181,84 @@ export default function PersonalSpacePage() {
     subjectSessions.forEach((s) => m.set(s.id, s));
     return m;
   }, [subjectSessions]);
+
+  // 待完成默认按 DDL 由近到远排序(无限时排最后)
+  const pendingSorted = useMemo(
+    () =>
+      [...pendingAssigns].sort((a, b) => {
+        const ta = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+        const tb = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+        return ta - tb;
+      }),
+    [pendingAssigns],
+  );
+  // 24 小时内(且未过期)的紧急作业,单独成区
+  const urgentAssigns = useMemo(
+    () => pendingSorted.filter((a) => a.dueAt && (() => {
+      const ms = new Date(a.dueAt).getTime() - now;
+      return ms > 0 && ms <= URGENT_MS;
+    })()),
+    [pendingSorted, now],
+  );
+  const otherPending = useMemo(() => pendingSorted.filter((a) => !urgentAssigns.includes(a)), [pendingSorted, urgentAssigns]);
+
+  // 渲染单张作业卡(urgent=true 走红色紧急样式 + 倒计时)
+  function renderAssignCard(a: Assignment, urgent: boolean) {
+    const overdue = a.dueAt ? new Date(a.dueAt).getTime() <= now : false;
+    const canStart = a.status !== "SUBMITTED" && !(a.status === "EXPIRED" || overdue);
+    const dueStr = a.dueAt ? fmtDueStr(a.dueAt) : "不限时";
+    const dueChip = (() => {
+      if (!a.dueAt) return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">不限时</span>;
+      if (overdue) return <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">已过期 {dueStr}</span>;
+      if (urgent) return <span className="rounded-md bg-red-600 px-2 py-0.5 text-xs font-bold text-white">⏰ {countdownText(a.dueAt, now)}</span>;
+      return <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">DDL {dueStr}</span>;
+    })();
+    const cardCls =
+      "flex items-center justify-between gap-4 rounded-2xl border p-4 shadow-sm transition " +
+      (urgent && canStart
+        ? "cursor-pointer border-red-300 bg-white hover:border-red-400 hover:bg-red-50/50"
+        : canStart
+        ? "cursor-pointer border-indigo-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
+        : "border-slate-200 bg-slate-50");
+    const inner = (
+      <>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            <span className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${a.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" : overdue ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"}`}>{statusLabel(a)}</span>
+            {a.isLanguage && a.paper?.examType && (
+              <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[a.paper.skill || "FULL"] || "#666" }}>
+                {EXAM_LABEL[a.paper.examType] || a.paper.examType}·{SKILL_LABEL[a.paper.skill || "FULL"] || a.paper.skill}
+              </span>
+            )}
+            {!a.isLanguage && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{a.mode === "EXAM" ? "模考" : "练习"}</span>}
+            {dueChip}
+          </div>
+          <p className="truncate text-sm font-semibold text-slate-800">{a.title}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {a.paper?.title ?? "试卷"}
+            {a.mode === "EXAM" && a.paper?.durationMin ? ` · 限时 ${a.paper.durationMin} 分钟` : ""}
+          </p>
+          {a.note && <p className="mt-1 truncate text-xs text-slate-400">备注: {a.note}</p>}
+        </div>
+        {busyId === a.id ? (
+          <span className="shrink-0 text-sm font-medium text-indigo-400">开卷中...</span>
+        ) : canStart ? (
+          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-indigo-600">
+            {a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
+          </span>
+        ) : null}
+      </>
+    );
+    return canStart ? (
+      <button key={a.id} onClick={() => startAssignment(a)} disabled={!!busyId} className={cardCls}>
+        {inner}
+      </button>
+    ) : (
+      <div key={a.id} className={cardCls}>
+        {inner}
+      </div>
+    );
+  }
 
   // 成绩趋势(学科会话,有得分)
   const trendData = subjectSessions
@@ -218,6 +323,19 @@ export default function PersonalSpacePage() {
 
       {!loading && tab === "assignments" && (
         <div className="space-y-6">
+          {/* 紧急区 · 24 小时内截止 */}
+          {urgentAssigns.length > 0 && (
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-red-600">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 text-sm">⏰</span>
+                紧急 · 24 小时内截止 ({urgentAssigns.length})
+              </h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {urgentAssigns.map((a) => renderAssignCard(a, true))}
+              </div>
+            </section>
+          )}
+
           {/* 待完成/进行中 */}
           <section>
             <h2 className="mb-3 text-base font-bold text-slate-700">📌 待完成作业 ({pendingAssigns.length})</h2>
@@ -225,52 +343,7 @@ export default function PersonalSpacePage() {
               <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的作业,去练习区放松一下吧~</p>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
-                {pendingAssigns.map((a) => {
-                  const overdue = a.dueAt && new Date(a.dueAt).getTime() < Date.now();
-                  const canStart = a.status !== "SUBMITTED" && !(a.status === "EXPIRED" || overdue);
-                  const cardCls =
-                    "flex items-center justify-between gap-4 rounded-2xl border p-4 shadow-sm transition " +
-                    (canStart
-                      ? "cursor-pointer border-indigo-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
-                      : "border-slate-200 bg-slate-50");
-                  const inner = (
-                    <>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                          <span className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${a.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" : overdue ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"}`}>{statusLabel(a)}</span>
-                          {a.isLanguage && a.paper?.examType && (
-                            <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[a.paper.skill || "FULL"] || "#666" }}>
-                              {EXAM_LABEL[a.paper.examType] || a.paper.examType}·{SKILL_LABEL[a.paper.skill || "FULL"] || a.paper.skill}
-                            </span>
-                          )}
-                          {!a.isLanguage && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{a.mode === "EXAM" ? "模考" : "练习"}</span>}
-                        </div>
-                        <p className="truncate text-sm font-semibold text-slate-800">{a.title}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {a.paper?.title ?? "试卷"}
-                          {a.mode === "EXAM" && a.paper?.durationMin ? ` · 限时 ${a.paper.durationMin} 分钟` : ""} · {fmtDue(a.dueAt)}
-                        </p>
-                        {a.note && <p className="mt-1 truncate text-xs text-slate-400">备注: {a.note}</p>}
-                      </div>
-                      {busyId === a.id ? (
-                        <span className="shrink-0 text-sm font-medium text-indigo-400">开卷中...</span>
-                      ) : canStart ? (
-                        <span className="shrink-0 whitespace-nowrap text-sm font-medium text-indigo-600">
-                          {a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
-                        </span>
-                      ) : null}
-                    </>
-                  );
-                  return canStart ? (
-                    <button key={a.id} onClick={() => startAssignment(a)} disabled={!!busyId} className={cardCls}>
-                      {inner}
-                    </button>
-                  ) : (
-                    <div key={a.id} className={cardCls}>
-                      {inner}
-                    </div>
-                  );
-                })}
+                {otherPending.map((a) => renderAssignCard(a, false))}
               </div>
             )}
           </section>
