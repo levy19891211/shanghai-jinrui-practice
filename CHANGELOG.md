@@ -1,5 +1,10 @@
 # 版本历史
 
+## V2.3.22 (2026-08-09) — 试卷管理按学科筛选
+- **功能**:试卷管理页新增**学科 Tab 筛选**(全部/数学/物理/化学/生物,与题库的学科 Tab 一致),点击即过滤出该学科下的试卷。
+- **实现**:后端 `GET /api/papers` 支持 `?subject=` 过滤(仅老师/管理员;学生端只看已开放卷不受影响);前端 `papers/page.tsx` 加 `subjectFilter` state + 学科 Tab,与状态 Tab(全部/可作答/待审核/套题自动卷/已下架)可叠加使用。
+- **验证**:tsc 通过、node --check 通过。
+
 ## V2.3.21 (2026-08-09) — 修复 pmatrix 公式被误判为文本外露 + 53 题 answer 存选项内容改字母
 - **问题1(题干显示)**:2020 TMUA Q10 题干中 `$\begin{pmatrix} 3 \\ -5 \end{pmatrix}$` 以 **LaTeX 源码原样外露**(`\begin{pmatrix}...\end{pmatrix}` 字样可见)。根因:`looksLikeTextInDollars` 把 `begin`/`end`/`pmatrix` 当普通英文单词(≥2 个),把整个 `$...$` 误判为"数据残留文本"退回文本。
 - **修复1**:`rich.tsx` `looksLikeTextInDollars` 先剔除 LaTeX 命令(`\begin` 等 `\\[a-zA-Z]+`)与环境名(`{pmatrix}` 等 `{[a-zA-Z]+}`)再统计英文词——`\begin{pmatrix}` 不再被误判。8 用例验证 PASS(含 pmatrix/frac/sqrt/化学式/英文句子/零散 $)。

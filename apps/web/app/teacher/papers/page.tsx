@@ -82,6 +82,8 @@ export default function TeacherPapersPage() {
   const [generating, setGenerating] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [filter, setFilter] = useState<"ALL" | "READY" | "DRAFT" | "ARCHIVED" | "AUTO_SET">("ALL");
+  // 学科筛选(空 = 全部,与题库的学科 Tab 一致)
+  const [subjectFilter, setSubjectFilter] = useState("");
 
   // 试卷详情抽屉
   const [detail, setDetail] = useState<PaperManageDetail | null>(null);
@@ -102,9 +104,12 @@ export default function TeacherPapersPage() {
   const [addSaving, setAddSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const d = await api.get<{ list: PaperRow[] }>("/papers");
+    const qs = new URLSearchParams();
+    if (subjectFilter) qs.set("subject", subjectFilter);
+    const q = qs.toString();
+    const d = await api.get<{ list: PaperRow[] }>(`/papers${q ? `?${q}` : ""}`);
     setList(d.list);
-  }, []);
+  }, [subjectFilter]);
 
   const loadFacets = useCallback(async (subject: string) => {
     const d = await api.get<Facets>(`/papers/facets?subject=${encodeURIComponent(subject)}`);
@@ -562,6 +567,21 @@ export default function TeacherPapersPage() {
           </button>
         </div>
       )}
+
+      {/* 学科筛选(与题库一致:全部/数学/物理/化学/生物) */}
+      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        {[{ v: "", l: "全部" }, { v: "数学", l: "数学" }, { v: "物理", l: "物理" }, { v: "化学", l: "化学" }, { v: "生物", l: "生物" }].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setSubjectFilter(t.v)}
+            className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+              subjectFilter === t.v ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap gap-2">

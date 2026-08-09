@@ -115,6 +115,8 @@ router.get(
     const where = isTeacher ? {} : { status: "READY" };
     if (isTeacher && req.query.status) where.status = String(req.query.status);
     if (isTeacher && req.query.origin) where.origin = String(req.query.origin);
+    // 按学科筛选(老师可用;学生端默认只看已开放卷,不受此影响)
+    if (isTeacher && req.query.subject) where.subject = String(req.query.subject);
     const list = await prisma.paper.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
 
     if (!isTeacher) {
