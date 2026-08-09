@@ -491,7 +491,7 @@ export default function PersonalSpacePage() {
                 <MetricCard label="总答题数" value={`${totalAnswered}`} sub="道" />
                 <MetricCard label="总体正确率" value={`${overallRate}%`} sub="全部作答" accent />
                 <MetricCard label="覆盖学科" value={`${bySubject.length}`} sub="个科目" />
-                <MetricCard label="薄弱知识点" value={`${weakTopics.filter((t) => t.correctRate < 70).length}`} sub="正确率<70%" warn={weakTopics.some((t) => t.correctRate < 70)} />
+                <MetricCard label="薄弱项" value={`${weakTopics.filter((t) => t.correctRate < 70).length}`} sub="正确率<70%" warn={weakTopics.some((t) => t.correctRate < 70)} />
               </div>
 
               {/* 学科表现 */}
@@ -574,7 +574,7 @@ export default function PersonalSpacePage() {
                 </div>
               )}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-sm font-medium text-slate-700">薄弱知识点(按正确率升序)</h2>
+                <h2 className="text-sm font-medium text-slate-700">薄弱项(按正确率升序)</h2>
                 <p className="mt-1 text-xs text-slate-400">正确率低于 70% 的知识点建议重点练习。</p>
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   {weakTopics.map((t) => (
