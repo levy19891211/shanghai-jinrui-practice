@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import Select from "@/components/Select";
 
 type LangQ = {
   id: string;
@@ -174,25 +175,17 @@ function QuestionForm({ initial, defaults, onSaved, onClose }: { initial?: LangQ
       <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-bold text-slate-800">{initial ? "编辑题目" : "新增题目"}</h3>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <label className="text-xs text-slate-500">考试类型
-            <select className={col} value={f.examType} onChange={(e) => set("examType", e.target.value)}>
-              {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-            </select>
+          <label className="block text-xs text-slate-500">考试类型
+            <Select value={f.examType} onChange={(v) => set("examType", v)} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
           </label>
-          <label className="text-xs text-slate-500">技能
-            <select className={col} value={f.skill} onChange={(e) => { set("skill", e.target.value); set("qType", QTYPES[e.target.value]?.[0] || "SINGLE_CHOICE"); }}>
-              {SKILLS.map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
-            </select>
+          <label className="block text-xs text-slate-500">技能
+            <Select value={f.skill} onChange={(v) => { set("skill", v); set("qType", QTYPES[v]?.[0] || "SINGLE_CHOICE"); }} options={SKILLS.map((s) => ({ value: s, label: SKILL_LABEL[s] }))} />
           </label>
-          <label className="text-xs text-slate-500">题型
-            <select className={col} value={f.qType} onChange={(e) => set("qType", e.target.value)}>
-              {(QTYPES[f.skill] || []).map((t) => <option key={t} value={t}>{QTYPE_LABEL[t]}</option>)}
-            </select>
+          <label className="block text-xs text-slate-500">题型
+            <Select value={f.qType} onChange={(v) => set("qType", v)} options={(QTYPES[f.skill] || []).map((t) => ({ value: t, label: QTYPE_LABEL[t] }))} />
           </label>
-          <label className="text-xs text-slate-500">难度(1-5)
-            <select className={col} value={f.difficulty} onChange={(e) => set("difficulty", Number(e.target.value))}>
-              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+          <label className="block text-xs text-slate-500">难度(1-5)
+            <Select value={String(f.difficulty)} onChange={(v) => set("difficulty", Number(v))} options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))} />
           </label>
         </div>
         {(f.skill === "LISTENING" || f.skill === "READING") && (
@@ -243,10 +236,7 @@ function QuestionForm({ initial, defaults, onSaved, onClose }: { initial?: LangQ
         )}
         {needMaterial && (
           <label className="mt-3 block text-xs text-slate-500">关联材料(阅读文章/写作任务/口语提示,选填)
-            <select className={col} value={f.materialId || ""} onChange={(e) => set("materialId", e.target.value || null)}>
-              <option value="">无(材料单独管理)</option>
-              {materials.map((m) => <option key={m.id} value={m.id}>{m.title || m.id.slice(0, 8)}</option>)}
-            </select>
+            <Select value={f.materialId || ""} placeholder="无(材料单独管理)" onChange={(v) => set("materialId", v || null)} options={materials.map((m) => ({ value: m.id, label: m.title || m.id.slice(0, 8) }))} />
           </label>
         )}
         <label className="mt-3 block text-xs text-slate-500">解析 / 参考范文
@@ -342,9 +332,7 @@ function PassageForm({ initial, draft, onSaved, onClose }: { initial?: Passage |
           <div>
             <div className="mb-2 flex gap-3">
               <label className="flex-1 text-xs text-slate-500">考试类型
-                <select className={col} value={examType} onChange={(e) => setExamType(e.target.value)}>
-                  {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-                </select>
+                <Select value={examType} onChange={setExamType} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
               </label>
               <label className="w-28 text-xs text-slate-500">Passage 序号
                 <input className={col} type="number" min={1} max={4} value={part} onChange={(e) => setPart(e.target.value)} placeholder="选填" />
@@ -370,9 +358,7 @@ function PassageForm({ initial, draft, onSaved, onClose }: { initial?: Passage |
                 <div key={i} className="rounded-xl border border-slate-200 p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-600">Q{i + 1}</span>
-                    <select className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600" value={q.qType} onChange={(e) => changeType(i, e.target.value)}>
-                      {READING_QTYPES.map((t) => <option key={t} value={t}>{QTYPE_LABEL[t]}</option>)}
-                    </select>
+                    <Select size="sm" className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600" value={q.qType} onChange={(v) => changeType(i, v)} options={READING_QTYPES.map((t) => ({ value: t, label: QTYPE_LABEL[t] }))} />
                     {q.id && <span className="text-xs text-slate-400">已有题</span>}
                     <button className="ml-auto rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" onClick={() => setQs((p) => p.filter((_, xi) => xi !== i))}>删除</button>
                   </div>
@@ -586,22 +572,14 @@ function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions:
       <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-bold text-slate-800">语言组卷</h3>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <label className="text-xs text-slate-500">考试类型
-            <select className={col} value={f.examType} onChange={(e) => setF({ ...f, examType: e.target.value })}>
-              {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-            </select>
+          <label className="block text-xs text-slate-500">考试类型
+            <Select value={f.examType} onChange={(v) => setF({ ...f, examType: v })} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
           </label>
-          <label className="text-xs text-slate-500">技能
-            <select className={col} value={f.fullExam ? "FULL" : f.skill} onChange={(e) => { const v = e.target.value; setF({ ...f, skill: v === "FULL" ? "READING" : v, fullExam: v === "FULL" }); }}>
-              {SKILLS.map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
-              <option value="FULL">全真连考(L+R+W)</option>
-            </select>
+          <label className="block text-xs text-slate-500">技能
+            <Select value={f.fullExam ? "FULL" : f.skill} onChange={(v) => setF({ ...f, skill: v === "FULL" ? "READING" : v, fullExam: v === "FULL" })} options={[...SKILLS.map((s) => ({ value: s, label: SKILL_LABEL[s] })), { value: "FULL", label: "全真连考(L+R+W)" }]} />
           </label>
-          <label className="text-xs text-slate-500">模式
-            <select className={col} value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value })}>
-              <option value="PRACTICE">练习</option>
-              <option value="EXAM">模考(限时)</option>
-            </select>
+          <label className="block text-xs text-slate-500">模式
+            <Select value={f.mode} onChange={(v) => setF({ ...f, mode: v })} options={[{ value: "PRACTICE", label: "练习" }, { value: "EXAM", label: "模考(限时)" }]} />
           </label>
           <label className="text-xs text-slate-500">卷名 <span className="text-red-500">*</span>
             <input className={col} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="如 雅思听力全真模考" />
@@ -614,11 +592,8 @@ function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions:
           <label className="text-xs text-slate-500">来源(选填)
             <input className={col} value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} placeholder="如 官方真题" />
           </label>
-          <label className="text-xs text-slate-500">类型
-            <select className={col} value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
-              <option value="OFFICIAL">原版套题</option>
-              <option value="CUSTOM">组卷套题</option>
-            </select>
+          <label className="block text-xs text-slate-500">类型
+            <Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: "OFFICIAL", label: "原版套题" }, { value: "CUSTOM", label: "组卷套题" }]} />
           </label>
         </div>
         {f.fullExam && f.mode === "EXAM" && (
@@ -800,22 +775,14 @@ function AssignmentModal({ papers, initialPaperId, onClose, onSaved }: { papers:
       <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-bold text-slate-800">布置语言作业/模考</h3>
         <div className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 text-xs text-slate-500">语言试卷 <span className="text-red-500">*</span>
-            <select className={col} value={paperId} onChange={(e) => { setPaperId(e.target.value); const p = papers.find((x) => x.id === e.target.value); setMode(p?.mode === "EXAM" ? "EXAM" : "PRACTICE"); }}>
-              <option value="">请选择试卷</option>
-              {papers.filter((p) => p.status === "READY").map((p) => (
-                <option key={p.id} value={p.id}>{p.title} ({EXAM_LABEL[p.examType]}·{SKILL_LABEL[p.skill]}·{p.questionCount}题)</option>
-              ))}
-            </select>
+          <label className="col-span-2 block text-xs text-slate-500">语言试卷 <span className="text-red-500">*</span>
+            <Select value={paperId} placeholder="请选择试卷" onChange={(v) => { setPaperId(v); const p = papers.find((x) => x.id === v); setMode(p?.mode === "EXAM" ? "EXAM" : "PRACTICE"); }} options={papers.filter((p) => p.status === "READY").map((p) => ({ value: p.id, label: `${p.title} (${EXAM_LABEL[p.examType]}·${SKILL_LABEL[p.skill]}·${p.questionCount}题)` }))} />
           </label>
           <label className="text-xs text-slate-500">作业名称(默认取卷名)
             <input className={col} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={currentPaper?.title || ""} />
           </label>
-          <label className="text-xs text-slate-500">模式
-            <select className={col} value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="PRACTICE">练习</option>
-              <option value="EXAM">模考(限时)</option>
-            </select>
+          <label className="block text-xs text-slate-500">模式
+            <Select value={mode} onChange={setMode} options={[{ value: "PRACTICE", label: "练习" }, { value: "EXAM", label: "模考(限时)" }]} />
           </label>
           <label className="text-xs text-slate-500">截止时间(DDL,选填)
             <input className={col} type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
@@ -1053,10 +1020,7 @@ export default function TeacherLanguagePage() {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="">全部状态</option>
-                {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              <Select size="sm" value={status} placeholder="全部状态" onChange={setStatus} options={Object.entries(STATUS_LABEL).map(([k, v]) => ({ value: k, label: v }))} />
               <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder={skill === "READING" ? "搜索篇章标题/正文..." : "搜索题干..."} value={q} onChange={(e) => setQ(e.target.value)} />
               <span className="ml-auto self-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">
                 {skill === "READING" ? `阅读篇章 ${passages.length} 篇` : `${SKILL_LABEL[skill]} ${questions.length} 题`}

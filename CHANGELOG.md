@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.4.6 (2026-08-09) — 语言模块下拉框统一样式
+### 优化
+- 新增通用下拉组件 `components/Select.tsx`,替换语言学习模块全部原生 `<select>`:
+  - 收起态外观与表单输入框统一(`rounded-lg border-slate-200` + 右侧箭头)
+  - 展开面板与「填选窗口」弹窗统一(`rounded-2xl bg-white shadow-xl`),含选中勾选标记、hover 高亮、外部点击/Esc 关闭
+- 覆盖:教师端(题目/篇章/组卷/作业分发表单、状态筛选)、学生端(考试类型/技能筛选)
+
 ## V2.4.5 (2026-08-09) — 修复选项中 "I only" / "I and II only" 首字母 I 被吞
 ### 修复
 - **根因**:后端 `cleanOptionPrefix` 把大写 `I` 当成选项前缀(如 `I.` 或 `I `),导致 "I only" → "only"、"I and II only" → "and II only"。

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import Select from "@/components/Select";
 
 type LangPaper = {
   id: string;
@@ -124,15 +125,8 @@ export default function StudentLanguagePage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-800">语言学习</h1>
         <div className="flex gap-2">
-          <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={examType} onChange={(e) => setExamType(e.target.value)}>
-            <option value="">全部考试</option>
-            {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-          </select>
-          <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={skill} onChange={(e) => setSkill(e.target.value)}>
-            <option value="">全部技能</option>
-            {SKILLS.map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
-            <option value="FULL">全真连考</option>
-          </select>
+          <Select size="sm" value={examType} placeholder="全部考试" onChange={setExamType} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
+          <Select size="sm" value={skill} placeholder="全部技能" onChange={setSkill} options={[...SKILLS.map((s) => ({ value: s, label: SKILL_LABEL[s] })), { value: "FULL", label: "全真连考" }]} />
         </div>
       </div>
 
