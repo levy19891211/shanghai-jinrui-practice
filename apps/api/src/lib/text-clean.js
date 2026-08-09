@@ -63,13 +63,32 @@ export function normalizeInlineFormula(s) {
 export function normalizeNewlines(s) {
   if (!s) return s;
   return normalizeInlineFormula(
-    s
+    splitRomanNumeralItems(s)
       .replace(/\r\n?/g, "\n")
       .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .replace(/^\n+|\n+$/g, "")
       .trim()
   );
+}
+
+// 罗马数字序号(I II III IV V ...)列表拆行:#25b/#28 反复出现的问题——
+// 视觉模型常把 "I $a$ II $b$ III $c$" 挤在同一行。这里把紧跟公式的罗马数字序号
+// 识别为「列表项」并在序号前强制换行(每项独立一行),避免整段挤成一团。
+// 匹配:公式闭合符 $ 之后 空格 + 罗马序号 + 空格 + 公式开 $ (即 "…$ II $…" 模式);
+//     或换行/行首之后已独立成项则不重复处理。
+// 仅在文本已含 "$…$" 公式且出现 ≥2 个罗马序号项时才拆,降低误伤(如 "I" 作单词/变量)。
+export function splitRomanNumeralItems(s) {
+  if (!s) return s;
+  const hasFormula = /\$[^$\n]+\$/.test(s);
+  if (!hasFormula) return s;
+  // 统计罗马序号项:I/II/III/IV/V/VI/VII/VIII/IX/X 后紧跟公式开 $
+  const itemRe = /(I{1,3}|IV|V|VI{1,3}|IX|X)\s*(\$)/g;
+  const items = s.match(itemRe);
+  if (!items || items.length < 2) return s;
+  // 把"公式闭合$ + 空格 + 罗马序号"模式前的空白改成换行:
+  // "…$ II $…" → "…$\nII $…" (序号前是公式结束 $ 时)
+  return s.replace(/(\$)\s+(I{1,3}|IV|V|VI{1,3}|IX|X)(?=\s*\$)/g, "$1\n$2");
 }
 
 // 把一份可能含 HTML 与 \( \) 的文本,转成规范富文本(含 $...$ 公式)
