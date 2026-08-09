@@ -38,6 +38,33 @@ type LangPaper = {
   createdAt: string;
 };
 
+// 阅读篇章 = 一篇文章 + 绑定它的若干题目(整体单元)
+type Passage = {
+  id: string;
+  examType: string;
+  skill: string;
+  title: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  questionCount: number;
+  statusCount: Record<string, number>;
+  typeCount: Record<string, number>;
+  questions: LangQ[];
+};
+
+type PassageQ = {
+  id?: string;
+  qType: string;
+  stem: string;
+  options: string[];
+  answer: string;
+  solution: string;
+  difficulty: number;
+};
+
+type PassageDraft = { title: string; content: string; questions: PassageQ[] };
+
 type ReviewSession = {
   id: string;
   student: { id: string; name: string; email: string };
@@ -285,8 +312,251 @@ function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   );
 }
 
+// —— 阅读篇章编辑弹窗(一篇文章 + 绑定它的若干题目) ——
+const CHOICE_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"];
+const READING_QTYPES = QTYPES.READING;
+
+function emptyPassageQ(): PassageQ {
+  return { qType: "TRUE_FALSE_NG", stem: "", options: ["TRUE", "FALSE", "NOT GIVEN"], answer: "", solution: "", difficulty: 3 };
+}
+
+function PassageForm({ initial, draft, onSaved, onClose }: { initial?: Passage | null; draft?: PassageDraft | null; onSaved: () => void; onClose: () => void }) {
+  const [examType, setExamType] = useState(initial?.examType || "IELTS");
+  const [title, setTitle] = useState(initial?.title || draft?.title || "");
+  const [content, setContent] = useState(initial?.content || draft?.content || "");
+  const [part, setPart] = useState<string>(initial?.questions?.[0]?.part ? String(initial.questions[0].part) : "");
+  const [qs, setQs] = useState<PassageQ[]>(() => {
+    if (initial) {
+      return initial.questions.map((q) => ({
+        id: q.id, qType: q.qType, stem: q.stem, options: [...(q.options || [])],
+        answer: q.answer || "", solution: q.solution || "", difficulty: q.difficulty || 3,
+      }));
+    }
+    if (draft && draft.questions.length) return draft.questions.map((q) => ({ ...q, options: [...(q.options || [])] }));
+    return [emptyPassageQ()];
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const col = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none";
+
+  const setQ = (i: number, patch: Partial<PassageQ>) => setQs((p) => p.map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
+
+  function changeType(i: number, t: string) {
+    const cur = qs[i];
+    let options = cur.options;
+    if (t === "TRUE_FALSE_NG") options = ["TRUE", "FALSE", "NOT GIVEN"];
+    else if (CHOICE_TYPES.includes(t) && (!options || options.length < 2)) options = ["", ""];
+    setQ(i, { qType: t, options, answer: "" });
+  }
+
+  async function save() {
+    if (!content.trim()) return setErr("文章正文必填");
+    if (!qs.length) return setErr("请至少录入一道题目");
+    for (let i = 0; i < qs.length; i++) {
+      const q = qs[i];
+      if (!q.stem.trim()) return setErr(`第 ${i + 1} 题:题干必填`);
+      if (CHOICE_TYPES.includes(q.qType) && q.options.filter((o) => o.trim()).length < 2) return setErr(`第 ${i + 1} 题:至少需要 2 个选项`);
+      if (!q.answer.trim()) return setErr(`第 ${i + 1} 题:必须填写答案`);
+    }
+    setSaving(true);
+    setErr("");
+    try {
+      const body = {
+        examType, skill: "READING", title: title || null, content,
+        part: part ? Number(part) : null,
+        questions: qs.map((q) => ({
+          id: q.id, qType: q.qType, stem: q.stem,
+          options: CHOICE_TYPES.includes(q.qType) ? q.options.filter((o) => o.trim()) : undefined,
+          answer: q.answer, solution: q.solution || null, difficulty: q.difficulty,
+        })),
+      };
+      if (initial) await api.put(`/language/passages/${initial.id}`, body);
+      else await api.post("/language/passages", body);
+      onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-8" onClick={onClose}>
+      <div className="w-full max-w-5xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-bold text-slate-800">{initial ? "编辑阅读篇章" : "新建阅读篇章"}</h3>
+        <p className="mb-4 text-xs text-slate-400">一篇文章 + 绑定它的若干题目,作为一个整体单元保存</p>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* 左:文章 */}
+          <div>
+            <div className="mb-2 flex gap-3">
+              <label className="flex-1 text-xs text-slate-500">考试类型
+                <select className={col} value={examType} onChange={(e) => setExamType(e.target.value)}>
+                  {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
+                </select>
+              </label>
+              <label className="w-28 text-xs text-slate-500">Passage 序号
+                <input className={col} type="number" min={1} max={4} value={part} onChange={(e) => setPart(e.target.value)} placeholder="选填" />
+              </label>
+            </div>
+            <label className="block text-xs text-slate-500">篇章标题
+              <input className={col} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="如 Passage 1: The Story of Tea" />
+            </label>
+            <label className="mt-2 block text-xs text-slate-500">文章正文 <span className="text-red-500">*</span>
+              <textarea className={col + " font-mono"} rows={22} value={content} onChange={(e) => setContent(e.target.value)} placeholder="粘贴文章全文,段落之间空一行" />
+            </label>
+            <p className="mt-1 text-xs text-slate-400">约 {content.trim() ? content.trim().split(/\s+/).length : 0} 词</p>
+          </div>
+
+          {/* 右:绑定题目 */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-600">绑定题目({qs.length} 题)</span>
+              <button className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setQs((p) => [...p, emptyPassageQ()])}>+ 添加题目</button>
+            </div>
+            <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
+              {qs.map((q, i) => (
+                <div key={i} className="rounded-xl border border-slate-200 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-600">Q{i + 1}</span>
+                    <select className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600" value={q.qType} onChange={(e) => changeType(i, e.target.value)}>
+                      {READING_QTYPES.map((t) => <option key={t} value={t}>{QTYPE_LABEL[t]}</option>)}
+                    </select>
+                    {q.id && <span className="text-xs text-slate-400">已有题</span>}
+                    <button className="ml-auto rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50" onClick={() => setQs((p) => p.filter((_, xi) => xi !== i))}>删除</button>
+                  </div>
+                  <textarea className={col} rows={2} value={q.stem} onChange={(e) => setQ(i, { stem: e.target.value })} placeholder="题干" />
+                  {CHOICE_TYPES.includes(q.qType) && (
+                    <div className="mt-2 space-y-1">
+                      {q.options.map((o, oi) => (
+                        <div key={oi} className="flex items-center gap-2">
+                          <span className="w-5 text-xs font-bold text-slate-400">{String.fromCharCode(65 + oi)}</span>
+                          <input className={col} value={o} onChange={(e) => setQ(i, { options: q.options.map((x, xi) => (xi === oi ? e.target.value : x)) })} />
+                          <button className="rounded-md px-1.5 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-30" disabled={q.options.length <= 2} onClick={() => setQ(i, { options: q.options.filter((_, xi) => xi !== oi) })}>×</button>
+                        </div>
+                      ))}
+                      <button className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setQ(i, { options: [...q.options, ""] })}>+ 选项</button>
+                    </div>
+                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input className="flex-1 min-w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" value={q.answer} onChange={(e) => setQ(i, { answer: e.target.value })} placeholder={q.qType === "FILL_BLANK" ? "答案(多个可接受用 | 分隔)" : "答案(字母或 TRUE/FALSE/NOT GIVEN)"} />
+                    {q.qType === "TRUE_FALSE_NG" && (
+                      <div className="flex gap-1">
+                        {["TRUE", "FALSE", "NOT GIVEN"].map((v) => (
+                          <button key={v} className={`rounded-md px-2 py-1 text-xs ${q.answer === v ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`} onClick={() => setQ(i, { answer: v })}>{v}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <input className="mt-2 block w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-600" value={q.solution} onChange={(e) => setQ(i, { solution: e.target.value })} placeholder="解析/答案出处(选填)" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-100" onClick={onClose}>取消</button>
+          <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" onClick={save} disabled={saving}>{saving ? "保存中..." : initial ? "保存修改" : "创建篇章"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// —— 阅读篇章 PDF 导入弹窗(抽取草稿 → 教师逐篇确认录入) ——
+function PassageImportModal({ onClose, onPick }: { onClose: () => void; onPick: (d: PassageDraft) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [err, setErr] = useState("");
+  const [drafts, setDrafts] = useState<PassageDraft[] | null>(null);
+
+  async function upload(file: File) {
+    setErr("");
+    setBusy(true);
+    setProgress(2);
+    setMsg("正在上传文件...");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const r = await api.post<{ taskId: string }>("/language/passages/import", { filename: file.name, data: String(reader.result) });
+        const poll = async (): Promise<void> => {
+          const t = await api.get<{ status: string; progress: number; message: string; result: { drafts: PassageDraft[] } | null; error: string | null }>(`/language/passages/import/${r.taskId}`);
+          setProgress(t.progress || 0);
+          setMsg(t.message || "");
+          if (t.status === "done") {
+            setDrafts(t.result?.drafts || []);
+            setBusy(false);
+            return;
+          }
+          if (t.status === "error") {
+            setErr(t.error || "解析失败");
+            setBusy(false);
+            return;
+          }
+          setTimeout(poll, 1800);
+        };
+        setTimeout(poll, 1500);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "上传失败");
+        setBusy(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-bold text-slate-800">导入阅读篇章(PDF)</h3>
+        <p className="mb-4 text-xs text-slate-400">上传阅读试卷 PDF,系统按「一篇文章 + 其题目」抽取成篇章草稿,确认后再入库</p>
+
+        {!drafts && (
+          <>
+            <input type="file" accept="application/pdf" disabled={busy}
+              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700 disabled:opacity-50"
+              onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            {busy && (
+              <div className="mt-4">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.max(progress, 5)}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{msg}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {drafts && (
+          <div className="space-y-2">
+            {drafts.length === 0 && <p className="py-6 text-center text-sm text-slate-400">未抽取到篇章</p>}
+            {drafts.map((d, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">{d.title || `篇章 ${i + 1}`}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{d.questions.length} 题 · 正文约 {d.content.trim().split(/\s+/).length} 词</p>
+                </div>
+                <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700" onClick={() => onPick(d)}>确认录入</button>
+              </div>
+            ))}
+            <p className="pt-1 text-xs text-slate-400">逐篇确认:点「确认录入」会打开篇章编辑器,核对后保存;可返回本列表继续录入下一篇。</p>
+          </div>
+        )}
+
+        {err && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</p>}
+        <div className="mt-4 flex justify-end">
+          <button className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-100" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // —— 组卷弹窗 ——
-function PaperForm({ allQuestions, onClose, onSaved }: { allQuestions: LangQ[]; onClose: () => void; onSaved: () => void }) {
+function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions: LangQ[]; passages: Passage[]; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({
     examType: "IELTS", skill: "READING", title: "", mode: "PRACTICE", durationMin: "",
     source: "", kind: "CUSTOM", selected: [] as string[],
@@ -296,21 +566,43 @@ function PaperForm({ allQuestions, onClose, onSaved }: { allQuestions: LangQ[]; 
   const [saving, setSaving] = useState(false);
   const col = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none";
 
-  // 题目按 Part/组分组显示
+  // 阅读:按「篇章」分组(一篇文章 + 其题目);其他技能:按 Part/技能分组
+  const byPassage = !f.fullExam && f.skill === "READING";
+  const passageTitle = useMemo(() => {
+    const m = new Map<string, string>();
+    passages.forEach((p, i) => m.set(p.id, p.title || `篇章 ${i + 1}`));
+    return m;
+  }, [passages]);
+
   const groups = useMemo<[string, LangQ[]][]>(() => {
     const map = new Map<string, LangQ[]>();
     for (const q of allQuestions) {
       if (f.examType && q.examType !== f.examType) continue;
-      if (f.skill !== "FULL" && f.skill && q.skill !== f.skill) continue;
-      const key = q.skill === "LISTENING" || q.skill === "READING" ? `Part ${q.part || "?"}` : q.skill;
+      if (!f.fullExam && f.skill && q.skill !== f.skill) continue;
+      const key = byPassage
+        ? q.materialId
+          ? `📄 ${passageTitle.get(q.materialId) || "未命名篇章"}`
+          : "未绑定文章的零散题"
+        : q.skill === "LISTENING" || q.skill === "READING"
+          ? `Part ${q.part || "?"}`
+          : SKILL_LABEL[q.skill] || q.skill;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(q);
     }
     return Array.from(map.entries());
-  }, [allQuestions, f.examType, f.skill]);
+  }, [allQuestions, f.examType, f.skill, f.fullExam, byPassage, passageTitle]);
 
   function toggle(id: string) {
     setF((p) => ({ ...p, selected: p.selected.includes(id) ? p.selected.filter((x) => x !== id) : [...p.selected, id] }));
+  }
+
+  function toggleGroup(qs: LangQ[]) {
+    const ids = qs.map((q) => q.id);
+    const allIn = ids.every((id) => f.selected.includes(id));
+    setF((p) => ({
+      ...p,
+      selected: allIn ? p.selected.filter((x) => !ids.includes(x)) : Array.from(new Set([...p.selected, ...ids])),
+    }));
   }
 
   async function save() {
@@ -400,7 +692,13 @@ function PaperForm({ allQuestions, onClose, onSaved }: { allQuestions: LangQ[]; 
             {groups.length === 0 && <p className="py-4 text-center text-sm text-slate-400">暂无已发布题目,请先在「题库管理」录入并发布</p>}
             {groups.map(([g, qs]) => (
               <div key={g} className="mb-3">
-                <div className="mb-1 text-xs font-bold text-slate-500">{g}</div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500">{g}</span>
+                  <span className="text-xs text-slate-400">({qs.length} 题)</span>
+                  <button className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-200" onClick={() => toggleGroup(qs)}>
+                    {qs.every((q) => f.selected.includes(q.id)) ? (byPassage ? "取消整篇" : "取消本组") : byPassage ? "选整篇" : "选本组"}
+                  </button>
+                </div>
                 {qs.map((q) => (
                   <label key={q.id} className="mb-1 flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50">
                     <input type="checkbox" checked={f.selected.includes(q.id)} onChange={() => toggle(q.id)} className="mt-0.5" />
@@ -622,6 +920,14 @@ export default function TeacherLanguagePage() {
   const [editing, setEditing] = useState<LangQ | null | "new">(null);
   const [showMaterial, setShowMaterial] = useState(false);
   const [showPaper, setShowPaper] = useState(false);
+  // 阅读篇章视图
+  const [passages, setPassages] = useState<Passage[]>([]);
+  const [pubQuestions, setPubQuestions] = useState<LangQ[]>([]);
+  const [qView, setQView] = useState<"list" | "passage">("list");
+  const [editingPassage, setEditingPassage] = useState<Passage | null | "new">(null);
+  const [passageDraft, setPassageDraft] = useState<PassageDraft | null>(null);
+  const [showPassageImport, setShowPassageImport] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showAssign, setShowAssign] = useState(false);
   const [assignPaperId, setAssignPaperId] = useState<string | undefined>(undefined);
   const [gradingSession, setGradingSession] = useState<string | null>(null);
@@ -636,6 +942,21 @@ export default function TeacherLanguagePage() {
     const d = await api.get<{ list: LangQ[] }>(`/language/questions?${qs.toString()}`);
     setQuestions(d.list);
   }, [examType, skill, status, q]);
+
+  const loadPassages = useCallback(async () => {
+    const qs = new URLSearchParams({ skill: "READING" });
+    if (examType) qs.set("examType", examType);
+    if (status) qs.set("status", status);
+    if (q) qs.set("q", q);
+    const d = await api.get<{ list: Passage[] }>(`/language/passages?${qs.toString()}`);
+    setPassages(d.list);
+  }, [examType, status, q]);
+
+  // 组卷选题用:与题库筛选解耦,始终取全部已发布题
+  const loadPub = useCallback(async () => {
+    const d = await api.get<{ list: LangQ[] }>("/language/questions?status=PUBLISHED");
+    setPubQuestions(d.list);
+  }, []);
 
   const loadPapers = useCallback(async () => {
     const d = await api.get<{ list: LangPaper[] }>("/language/papers");
@@ -656,14 +977,14 @@ export default function TeacherLanguagePage() {
     (async () => {
       setLoading(true);
       try {
-        await Promise.all([loadQuestions(), loadPapers(), loadReview(), loadAssigns()]);
+        await Promise.all([loadQuestions(), loadPassages(), loadPub(), loadPapers(), loadReview(), loadAssigns()]);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "加载失败");
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadQuestions, loadPapers, loadReview, loadAssigns]);
+  }, [loadQuestions, loadPassages, loadPub, loadPapers, loadReview, loadAssigns]);
 
   async function reviewQuestion(id: string, pass: boolean) {
     try {
@@ -679,6 +1000,25 @@ export default function TeacherLanguagePage() {
     try {
       await api.del(`/language/questions/${id}`);
       loadQuestions();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
+  async function reviewPassage(id: string, pass: boolean) {
+    try {
+      await api.post(`/language/passages/${id}/review`, { pass });
+      await Promise.all([loadPassages(), loadQuestions()]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
+  async function delPassage(p: Passage) {
+    if (!window.confirm(`确认删除整篇「${p.title || "未命名篇章"}」?其 ${p.questionCount} 道绑定题目及相关作答/错题记录将一并删除。`)) return;
+    try {
+      await api.del(`/language/passages/${p.id}`);
+      await Promise.all([loadPassages(), loadQuestions()]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "删除失败");
     }
@@ -708,7 +1048,13 @@ export default function TeacherLanguagePage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-slate-800">语言学习</h1>
         <div className="flex flex-wrap gap-2">
-          {tab === "questions" && (
+          {tab === "questions" && qView === "passage" && (
+            <>
+              <button className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200" onClick={() => setShowPassageImport(true)}>导入阅读篇章(PDF)</button>
+              <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => { setPassageDraft(null); setEditingPassage("new"); }}>+ 新建阅读篇章</button>
+            </>
+          )}
+          {tab === "questions" && qView === "list" && (
             <>
               <button className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200" onClick={() => setShowMaterial(true)}>+ 新增材料</button>
               <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setEditing("new")}>+ 新增题目</button>
@@ -738,7 +1084,8 @@ export default function TeacherLanguagePage() {
               <option value="">全部考试</option>
               {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
             </select>
-            <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={skill} onChange={(e) => setSkill(e.target.value)}>
+            <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={qView === "passage" ? "READING" : skill}
+              onChange={(e) => { const v = e.target.value; setSkill(v); setQView(v === "READING" ? "passage" : "list"); }}>
               <option value="">全部技能</option>
               {SKILLS.map((s) => <option key={s} value={s}>{SKILL_LABEL[s]}</option>)}
             </select>
@@ -746,8 +1093,73 @@ export default function TeacherLanguagePage() {
               <option value="">全部状态</option>
               {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder="搜索题干..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder={qView === "passage" ? "搜索篇章标题/正文..." : "搜索题干..."} value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="ml-auto flex gap-1 rounded-lg bg-slate-100 p-1">
+              <button className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${qView === "list" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}
+                onClick={() => { setQView("list"); if (skill === "READING") setSkill(""); }}>逐题视图</button>
+              <button className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${qView === "passage" ? "bg-white text-teal-700 shadow-sm" : "text-slate-500"}`}
+                onClick={() => { setQView("passage"); setSkill("READING"); }}>阅读篇章视图</button>
+            </div>
           </div>
+          {qView === "passage" && (
+            <div className="space-y-3 p-3">
+              {passages.length === 0 && (
+                <p className="py-8 text-center text-sm text-slate-400">暂无阅读篇章,点右上「+ 新建阅读篇章」或「导入阅读篇章(PDF)」</p>
+              )}
+              {passages.map((p) => {
+                const open = !!expanded[p.id];
+                const pending = (p.statusCount.PENDING_REVIEW || 0) + (p.statusCount.REJECTED || 0);
+                return (
+                  <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{EXAM_LABEL[p.examType] || p.examType}</span>
+                          <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-600">阅读篇章</span>
+                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{p.questionCount} 题</span>
+                          {Object.entries(p.statusCount).map(([k, v]) => (
+                            <span key={k} className={`rounded-md px-1.5 py-0.5 text-xs ${k === "PUBLISHED" ? "bg-emerald-50 text-emerald-600" : k === "REJECTED" ? "bg-red-50 text-red-600" : k === "PENDING_REVIEW" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                              {STATUS_LABEL[k] || k} {v}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-sm font-semibold text-slate-800">{p.title || "未命名篇章"}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{p.content.slice(0, 160)}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          题型: {Object.entries(p.typeCount).map(([k, v]) => `${QTYPE_LABEL[k] || k}×${v}`).join(" · ") || "—"} · 约 {p.content.trim().split(/\s+/).length} 词
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {pending > 0 && (
+                          <button className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700" onClick={() => reviewPassage(p.id, true)}>整篇通过</button>
+                        )}
+                        {(p.statusCount.PUBLISHED || 0) > 0 && (
+                          <button className="rounded-md bg-red-100 px-2.5 py-1 text-xs text-red-600 hover:bg-red-200" onClick={() => reviewPassage(p.id, false)}>整篇退回</button>
+                        )}
+                        <button className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => { setPassageDraft(null); setEditingPassage(p); }}>编辑整篇</button>
+                        <button className="rounded-md bg-red-50 px-2.5 py-1 text-xs text-red-500 hover:bg-red-100" onClick={() => delPassage(p)}>删除整篇</button>
+                        <button className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setExpanded((s) => ({ ...s, [p.id]: !open }))}>{open ? "收起题目" : "展开题目"}</button>
+                      </div>
+                    </div>
+                    {open && (
+                      <div className="mt-3 space-y-1.5 rounded-xl bg-slate-50 p-3">
+                        {p.questions.map((qq, qi) => (
+                          <div key={qq.id} className="flex flex-wrap items-start gap-2 rounded-lg bg-white px-3 py-2">
+                            <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-bold text-indigo-600">Q{qi + 1}</span>
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{QTYPE_LABEL[qq.qType] || qq.qType}</span>
+                            <span className="min-w-0 flex-1 text-xs text-slate-700">{qq.stem}</span>
+                            <span className="text-xs text-emerald-600">答案: {qq.answer || "—"}</span>
+                            <button className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setEditing(qq)}>单题编辑</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {qView === "list" && (
           <div className="divide-y divide-slate-100">
             {questions.length === 0 && <p className="py-8 text-center text-sm text-slate-400">暂无题目</p>}
             {questions.map((item) => (
@@ -779,6 +1191,7 @@ export default function TeacherLanguagePage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -873,6 +1286,36 @@ export default function TeacherLanguagePage() {
         </div>
       )}
 
+      {editing && (
+        <QuestionForm
+          initial={editing === "new" ? null : editing}
+          onSaved={() => { loadQuestions(); loadPassages(); loadPub(); }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {showMaterial && <MaterialModal onSaved={() => { loadPassages(); }} onClose={() => setShowMaterial(false)} />}
+      {showPaper && (
+        <PaperForm
+          allQuestions={pubQuestions}
+          passages={passages}
+          onSaved={() => { loadPapers(); }}
+          onClose={() => setShowPaper(false)}
+        />
+      )}
+      {showPassageImport && (
+        <PassageImportModal
+          onPick={(d) => { setPassageDraft(d); setEditingPassage("new"); }}
+          onClose={() => setShowPassageImport(false)}
+        />
+      )}
+      {editingPassage && (
+        <PassageForm
+          initial={editingPassage === "new" ? null : editingPassage}
+          draft={editingPassage === "new" ? passageDraft : null}
+          onSaved={() => { loadPassages(); loadQuestions(); loadPub(); }}
+          onClose={() => { setEditingPassage(null); setPassageDraft(null); }}
+        />
+      )}
       {/* 面板切换用的提示变量(供"布置"快捷入口预选卷) */}
       {showAssign && <AssignmentModal papers={assignPapers} initialPaperId={assignPaperId} onSaved={() => { loadAssigns(); }} onClose={() => { setShowAssign(false); setAssignPaperId(undefined); }} />}
       {gradingSession && <GradingModal sessionId={gradingSession} onClose={() => { setGradingSession(null); loadReview(); }} />}

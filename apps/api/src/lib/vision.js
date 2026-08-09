@@ -165,6 +165,104 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = 
   return all;
 }
 
+// ——— 雅思/语言阅读篇章提取(一篇文章 + 绑定它的若干题目,作为一个整体单元) ———
+// 与学科题库的选择题提取分开:阅读必须把「文章正文」完整取出,题目挂在文章下
+const PASSAGE_PROMPT = `你是一个雅思(IELTS)阅读题库录入助手。用户会给你一份阅读试卷的图片(一页或多页,已按顺序给出),可能附带每页的纯文本。
+
+请把试卷拆成若干个「阅读篇章」单元。一个篇章 = 一篇完整文章 + 属于这篇文章的全部题目。严格按以下 JSON 数组格式输出,不要输出任何额外说明、不要使用 markdown 代码围栏,只输出可直接解析的 JSON 数组:
+
+[
+  {
+    "title": "篇章标题,如 Passage 1: The Story of Tea(没有标题时用文章首句概括)",
+    "content": "文章正文全文。保留自然段落,段落之间用两个换行分隔。若原文段落带 A/B/C 段标,请在段首保留该字母加一个空格。",
+    "questions": [
+      {
+        "qType": "TRUE_FALSE_NG 或 FILL_BLANK 或 SINGLE_CHOICE 或 MULTIPLE_CHOICE 或 MATCHING 或 HEADING",
+        "stem": "题干全文(含题号后的完整问题描述;填空题保留下划线或括号占位)",
+        "options": ["选项正文(仅选择/配对/标题题需要,至少2个)"],
+        "answer": "正确答案",
+        "solution": "解析或答案出处(没有则空字符串)"
+      }
+    ]
+  }
+]
+
+重要规则:
+- content 必须是**文章正文本身**,绝对不要把题目、题目说明(Questions 1-13 ...)、答案表混进正文。
+- questions 里每道题都要绑定到它所属的那一篇文章;不同文章的题目不要混在一起。
+- 题型判断:
+  - 判断题(TRUE / FALSE / NOT GIVEN 或 YES / NO / NOT GIVEN)→ qType 用 TRUE_FALSE_NG,options 写 ["TRUE","FALSE","NOT GIVEN"](或 YES/NO/NOT GIVEN),answer 写其中之一;
+  - 摘要填空 / 句子填空 / 表格填空 → FILL_BLANK,不要 options,answer 写标准答案(多个可接受答案用竖线分隔,如 analysis|analyses);
+  - 四选一等单选 → SINGLE_CHOICE,answer 写选项字母;
+  - 多选(选两项及以上)→ MULTIPLE_CHOICE,answer 写字母如 "A, C";
+  - 信息/人名/段落匹配 → MATCHING,options 放可选项列表,answer 写字母;
+  - 段落小标题配对(List of Headings)→ HEADING,options 放 headings 列表,answer 写罗马数字或字母。
+- options 数组里只放选项正文,**不要包含 A. / B. 之类的字母前缀**,字母由系统自动添加。
+- answer 必须来自试卷上明确给出的答案 key / 答案页 / 解析;若试卷完全没有答案信息,answer 填空字符串,不要自行推断。
+- 只提取阅读部分;封面、说明页、听力/写作部分请跳过。
+- 确保输出的 JSON 可被直接解析(不要省略逗号或引号,正文里的换行请写成转义换行)。`;
+
+export async function extractReadingPassagesFromPdfPages(pages, { maxPagesPerCall } = {}) {
+  if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
+  // 阅读文章需要跨页连续,单批页数比学科题大一些,避免把一篇文章切断
+  const perCall = Math.max(1, Math.min(20, Number(maxPagesPerCall) || Number(process.env.VISION_PASSAGE_MAX_PAGES) || 8));
+  const chunks = [];
+  for (let i = 0; i < pages.length; i += perCall) chunks.push(pages.slice(i, i + perCall));
+  const all = [];
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    const content = [
+      { type: "text", text: "请从以下阅读试卷图片中提取所有「文章 + 其绑定题目」的篇章单元,严格按系统提示的 JSON 数组格式输出。" },
+    ];
+    let textHint = "";
+    chunk.forEach((p, i) => {
+      content.push({ type: "image_url", image_url: { url: `data:image/png;base64,${p.image}` } });
+      if (p.text) textHint += `\n[第 ${i + 1} 页纯文本]\n${p.text}\n`;
+    });
+    if (textHint) {
+      content.push({ type: "text", text: "各页纯文本(阅读以文本为主,可优先采用,排版以图片为准):" + textHint });
+    }
+    let batch = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const resp = await fetch(`${baseUrl()}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.VISION_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: model(),
+            messages: [
+              { role: "system", content: PASSAGE_PROMPT },
+              { role: "user", content },
+            ],
+            temperature: 0.1,
+            max_tokens: 16000,
+          }),
+        });
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => "");
+          throw new Error(`视觉模型请求失败 ${resp.status}: ${t.slice(0, 300)}`);
+        }
+        const json = await resp.json();
+        batch = parseJsonArray(json?.choices?.[0]?.message?.content || "");
+        if (batch.length > 0) break;
+        console.warn(`[vision] 阅读篇章 chunk ${ci + 1} 提取为空,重试(${attempt + 1}/3)`);
+      } catch (e) {
+        if (attempt < 2) {
+          console.warn(`[vision] 阅读篇章 chunk ${ci + 1} 失败:${e.message},重试(${attempt + 1}/3)`);
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        } else {
+          throw e;
+        }
+      }
+    }
+    all.push(...batch);
+  }
+  return all;
+}
+
 // ——— 独立答案文件解析(题目 PDF 与答案 PDF 分开导入时使用) ———
 const ANSWER_PROMPT = `你是一个考试答案页识别助手。用户会给你一份考试的答案页/答案表图片(可能是表格形式,如 "Q21 A"、"21. B"、"Question 23 C",有时还带学科列 "Q21 A PHYS")。
 请逐行提取每一题的题号与答案,严格按以下 JSON 数组格式输出,不要输出任何额外说明、不要使用 markdown 代码围栏,只输出可直接解析的 JSON 数组:

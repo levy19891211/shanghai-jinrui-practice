@@ -7,6 +7,9 @@ import crypto from "crypto";
 import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { rasterize } from "../lib/import-pdf.js";
+import { extractReadingPassagesFromPdfPages } from "../lib/vision.js";
+import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
 
 const router = Router();
 
@@ -382,6 +385,338 @@ router.delete(
     await prisma.languageQuestion.updateMany({ where: { materialId: existed.id }, data: { materialId: null } });
     await prisma.languageMaterial.delete({ where: { id: existed.id } });
     ok(res, { id: existed.id }, "删除成功");
+  })
+);
+
+// —— 阅读篇章(一篇文章 + 绑定它的若干题目,作为一个整体单元) ——
+// 数据仍复用 LanguageMaterial(文章) + LanguageQuestion.materialId(绑定),不改 schema
+
+const PASSAGE_QTYPES = ["TRUE_FALSE_NG", "FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"];
+
+function fmtPassage(m) {
+  const qs = (m.questions || []).map(fmtQ);
+  const statusCount = {};
+  for (const q of qs) statusCount[q.status] = (statusCount[q.status] || 0) + 1;
+  const typeCount = {};
+  for (const q of qs) typeCount[q.qType] = (typeCount[q.qType] || 0) + 1;
+  return {
+    id: m.id,
+    examType: m.examType,
+    skill: m.skill,
+    title: m.title,
+    content: m.content,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+    questionCount: qs.length,
+    statusCount,
+    typeCount,
+    questions: qs,
+  };
+}
+
+// 校验并归一化一道篇章内题目
+function normPassageQuestion(raw, idx) {
+  const qType = String(raw.qType || "").trim();
+  if (!PASSAGE_QTYPES.includes(qType)) throw new Error(`第 ${idx + 1} 题:题型不合法`);
+  const stem = String(raw.stem || "").trim();
+  if (!stem) throw new Error(`第 ${idx + 1} 题:题干必填`);
+  const isChoice = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"].includes(qType);
+  let options = null;
+  if (isChoice) {
+    const arr = (Array.isArray(raw.options) ? raw.options : []).map((s) => String(s || "").trim()).filter(Boolean);
+    if (arr.length < 2) throw new Error(`第 ${idx + 1} 题:选择/配对/标题题至少需要 2 个选项`);
+    options = JSON.stringify(arr);
+  }
+  const answer = raw.answer === undefined || raw.answer === null || String(raw.answer).trim() === "" ? null : String(raw.answer).trim();
+  if (!answer) throw new Error(`第 ${idx + 1} 题:客观题必须填写答案`);
+  return {
+    qType,
+    stem,
+    options,
+    answer,
+    solution: raw.solution ? String(raw.solution) : null,
+    difficulty: Number(raw.difficulty) || 3,
+  };
+}
+
+// GET /api/language/passages?examType=&skill=&status=&q=
+// 返回「一篇文章 + 其绑定题目」的整体单元列表(教师/管理员)
+router.get(
+  "/passages",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { examType, skill, status, q } = req.query;
+    const where = { skill: skill ? String(skill) : "READING" };
+    if (examType) where.examType = String(examType);
+    if (q) {
+      const kw = String(q).trim();
+      where.OR = [{ title: { contains: kw } }, { content: { contains: kw } }];
+    }
+    const list = await prisma.languageMaterial.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: { questions: { select: Q_FIELDS, orderBy: [{ part: "asc" }, { createdAt: "asc" }] } },
+    });
+    let rows = list.map(fmtPassage);
+    if (status) rows = rows.filter((p) => (p.statusCount[String(status)] || 0) > 0);
+    ok(res, { list: rows, total: rows.length });
+  })
+);
+
+// GET /api/language/passages/:id — 单篇详情
+router.get(
+  "/passages/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const m = await prisma.languageMaterial.findUnique({
+      where: { id: req.params.id },
+      include: { questions: { select: Q_FIELDS, orderBy: [{ part: "asc" }, { createdAt: "asc" }] } },
+    });
+    if (!m) return fail(res, 404, "篇章不存在");
+    ok(res, fmtPassage(m));
+  })
+);
+
+// POST /api/language/passages — 一次创建「一篇文章 + 其题目」
+// body: { examType, skill, title, content, part?, groupTitle?, status?, questions: [...] }
+router.post(
+  "/passages",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const content = String(b.content || "").trim();
+    if (!content) return fail(res, 400, "文章正文必填");
+    if (!Array.isArray(b.questions) || b.questions.length === 0) return fail(res, 400, "请至少录入一道题目");
+    let normed;
+    try {
+      normed = b.questions.map((raw, i) => normPassageQuestion(raw, i));
+    } catch (e) {
+      return fail(res, 400, e.message);
+    }
+    const examType = b.examType || "IELTS";
+    const skill = b.skill || "READING";
+    const status = ["DRAFT", "PENDING_REVIEW", "PUBLISHED"].includes(b.status) ? b.status : "PENDING_REVIEW";
+    const part = b.part ? Number(b.part) : null;
+    const groupTitle = b.groupTitle ? String(b.groupTitle) : b.title ? String(b.title) : null;
+
+    const created = await prisma.$transaction(async (tx) => {
+      const m = await tx.languageMaterial.create({
+        data: { examType, skill, title: b.title ? String(b.title) : null, content },
+      });
+      for (const nq of normed) {
+        await tx.languageQuestion.create({
+          data: {
+            examType, skill, qType: nq.qType, part, groupTitle,
+            stem: nq.stem, options: nq.options, answer: nq.answer, solution: nq.solution,
+            materialId: m.id, difficulty: nq.difficulty, status,
+            createdBy: req.user.id,
+          },
+        });
+      }
+      return m;
+    });
+    ok(res, { id: created.id, questionCount: normed.length }, "篇章创建成功");
+  })
+);
+
+// PUT /api/language/passages/:id — 更新整篇(文章正文 + 题目增删改)
+// questions 中带 id 的更新,不带 id 的新增,原有但未出现在列表中的删除
+router.put(
+  "/passages/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const existed = await prisma.languageMaterial.findUnique({
+      where: { id: req.params.id },
+      include: { questions: { select: { id: true, status: true } } },
+    });
+    if (!existed) return fail(res, 404, "篇章不存在");
+    const b = req.body || {};
+    const examType = b.examType || existed.examType;
+    const skill = b.skill || existed.skill;
+    const part = b.part !== undefined ? (b.part ? Number(b.part) : null) : undefined;
+    const groupTitle = b.title !== undefined ? (b.title ? String(b.title) : null) : undefined;
+
+    let normed = null;
+    if (b.questions !== undefined) {
+      if (!Array.isArray(b.questions) || b.questions.length === 0) return fail(res, 400, "请至少保留一道题目");
+      try {
+        normed = b.questions.map((raw, i) => ({ ...normPassageQuestion(raw, i), id: raw.id ? String(raw.id) : null }));
+      } catch (e) {
+        return fail(res, 400, e.message);
+      }
+      const keep = new Set(normed.filter((x) => x.id).map((x) => x.id));
+      for (const id of keep) {
+        if (!existed.questions.some((q) => q.id === id)) return fail(res, 400, "存在不属于本篇章的题目 id");
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const mData = {};
+      if (b.title !== undefined) mData.title = b.title ? String(b.title) : null;
+      if (b.content !== undefined) mData.content = String(b.content);
+      if (b.examType !== undefined) mData.examType = examType;
+      if (b.skill !== undefined) mData.skill = skill;
+      if (Object.keys(mData).length) await tx.languageMaterial.update({ where: { id: existed.id }, data: mData });
+
+      if (!normed) return;
+      const keep = new Set(normed.filter((x) => x.id).map((x) => x.id));
+      const removed = existed.questions.filter((q) => !keep.has(q.id)).map((q) => q.id);
+      if (removed.length) {
+        await tx.languageAnswerRecord.deleteMany({ where: { questionId: { in: removed } } });
+        await tx.languageWrongBook.deleteMany({ where: { questionId: { in: removed } } });
+        await tx.languageQuestion.deleteMany({ where: { id: { in: removed } } });
+      }
+      for (const nq of normed) {
+        const data = {
+          examType, skill, qType: nq.qType, stem: nq.stem, options: nq.options,
+          answer: nq.answer, solution: nq.solution, difficulty: nq.difficulty,
+        };
+        if (part !== undefined) data.part = part;
+        if (groupTitle !== undefined) data.groupTitle = groupTitle;
+        if (nq.id) {
+          await tx.languageQuestion.update({ where: { id: nq.id }, data });
+        } else {
+          await tx.languageQuestion.create({
+            data: { ...data, part: part ?? null, groupTitle: groupTitle ?? null, materialId: existed.id, status: "PENDING_REVIEW", createdBy: req.user.id },
+          });
+        }
+      }
+    });
+    ok(res, { id: existed.id }, "篇章已更新");
+  })
+);
+
+// POST /api/language/passages/:id/review — 整篇审核(通过/退回,批量作用于篇内所有题目)
+router.post(
+  "/passages/:id/review",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const existed = await prisma.languageMaterial.findUnique({ where: { id: req.params.id } });
+    if (!existed) return fail(res, 404, "篇章不存在");
+    const { pass, note } = req.body || {};
+    const r = await prisma.languageQuestion.updateMany({
+      where: { materialId: existed.id },
+      data: { status: pass ? "PUBLISHED" : "REJECTED", reviewNote: note ? String(note) : null },
+    });
+    ok(res, { id: existed.id, count: r.count }, pass ? `整篇审核通过(${r.count} 题)` : `整篇已退回(${r.count} 题)`);
+  })
+);
+
+// DELETE /api/language/passages/:id — 删除整篇(文章 + 其题目 + 作答/错题记录)
+router.delete(
+  "/passages/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const existed = await prisma.languageMaterial.findUnique({
+      where: { id: req.params.id },
+      include: { questions: { select: { id: true } } },
+    });
+    if (!existed) return fail(res, 404, "篇章不存在");
+    const qids = existed.questions.map((q) => q.id);
+    await prisma.$transaction(async (tx) => {
+      if (qids.length) {
+        await tx.languageAnswerRecord.deleteMany({ where: { questionId: { in: qids } } });
+        await tx.languageWrongBook.deleteMany({ where: { questionId: { in: qids } } });
+        await tx.languageQuestion.deleteMany({ where: { id: { in: qids } } });
+      }
+      await tx.languageMaterial.delete({ where: { id: existed.id } });
+    });
+    ok(res, { id: existed.id, questionCount: qids.length }, "整篇已删除");
+  })
+);
+
+// —— 阅读篇章 PDF 导入(视觉模型抽取,返回草稿供教师确认后再保存) ——
+
+// 视觉模型返回的原始篇章 → 前端可直接填表的草稿
+function draftFromRaw(raw) {
+  const qs = Array.isArray(raw?.questions) ? raw.questions : [];
+  const questions = [];
+  for (const r of qs) {
+    let qType = String(r?.qType || "").trim().toUpperCase();
+    const options = (Array.isArray(r?.options) ? r.options : [])
+      .map((s) => String(s || "").replace(/^[A-Ha-h][.、)]\s*/, "").trim())
+      .filter(Boolean);
+    if (!PASSAGE_QTYPES.includes(qType)) qType = options.length >= 2 ? "SINGLE_CHOICE" : "FILL_BLANK";
+    let answer = r?.answer === undefined || r?.answer === null ? "" : String(r.answer).trim();
+    // 选择类题:答案给的是选项正文时换算成字母
+    if (["SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"].includes(qType) && answer.length > 1) {
+      const hit = options.findIndex((o) => o.toLowerCase() === answer.toLowerCase());
+      if (hit >= 0) answer = String.fromCharCode(65 + hit);
+    }
+    const stem = String(r?.stem || "").trim();
+    if (!stem) continue;
+    questions.push({
+      qType,
+      stem,
+      options: ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"].includes(qType) ? options : [],
+      answer,
+      solution: r?.solution ? String(r.solution) : "",
+      difficulty: 3,
+    });
+  }
+  return {
+    title: String(raw?.title || "").trim(),
+    content: String(raw?.content || "").trim(),
+    questions,
+  };
+}
+
+// POST /api/language/passages/import — 上传阅读 PDF(base64),异步抽取篇章草稿
+// body: { filename, data, examType?, skill? } → { taskId }
+router.post(
+  "/passages/import",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { filename, data } = req.body || {};
+    if (!data) return fail(res, 400, "请提供 PDF 文件 data(base64)");
+    let buf;
+    try {
+      const s = String(data).includes(",") ? String(data).split(",")[1] : String(data);
+      buf = Buffer.from(s, "base64");
+    } catch {
+      return fail(res, 400, "data 不是合法的 base64");
+    }
+    if (!buf.length) return fail(res, 400, "文件内容为空");
+    if (buf.length > 15 * 1024 * 1024) return fail(res, 400, "文件过大(上限 15MB)");
+
+    const task = createImportTask();
+    updateImportTask(task.id, { progress: 3, message: "正在读取 PDF..." });
+    (async () => {
+      try {
+        updateImportTask(task.id, { progress: 10, message: "正在栅格化 PDF..." });
+        const pages = await rasterize(buf);
+        updateImportTask(task.id, { progress: 30, message: `共 ${pages.length} 页,正在用视觉模型抽取文章与题目...这可能需要几十秒` });
+        const raws = await extractReadingPassagesFromPdfPages(pages);
+        const drafts = raws.map(draftFromRaw).filter((d) => d.content && d.questions.length);
+        if (!drafts.length) throw new Error("未从该 PDF 抽取到任何「文章+题目」篇章,请确认这是阅读试卷");
+        finishImportTask(task.id, { drafts, filename: filename || "", pageCount: pages.length });
+      } catch (e) {
+        const msg = e?.message === "VISION_NOT_CONFIGURED"
+          ? "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 配置 VISION_API_KEY 后重启 API"
+          : "阅读篇章解析失败:" + (e?.message || "未知错误");
+        failImportTask(task.id, msg);
+      }
+    })();
+    ok(res, { taskId: task.id }, "已开始解析");
+  })
+);
+
+// GET /api/language/passages/import/:taskId — 轮询导入进度与结果
+router.get(
+  "/passages/import/:taskId",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const t = getImportTask(req.params.taskId);
+    if (!t) return fail(res, 404, "任务不存在或已过期");
+    ok(res, { id: t.id, status: t.status, progress: t.progress, message: t.message, result: t.result, error: t.error });
   })
 );
 
