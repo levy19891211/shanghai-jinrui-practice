@@ -86,13 +86,15 @@ export default function TeacherPapersPage() {
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
   const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
-  // 「添加试题」弹窗:可选题目列表 / 勾选 / 弹窗内搜索
+  // 「添加试题」弹窗:可选题目列表 / 勾选 / 弹窗内搜索 / 知识点筛选
   const [addOpen, setAddOpen] = useState(false);
   const [addList, setAddList] = useState<Question[]>([]);
   const [addTotal, setAddTotal] = useState(0);
   const [addLoading, setAddLoading] = useState(false);
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
   const [addKeyword, setAddKeyword] = useState("");
+  const [addKps, setAddKps] = useState<{ id: string; name: string }[]>([]);
+  const [addKpFilter, setAddKpFilter] = useState("");
   const [addSaving, setAddSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -258,19 +260,35 @@ export default function TeacherPapersPage() {
     setError("");
     setAddSelected(new Set());
     setAddKeyword("");
+    setAddKpFilter("");
     setAddOpen(true);
+    // 预载知识点(按本卷科目),供筛选下拉使用
+    try {
+      const kps = await api.get<{ list: { id: string; name: string; subject: string }[] }>(
+        `/knowledge-points${detail.subject ? `?subject=${encodeURIComponent(detail.subject)}` : ""}`
+      );
+      setAddKps(kps.list);
+    } catch {
+      setAddKps([]);
+    }
+    await loadAddQuestions("");
+  }
+
+  // 按条件加载可选题目(知识点 id 为空则不限)
+  async function loadAddQuestions(kpId: string) {
+    if (!detail) return;
     setAddLoading(true);
     try {
       const qs = new URLSearchParams({ pageSize: "50", sort: "createdAt" });
       if (detail.subject) qs.set("subject", detail.subject);
       if (detail.sourceType) qs.set("sourceType", detail.sourceType);
+      if (kpId) qs.set("knowledgePointId", kpId);
       const d = await api.get<{ list: Question[]; total: number }>(`/questions?${qs.toString()}`);
       const inPaper = new Set(detail.questions.map((q) => q.id));
       setAddList(d.list.filter((q) => !inPaper.has(q.id)));
       setAddTotal(d.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取题库失败");
-      setAddOpen(false);
     } finally {
       setAddLoading(false);
     }
@@ -884,13 +902,28 @@ export default function TeacherPapersPage() {
                 ? "正在读取题库..."
                 : `从${detail.subject ? `科目「${detail.subject}」` : ""}${detail.subject && detail.sourceType ? "、" : ""}${detail.sourceType ? `题源「${detail.sourceType}」` : ""}题库中选择(共 ${addTotal} 道匹配,已排除卷内题目,最多显示前 50 道)。`}
             </p>
-            <input
-              value={addKeyword}
-              onChange={(e) => setAddKeyword(e.target.value)}
-              placeholder="搜索题干关键词..."
-              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-            />
-            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+            <div className="mt-3 flex items-center gap-2">
+              <select
+                value={addKpFilter}
+                onChange={(e) => {
+                  setAddKpFilter(e.target.value);
+                  loadAddQuestions(e.target.value);
+                }}
+                className="ui-select h-9 w-52 shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500"
+              >
+                <option value="">全部知识点</option>
+                {addKps.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name}</option>
+                ))}
+              </select>
+              <input
+                value={addKeyword}
+                onChange={(e) => setAddKeyword(e.target.value)}
+                placeholder="搜索题干关键词..."
+                className="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="mt-3 max-h-[30rem] space-y-2 overflow-y-auto">
               {addLoading ? (
                 <p className="py-8 text-center text-sm text-slate-400">加载中...</p>
               ) : addList.length === 0 ? (
@@ -922,7 +955,19 @@ export default function TeacherPapersPage() {
                           </span>
                           <span className="text-slate-400">{q.topic} · 难度 {q.difficulty}</span>
                         </div>
-                        <div className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-700">{renderRich(q.stem ?? "")}</div>
+                        <div className="mt-1.5 rounded-lg bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-800">
+                          {renderRich(q.stem ?? "")}
+                        </div>
+                        {(q.options ?? []).length > 0 && (
+                          <div className="mt-1.5 space-y-0.5">
+                            {(q.options ?? []).map((opt, i) => (
+                              <div key={i} className="flex gap-2 text-sm text-slate-600">
+                                <span className="shrink-0 font-medium text-slate-400">{String.fromCharCode(65 + i)}.</span>
+                                <span className="min-w-0 flex-1">{renderRich(opt)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </label>
                   ))
