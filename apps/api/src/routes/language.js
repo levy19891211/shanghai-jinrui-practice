@@ -853,6 +853,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const existed = await prisma.languagePaper.findUnique({ where: { id: req.params.id } });
     if (!existed) return fail(res, 404, "试卷不存在");
+    // 保护:若仍有作业/考试分发引用该卷,禁止删除(否则会让学生端点开作业报"试卷不存在")
+    const refCount = await prisma.assignment.count({ where: { languagePaperId: existed.id } });
+    if (refCount > 0) {
+      return fail(res, 400, "该试卷已布置给学生的作业/考试,无法删除。请先在「作业分发」中撤回相关作业后再删除。");
+    }
     await prisma.languageSession.updateMany({ where: { paperId: existed.id }, data: { paperId: null } });
     await prisma.languagePaper.delete({ where: { id: existed.id } });
     ok(res, { id: existed.id }, "删除成功");
