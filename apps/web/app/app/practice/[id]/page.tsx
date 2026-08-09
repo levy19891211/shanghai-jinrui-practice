@@ -239,7 +239,7 @@ export default function PracticePage() {
                         <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#8a6d1f]">
                           <span>💡</span><span>解析</span>
                         </div>
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(d.solution)}</div>
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(d.solution, { smart: false })}</div>
                       </div>
                     )}
                   </div>

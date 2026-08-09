@@ -44,7 +44,7 @@ export default function WrongBookPage() {
           <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(w.stem)}</p>
           {w.solution ? (
             <div className="mt-3 whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
-              <b className="text-[#00467F]">解析:</b> {renderRich(w.solution)}
+              <b className="text-[#00467F]">解析:</b> {renderRich(w.solution, { smart: false })}
             </div>
           ) : (
             <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-xs text-slate-400">暂无解析,老师尚未补充</p>

@@ -1177,7 +1177,7 @@ Answer: B
               {reviewQ.solution && (
                 <div className="mt-3">
                   <p className="mb-1 text-xs font-medium text-slate-400">解析</p>
-                  <div className="whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">{renderRich(reviewQ.solution)}</div>
+                  <div className="whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">{renderRich(reviewQ.solution, { smart: false })}</div>
                 </div>
               )}
             </div>

@@ -148,8 +148,10 @@ async function tryGenerateSolution(q) {
     const raw = await chatComplete({
       system:
         "You are an experienced tutor for UK university admissions mathematics tests (TMUA, ESAT, etc.). Provide a clear, rigorous, student-friendly solution explanation for the given question. " +
-        "Write the entire explanation **in English**, organized into exactly three sections using Markdown headings:\n## Solution Steps\n## Knowledge Points Tested\n## Common Pitfalls\n" +
-        "Use LaTeX inline $...$ or display $$...$$ for mathematics. Output only the solution content, no greetings.",
+        "Write the entire explanation **in English** as plain text with simple line breaks. Cover three parts: Solution Steps, Knowledge Points Tested, and Common Pitfalls. " +
+        "Do NOT use Markdown syntax: no ## headings, no - bullet lists, no ** bold**, no # symbols. " +
+        "Formula rules: use only $...$ for inline math and $$...$$ for display math; do NOT use \\(...\\), \\[...\\], \\text{...}, \\begin{...}, or \\\\ inside math. Keep formulas simple and valid LaTeX (e.g. $x^2 - 5x + 6 = 0$, $\\frac{1}{2}$). " +
+        "Output only the solution content, no greetings.",
       user: buildSolutionPrompt({ stem: q.stem, options: safeParseOptions(q.options), answer: q.answer, topic: q.topic }),
       temperature: 0.2,
       maxTokens: 900,
@@ -844,8 +846,10 @@ router.post(
       raw = await chatComplete({
         system:
           "You are an experienced tutor for UK university admissions mathematics tests (TMUA, ESAT, etc.). Provide a clear, rigorous, student-friendly solution explanation for the given question. " +
-          "Write the entire explanation **in English**, organized into exactly three sections using Markdown headings:\n## Solution Steps\n## Knowledge Points Tested\n## Common Pitfalls\n" +
-          "Use LaTeX inline $...$ or display $$...$$ for mathematics. Output only the solution content, no greetings.",
+          "Write the entire explanation **in English** as plain text with simple line breaks. Cover three parts: Solution Steps, Knowledge Points Tested, and Common Pitfalls. " +
+          "Do NOT use Markdown syntax: no ## headings, no - bullet lists, no ** bold**, no # symbols. " +
+          "Formula rules: use only $...$ for inline math and $$...$$ for display math; do NOT use \\(...\\), \\[...\\], \\text{...}, \\begin{...}, or \\\\ inside math. Keep formulas simple and valid LaTeX (e.g. $x^2 - 5x + 6 = 0$, $\\frac{1}{2}$). " +
+          "Output only the solution content, no greetings.",
         user: prompt,
         temperature: 0.2,
         maxTokens: 900,

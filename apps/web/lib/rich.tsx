@@ -78,7 +78,9 @@ function tokenize(text: string): Token[] {
   return tokens;
 }
 
-export function renderRich(text: string | null | undefined): React.ReactNode[] {
+// opts.smart=false 时,非公式文本按纯文本输出(不 smartMath)——用于 LLM 生成的解析/长文本,
+// 避免英文正文被误判成数学斜体。题干/选项仍走 smartMath(默认)。
+export function renderRich(text: string | null | undefined, opts?: { smart?: boolean }): React.ReactNode[] {
   if (!text) return [];
   let key = 0;
   return tokenize(text).map((t) => {
@@ -101,7 +103,8 @@ export function renderRich(text: string | null | undefined): React.ReactNode[] {
           />
         );
       default:
-        // 普通文本:智能识别其中的数学片段并渲染为公式
+        // 普通文本:智能识别其中的数学片段并渲染为公式(解析类长文本可用 opts.smart=false 关闭)
+        if (opts?.smart === false) return <span key={key++}>{t.text}</span>;
         return <span key={key++}>{smartMath(t.text!)}</span>;
     }
   });
