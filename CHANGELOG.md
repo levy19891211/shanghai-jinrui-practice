@@ -1,5 +1,13 @@
 # 版本历史
 
+## V2.3.23 (2026-08-09) — 批量导入进度条(任务式导入)
+- **功能**:批量导入(JSON/CSV/上传文件/PDF 双文件)改为**任务式**——提交后返回 taskId,后端后台逐步执行并上报进度,前端**实时进度条**(百分比 + 阶段文案:准备/解析/入库/组卷)。
+- **实现**:
+  - 后端新增 `lib/import-task.js`(内存任务表,TTL 30 分钟自动清理);`/import`、`/import-file`、`/import-pdf` 改为立即返回 `{ taskId }`,后台执行 `runImportTask`,逐阶段 `updateImportTask` 上报进度;新增 `GET /questions/import-task/:taskId` 轮询接口。
+  - `importRows` 增加可选 `onProgress` 回调,逐行导入按 5 条粒度上报。
+  - 前端 `teacher/page.tsx`:三个导入函数改为提交 → `pollImportTask`(每 1.2s 轮询,5 分钟超时兜底)→ 进度条 UI(蓝=进行中/绿=完成/红=失败)+ 阶段文案;关闭/完成时清理定时器。
+- **验证**:`import-task` 模块单测 PASS(running/done/error/notfound);tsc 通过;node --check 通过。
+
 ## V2.3.22 (2026-08-09) — 试卷管理按学科筛选
 - **功能**:试卷管理页新增**学科 Tab 筛选**(全部/数学/物理/化学/生物,与题库的学科 Tab 一致),点击即过滤出该学科下的试卷。
 - **实现**:后端 `GET /api/papers` 支持 `?subject=` 过滤(仅老师/管理员;学生端只看已开放卷不受影响);前端 `papers/page.tsx` 加 `subjectFilter` state + 学科 Tab,与状态 Tab(全部/可作答/待审核/套题自动卷/已下架)可叠加使用。

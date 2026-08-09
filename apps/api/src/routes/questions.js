@@ -11,9 +11,20 @@ import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile } from "../lib/parse-import-file.js";
 import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
+import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, sourceType: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
+
+// 后台执行导入任务:捕获异常 → 任务标记 error;成功 → finishImportTask
+async function runImportTask(taskId, fn) {
+  try {
+    const result = await fn();
+    finishImportTask(taskId, result);
+  } catch (e) {
+    failImportTask(taskId, e?.message || "导入失败");
+  }
+}
 
 // 解析 JSON 字符串数组(如 topicIds)
 function parseJsonIds(s) {
@@ -195,7 +206,7 @@ function parseCsv(text) {
 
 // 批量导入:兼容 JSON 数组 或 CSV 文本
 // CSV 列顺序:subject,paper,topic,difficulty,type,stem,options(分号分隔),answer,solution,source,status
-async function importRows(req, rows) {
+async function importRows(req, rows, onProgress) {
   const errors = [];
   const created = []; // 供套题自动组卷使用
   let imported = 0;
@@ -288,11 +299,16 @@ async function importRows(req, rows) {
     } catch (e) {
       errors.push({ row: i + 1, reason: e.message });
     }
+    if (onProgress && (i + 1) % 5 === 0) {
+      onProgress(Math.round(((i + 1) / rows.length) * 100), `已处理 ${i + 1}/${rows.length} 条`);
+    }
   }
+  if (onProgress) onProgress(100, `已处理 ${rows.length}/${rows.length} 条`);
   return { imported, errors, created };
 }
 
 // POST /api/questions/import — 批量导入题目(老师/管理员)
+// 任务式:立即返回 { taskId },后台逐条导入,前端轮询 GET /questions/import-task/:taskId 看进度
 router.post(
   "/import",
   requireAuth,
@@ -313,33 +329,41 @@ router.post(
       return fail(res, 400, "请提供 items(JSON 数组)或 csv(文本,含表头)");
     }
     if (rows.length === 0) return fail(res, 400, "没有可导入的数据");
-    const { imported, errors, created } = await importRows(req, rows);
 
-    // 套题自动组卷:同一 subject+paper+source 的题视为一套,自动成卷。
-    // 注意自动成卷 ≠ 自动发布 —— 新卷 status=DRAFT,要等卷内每道题都审核通过才会转 READY 对学生开放。
-    let papers = [];
-    const autoPaper = req.body?.autoPaper !== false; // 默认开启,显式传 false 可关闭
-    if (autoPaper && created.length) {
-      papers = await syncAutoPaperSets(created, {
-        title: req.body?.paperTitle,
-        mode: req.body?.paperMode,
-        durationMin: req.body?.paperDurationMin,
-      });
-    }
-    const paperMsg = papers.length
-      ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
-      : "";
-    ok(
-      res,
-      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, created },
-      `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
-    );
+    const task = createImportTask();
+    updateImportTask(task.id, { message: `准备导入 ${rows.length} 条...` });
+    // 后台执行,不阻塞响应
+    runImportTask(task.id, async () => {
+      const { imported, errors, created } = await importRows(req, rows, (p, m) =>
+        updateImportTask(task.id, { progress: Math.round(p * 0.9), message: m })
+      );
+
+      // 套题自动组卷
+      let papers = [];
+      const autoPaper = req.body?.autoPaper !== false;
+      if (autoPaper && created.length) {
+        updateImportTask(task.id, { progress: 92, message: "识别套题并自动组卷..." });
+        papers = await syncAutoPaperSets(created, {
+          title: req.body?.paperTitle,
+          mode: req.body?.paperMode,
+          durationMin: req.body?.paperDurationMin,
+        });
+      }
+      const paperMsg = papers.length
+        ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
+        : "";
+      return {
+        imported, failed: errors.length, errors: errors.slice(0, 20), papers, created,
+        message: `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`,
+      };
+    });
+    ok(res, { taskId: task.id });
   })
 );
 
 // POST /api/questions/import-file — 上传文件批量导入(Excel/Word/PDF)
 // 接收 { filename, data }(data 为 base64,可带 data: 前缀),服务端解析后复用 importRows。
-// PDF 经 PyMuPDF 栅格化 + 视觉模型读取公式,需要配置 VISION_API_KEY。
+// 任务式:立即返回 { taskId },后台执行,前端轮询进度。
 router.post(
   "/import-file",
   requireAuth,
@@ -357,40 +381,46 @@ router.post(
     if (buf.length === 0) return fail(res, 400, "文件内容为空");
     if (buf.length > 15 * 1024 * 1024) return fail(res, 400, "文件过大(上限 15MB)");
 
-    let rows;
-    try {
-      rows = await parseImportFile(filename, buf);
-    } catch (e) {
-      if (e.message === "VISION_NOT_CONFIGURED") {
-        return fail(
-          res,
-          400,
-          "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API"
-        );
+    const task = createImportTask();
+    updateImportTask(task.id, { progress: 2, message: `正在解析文件 ${filename}...` });
+    runImportTask(task.id, async () => {
+      let rows;
+      try {
+        rows = await parseImportFile(filename, buf);
+      } catch (e) {
+        if (e.message === "VISION_NOT_CONFIGURED") {
+          throw new Error(
+            "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API"
+          );
+        }
+        throw new Error("解析失败:" + e.message);
       }
-      return fail(res, 400, "解析失败:" + e.message);
-    }
-    if (!rows.length) return fail(res, 400, "未从文件中解析出任何题目(请检查模板/表头)");
+      if (!rows.length) throw new Error("未从文件中解析出任何题目(请检查模板/表头)");
+      updateImportTask(task.id, { progress: 15, message: `解析出 ${rows.length} 条,开始入库...` });
 
-    const { imported, errors, created } = await importRows(req, rows);
+      const { imported, errors, created } = await importRows(req, rows, (p, m) =>
+        updateImportTask(task.id, { progress: 15 + Math.round(p * 0.75), message: m })
+      );
 
-    let papers = [];
-    const autoPaper = req.body?.autoPaper !== false;
-    if (autoPaper && created.length) {
-      papers = await syncAutoPaperSets(created, {
-        title: req.body?.paperTitle,
-        mode: req.body?.paperMode,
-        durationMin: req.body?.paperDurationMin,
-      });
-    }
-    const paperMsg = papers.length
-      ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
-      : "";
-    ok(
-      res,
-      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created },
-      `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`
-    );
+      let papers = [];
+      const autoPaper = req.body?.autoPaper !== false;
+      if (autoPaper && created.length) {
+        updateImportTask(task.id, { progress: 92, message: "识别套题并自动组卷..." });
+        papers = await syncAutoPaperSets(created, {
+          title: req.body?.paperTitle,
+          mode: req.body?.paperMode,
+          durationMin: req.body?.paperDurationMin,
+        });
+      }
+      const paperMsg = papers.length
+        ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
+        : "";
+      return {
+        imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created,
+        message: `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${paperMsg}`,
+      };
+    });
+    ok(res, { taskId: task.id });
   })
 );
 
@@ -429,56 +459,78 @@ router.post(
       if (ansBuf && ansBuf.length > 15 * 1024 * 1024) return fail(res, 400, "答案文件过大(上限 15MB)");
     }
 
-    let rows;
-    try {
-      rows = await parsePdf(filename, buf);
-    } catch (e) {
-      if (e.message === "VISION_NOT_CONFIGURED") {
-        return fail(res, 400, "PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API");
-      }
-      return fail(res, 400, "题目文件解析失败:" + e.message);
-    }
-    if (!rows.length) return fail(res, 400, "未从题目文件解析出任何题目");
-
-    // 答案文件:提取 {question, answer} 并按题号升序,与题目入库顺序一一对应
-    let ansMatched = 0;
-    if (ansBuf) {
-      let answers = [];
+    const task = createImportTask();
+    updateImportTask(task.id, { progress: 2, message: "正在读取文件..." });
+    runImportTask(task.id, async () => {
+      // 题目文件解析(视觉模型提取题目)
+      updateImportTask(task.id, { progress: 5, message: "正在栅格化 PDF 并识别题目(视觉模型)...这可能需要几十秒" });
+      let rows;
       try {
-        answers = await parseAnswerPdf(answerFilename || "answers.pdf", ansBuf);
+        rows = await parsePdf(filename, buf);
       } catch (e) {
-        return fail(res, 400, "答案文件解析失败:" + e.message);
+        if (e.message === "VISION_NOT_CONFIGURED") {
+          throw new Error("PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API");
+        }
+        throw new Error("题目文件解析失败:" + e.message);
       }
-      for (let i = 0; i < Math.min(rows.length, answers.length); i++) {
-        if (answers[i] && answers[i].answer) {
-          rows[i].answer = answers[i].answer;
-          ansMatched++;
+      if (!rows.length) throw new Error("未从题目文件解析出任何题目");
+
+      // 答案文件:提取 {question, answer} 并按题号升序,与题目入库顺序一一对应
+      let ansMatched = 0;
+      if (ansBuf) {
+        updateImportTask(task.id, { progress: 60, message: "正在识别答案文件..." });
+        let answers = [];
+        try {
+          answers = await parseAnswerPdf(answerFilename || "answers.pdf", ansBuf);
+        } catch (e) {
+          throw new Error("答案文件解析失败:" + e.message);
+        }
+        for (let i = 0; i < Math.min(rows.length, answers.length); i++) {
+          if (answers[i] && answers[i].answer) {
+            rows[i].answer = answers[i].answer;
+            ansMatched++;
+          }
         }
       }
-    }
 
-    const { imported, errors, created } = await importRows(req, rows);
+      const { imported, errors, created } = await importRows(req, rows, (p, m) =>
+        updateImportTask(task.id, { progress: 65 + Math.round(p * 0.27), message: m })
+      );
 
-    let papers = [];
-    const autoPaper = req.body?.autoPaper !== false;
-    if (autoPaper && created.length) {
-      papers = await syncAutoPaperSets(created, {
-        title: req.body?.paperTitle,
-        mode: req.body?.paperMode,
-        durationMin: req.body?.paperDurationMin,
-      });
-    }
-    const ansMsg = ansBuf
-      ? `;答案文件匹配 ${ansMatched} 题${ansMatched < rows.length ? `(${rows.length - ansMatched} 题未匹配,需审核页补充)` : ""}`
-      : ";未提供答案文件,答案留空,需在审核页手动补充";
-    const paperMsg = papers.length
-      ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
-      : "";
-    ok(
-      res,
-      { imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created, answerMatched: ansMatched },
-      `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${ansMsg}${paperMsg}`
-    );
+      let papers = [];
+      const autoPaper = req.body?.autoPaper !== false;
+      if (autoPaper && created.length) {
+        updateImportTask(task.id, { progress: 94, message: "识别套题并自动组卷..." });
+        papers = await syncAutoPaperSets(created, {
+          title: req.body?.paperTitle,
+          mode: req.body?.paperMode,
+          durationMin: req.body?.paperDurationMin,
+        });
+      }
+      const ansMsg = ansBuf
+        ? `;答案文件匹配 ${ansMatched} 题${ansMatched < rows.length ? `(${rows.length - ansMatched} 题未匹配,需审核页补充)` : ""}`
+        : ";未提供答案文件,答案留空,需在审核页手动补充";
+      const paperMsg = papers.length
+        ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
+        : "";
+      return {
+        imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created, answerMatched: ansMatched,
+        message: `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${ansMsg}${paperMsg}`,
+      };
+    });
+    ok(res, { taskId: task.id });
+  })
+);
+
+// GET /api/questions/import-task/:taskId — 轮询导入任务进度(任务式导入用)
+router.get(
+  "/import-task/:taskId",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const t = getImportTask(req.params.taskId);
+    if (!t) return fail(res, 404, "导入任务不存在或已过期");
+    ok(res, { id: t.id, status: t.status, progress: t.progress, message: t.message, result: t.result, error: t.error });
   })
 );
 

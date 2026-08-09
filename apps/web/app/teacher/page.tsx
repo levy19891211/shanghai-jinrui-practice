@@ -109,6 +109,9 @@ export default function TeacherPage() {
   const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number } | null>(null);
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  // 任务式导入:进度条(统一用于 JSON/CSV/文件/PDF 四种模式)
+  const [importProgress, setImportProgress] = useState<{ status: "running" | "done" | "error"; progress: number; message: string } | null>(null);
+  const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 文件批量导入(Excel/Word)
   const fileImportRef = useRef<HTMLInputElement>(null);
   const [importFileName, setImportFileName] = useState("");
@@ -348,6 +351,39 @@ export default function TeacherPage() {
     }
   }
 
+  // 任务式导入:提交后拿到 taskId,轮询进度接口直到 done/error
+  const pollImportTask = useCallback(async (taskId: string) => {
+    setImportProgress({ status: "running", progress: 0, message: "任务已提交,等待开始..." });
+    return new Promise<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number; message?: string }>((resolve, reject) => {
+      if (importTimerRef.current) clearInterval(importTimerRef.current);
+      let attempts = 0;
+      const maxAttempts = 240; // 约 4.8 分钟兜底(1200ms * 240)
+      importTimerRef.current = setInterval(async () => {
+        attempts++;
+        try {
+          const t = await api.get<{ status: "running" | "done" | "error"; progress: number; message: string; result: any; error?: string }>(`/questions/import-task/${taskId}`);
+          setImportProgress({ status: t.status, progress: t.progress, message: t.message });
+          if (t.status === "done") {
+            if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
+            resolve(t.result);
+          } else if (t.status === "error") {
+            if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
+            reject(new Error(t.error || "导入失败"));
+          } else if (attempts >= maxAttempts) {
+            if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
+            reject(new Error("导入超时(超过 5 分钟),请稍后到题库列表确认是否已导入"));
+          }
+        } catch (e) {
+          // 网络/接口瞬时错误:不中断轮询,交给下一次;超过阈值则判定失败
+          if (attempts >= maxAttempts) {
+            if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
+            reject(new Error("导入超时(超过 5 分钟),请稍后到题库列表确认是否已导入"));
+          }
+        }
+      }, 1200);
+    });
+  }, []);
+
   async function doImport() {
     setImportError("");
     setImportResult(null);
@@ -355,14 +391,17 @@ export default function TeacherPage() {
     setImporting(true);
     try {
       const payload = importMode === "json" ? { items: JSON.parse(importText) } : { csv: importText };
-      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[] }>("/questions/import", payload);
+      const { taskId } = await api.post<{ taskId: string }>("/questions/import", payload);
+      const r = await pollImportTask(taskId);
       setImportResult(r);
       setImportText("");
       await load();
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "导入失败(请检查格式)");
+      setImportProgress((prev) => (prev ? { ...prev, status: "error", message: e instanceof Error ? e.message : "导入失败" } : prev));
     } finally {
       setImporting(false);
+      if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
     }
   }
 
@@ -381,16 +420,16 @@ export default function TeacherPage() {
         r.onerror = () => reject(r.error);
         r.readAsDataURL(file);
       });
-      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[] }>(
-        "/questions/import-file",
-        { filename: file.name, data: dataUrl }
-      );
+      const { taskId } = await api.post<{ taskId: string }>("/questions/import-file", { filename: file.name, data: dataUrl });
+      const r = await pollImportTask(taskId);
       setImportResult(r);
       await load();
     } catch (err: any) {
       setImportError(err?.message || "导入失败(请检查文件格式/模板)");
+      setImportProgress((prev) => (prev ? { ...prev, status: "error", message: err?.message || "导入失败" } : prev));
     } finally {
       setImportUploading(false);
+      if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
     }
   }
 
@@ -415,10 +454,8 @@ export default function TeacherPage() {
         });
       const data = await read(file);
       const answerData = ansFile ? await read(ansFile) : undefined;
-      const r = await api.post<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number }>(
-        "/questions/import-pdf",
-        { filename: file.name, data, answerFilename: ansFile?.name, answerData }
-      );
+      const { taskId } = await api.post<{ taskId: string }>("/questions/import-pdf", { filename: file.name, data, answerFilename: ansFile?.name, answerData });
+      const r = await pollImportTask(taskId);
       setImportResult(r);
       setPdfFileName("");
       setPdfAnsFileName("");
@@ -427,8 +464,10 @@ export default function TeacherPage() {
       await load();
     } catch (err: any) {
       setImportError(err?.message || "导入失败(请检查 PDF 文件/视觉模型配置)");
+      setImportProgress((prev) => (prev ? { ...prev, status: "error", message: err?.message || "导入失败" } : prev));
     } finally {
       setPdfUploading(false);
+      if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
     }
   }
 
@@ -593,7 +632,7 @@ export default function TeacherPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setImportOpen(true); setImportText(""); setImportResult(null); setImportError(""); }}
+            onClick={() => { setImportOpen(true); setImportText(""); setImportResult(null); setImportError(""); setImportProgress(null); }}
             className="h-9 rounded-lg border border-indigo-300 px-4 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
           >
             批量导入
@@ -948,9 +987,29 @@ Answer: B
               </>
             )}
             {importError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{importError}</p>}
+            {/* 任务式导入进度条:四种模式统一展示真实进度 */}
+            {importProgress && (
+              <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-indigo-700">
+                    {importProgress.status === "error" ? "导入失败" : importProgress.status === "done" ? "导入完成" : "导入中..."}
+                  </span>
+                  <span className="text-indigo-500">{Math.round(importProgress.progress)}%</span>
+                </div>
+                <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-indigo-100">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      importProgress.status === "error" ? "bg-red-500" : importProgress.status === "done" ? "bg-emerald-500" : "bg-indigo-600"
+                    }`}
+                    style={{ width: `${Math.max(2, Math.round(importProgress.progress))}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-slate-500">{importProgress.message}</p>
+              </div>
+            )}
             {importResult && (
               <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                导入完成:成功 {importResult.imported} 条,失败 {importResult.failed} 条
+                {(importResult as any).message || `导入完成:成功 ${importResult.imported} 条,失败 ${importResult.failed} 条`}
                 {importResult.errors.length > 0 && (
                   <ul className="mt-1 list-inside list-disc text-xs">
                     {importResult.errors.map((e, i) => <li key={i}>第 {e.row} 行:{e.reason}</li>)}
@@ -959,7 +1018,7 @@ Answer: B
               </div>
             )}
             <div className="mt-5 flex justify-end gap-3">
-              <button onClick={() => setImportOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
+              <button onClick={() => { if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; } setImportOpen(false); setImportProgress(null); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">关闭</button>
               {importMode !== "file" && importMode !== "pdf" && (
                 <button onClick={doImport} disabled={importing} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
                   {importing ? "导入中..." : "开始导入"}
