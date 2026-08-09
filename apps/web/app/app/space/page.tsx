@@ -181,17 +181,20 @@ export default function PersonalSpacePage() {
     setWrongList((prev) => prev.map((w) => (w.questionId === qid ? { ...w, mastered: true } : w)));
   }
 
-  const tabBtn = (t: Tab, label: string, count?: number) => (
+  const tabBtn = (t: Tab, icon: string, label: string, count?: number) => (
     <button
       key={t}
       onClick={() => setTab(t)}
-      className={`relative rounded-lg px-4 py-2 text-sm font-medium transition ${
-        tab === t ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
+      className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+        tab === t
+          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+          : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-800"
       }`}
     >
+      <span className="text-base leading-none">{icon}</span>
       {label}
       {typeof count === "number" && count > 0 && (
-        <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${tab === t ? "bg-white/20 text-white" : "bg-indigo-100 text-indigo-600"}`}>{count}</span>
+        <span className={`ml-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${tab === t ? "bg-white/25 text-white" : "bg-indigo-100 text-indigo-600"}`}>{count}</span>
       )}
     </button>
   );
@@ -203,11 +206,11 @@ export default function PersonalSpacePage() {
         <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、薄弱点与错题。</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {tabBtn("assignments", "我的作业", pendingAssigns.length)}
-        {tabBtn("grades", "成绩历史", subjectSessions.length + langSessions.length)}
-        {tabBtn("weak", "薄弱知识点", weakTopics.filter((t) => t.correctRate < 70).length)}
-        {tabBtn("wrong", "错题本", pendingWrong.length)}
+      <div className="flex flex-wrap gap-3">
+        {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
+        {tabBtn("grades", "📈", "成绩历史", subjectSessions.length + langSessions.length)}
+        {tabBtn("weak", "🎯", "薄弱知识点", weakTopics.filter((t) => t.correctRate < 70).length)}
+        {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
@@ -225,32 +228,46 @@ export default function PersonalSpacePage() {
                 {pendingAssigns.map((a) => {
                   const overdue = a.dueAt && new Date(a.dueAt).getTime() < Date.now();
                   const canStart = a.status !== "SUBMITTED" && !(a.status === "EXPIRED" || overdue);
-                  return (
-                    <div key={a.id} className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
-                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${a.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" : overdue ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"}`}>{statusLabel(a)}</span>
-                        {a.isLanguage && a.paper?.examType && (
-                          <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[a.paper.skill || "FULL"] || "#666" }}>
-                            {EXAM_LABEL[a.paper.examType] || a.paper.examType}·{SKILL_LABEL[a.paper.skill || "FULL"] || a.paper.skill}
-                          </span>
-                        )}
-                        {!a.isLanguage && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{a.mode === "EXAM" ? "模考" : "练习"}</span>}
+                  const cardCls =
+                    "flex items-center justify-between gap-4 rounded-2xl border p-4 shadow-sm transition " +
+                    (canStart
+                      ? "cursor-pointer border-indigo-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
+                      : "border-slate-200 bg-slate-50");
+                  const inner = (
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <span className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${a.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" : overdue ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"}`}>{statusLabel(a)}</span>
+                          {a.isLanguage && a.paper?.examType && (
+                            <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[a.paper.skill || "FULL"] || "#666" }}>
+                              {EXAM_LABEL[a.paper.examType] || a.paper.examType}·{SKILL_LABEL[a.paper.skill || "FULL"] || a.paper.skill}
+                            </span>
+                          )}
+                          {!a.isLanguage && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{a.mode === "EXAM" ? "模考" : "练习"}</span>}
+                        </div>
+                        <p className="truncate text-sm font-semibold text-slate-800">{a.title}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {a.paper?.title ?? "试卷"}
+                          {a.mode === "EXAM" && a.paper?.durationMin ? ` · 限时 ${a.paper.durationMin} 分钟` : ""} · {fmtDue(a.dueAt)}
+                        </p>
+                        {a.note && <p className="mt-1 truncate text-xs text-slate-400">备注: {a.note}</p>}
                       </div>
-                      <p className="text-sm font-semibold text-slate-800">{a.title}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {a.paper?.title ?? "试卷"}
-                        {a.mode === "EXAM" && a.paper?.durationMin ? ` · 限时 ${a.paper.durationMin} 分钟` : ""} · {fmtDue(a.dueAt)}
-                      </p>
-                      {a.note && <p className="mt-1 truncate text-xs text-slate-400">备注: {a.note}</p>}
-                      {canStart && (
-                        <button
-                          onClick={() => startAssignment(a)}
-                          disabled={!!busyId}
-                          className="mt-3 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          {busyId === a.id ? "开卷中..." : a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
-                        </button>
-                      )}
+                      {busyId === a.id ? (
+                        <span className="shrink-0 text-sm font-medium text-indigo-400">开卷中...</span>
+                      ) : canStart ? (
+                        <span className="shrink-0 whitespace-nowrap text-sm font-medium text-indigo-600">
+                          {a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                  return canStart ? (
+                    <button key={a.id} onClick={() => startAssignment(a)} disabled={!!busyId} className={cardCls}>
+                      {inner}
+                    </button>
+                  ) : (
+                    <div key={a.id} className={cardCls}>
+                      {inner}
                     </div>
                   );
                 })}
