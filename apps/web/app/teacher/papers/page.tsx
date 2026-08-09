@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
-import type { PaperManageDetail, PaperRow, PaperStats } from "@/lib/types";
+import type { PaperManageDetail, PaperRow, PaperStats, Question } from "@/lib/types";
 
 interface Facets {
   subjects: { subject: string; count: number }[];
@@ -86,6 +86,14 @@ export default function TeacherPapersPage() {
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
   const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
+  // 「添加试题」弹窗:可选题目列表 / 勾选 / 弹窗内搜索
+  const [addOpen, setAddOpen] = useState(false);
+  const [addList, setAddList] = useState<Question[]>([]);
+  const [addTotal, setAddTotal] = useState(0);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
+  const [addKeyword, setAddKeyword] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
 
   const load = useCallback(async () => {
     const d = await api.get<{ list: PaperRow[] }>("/papers");
@@ -242,6 +250,55 @@ export default function TeacherPapersPage() {
       return;
     }
     await patchPaper(detail.id, { questionIds: ids }, "已从本卷移除该题");
+  }
+
+  // 打开「添加试题」弹窗:按本卷的科目/题源过滤题库,排除已在卷内的题
+  async function openAddQuestions() {
+    if (!detail) return;
+    setError("");
+    setAddSelected(new Set());
+    setAddKeyword("");
+    setAddOpen(true);
+    setAddLoading(true);
+    try {
+      const qs = new URLSearchParams({ pageSize: "50", sort: "createdAt" });
+      if (detail.subject) qs.set("subject", detail.subject);
+      if (detail.sourceType) qs.set("sourceType", detail.sourceType);
+      const d = await api.get<{ list: Question[]; total: number }>(`/questions?${qs.toString()}`);
+      const inPaper = new Set(detail.questions.map((q) => q.id));
+      setAddList(d.list.filter((q) => !inPaper.has(q.id)));
+      setAddTotal(d.total);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "读取题库失败");
+      setAddOpen(false);
+    } finally {
+      setAddLoading(false);
+    }
+  }
+
+  function toggleAddSelect(id: string) {
+    setAddSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // 确认添加:现有卷内 ids + 勾选 ids 合并后整卷更新(题目本身保留在题库)
+  async function addQuestionsToPaper() {
+    if (!detail || addSelected.size === 0) return;
+    setAddSaving(true);
+    try {
+      const ids = [...detail.questions.map((q) => q.id), ...Array.from(addSelected)];
+      const n = addSelected.size;
+      await patchPaper(detail.id, { questionIds: ids }, `已添加 ${n} 道题`);
+      setAddOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "添加失败");
+    } finally {
+      setAddSaving(false);
+    }
   }
 
   async function removePaper(p: PaperRow) {
@@ -738,7 +795,17 @@ export default function TeacherPapersPage() {
                   )}
                 </div>
 
-                <div className="mt-5 space-y-3">
+                <div className="mt-5 flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-600">卷内题目({detail.questions.length})</span>
+                  <button
+                    onClick={openAddQuestions}
+                    disabled={detailBusy}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    + 添加试题
+                  </button>
+                </div>
+                <div className="mt-3 space-y-3">
                   {detail.questions.map((q) => (
                     <div key={q.id} className="rounded-xl border border-slate-200 p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -800,6 +867,85 @@ export default function TeacherPapersPage() {
                 </div>
               </>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* 添加试题弹窗:从题库选择题目加入本卷 */}
+      {addOpen && detail && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-10 w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold">添加试题到「{detail.title}」</h3>
+              <button onClick={() => setAddOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {addLoading
+                ? "正在读取题库..."
+                : `从${detail.subject ? `科目「${detail.subject}」` : ""}${detail.subject && detail.sourceType ? "、" : ""}${detail.sourceType ? `题源「${detail.sourceType}」` : ""}题库中选择(共 ${addTotal} 道匹配,已排除卷内题目,最多显示前 50 道)。`}
+            </p>
+            <input
+              value={addKeyword}
+              onChange={(e) => setAddKeyword(e.target.value)}
+              placeholder="搜索题干关键词..."
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            />
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+              {addLoading ? (
+                <p className="py-8 text-center text-sm text-slate-400">加载中...</p>
+              ) : addList.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-400">
+                  题库中暂无其它可选题目。可先到「题库管理」录入/审核题目。
+                </p>
+              ) : (
+                addList
+                  .filter((q) => !addKeyword.trim() || q.stem.includes(addKeyword.trim()) || (q.topic || "").includes(addKeyword.trim()))
+                  .map((q) => (
+                    <label
+                      key={q.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                        addSelected.has(q.id) ? "border-indigo-400 bg-indigo-50/60" : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={addSelected.has(q.id)}
+                        onChange={() => toggleAddSelect(q.id)}
+                        className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">{q.subject}</span>
+                          {q.sourceType && <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-600">{q.sourceType}</span>}
+                          <span className={`rounded px-1.5 py-0.5 ${Q_STATUS_BADGE[q.status ?? ""] ?? ""}`}>
+                            {Q_STATUS_LABEL[q.status ?? ""] ?? q.status}
+                          </span>
+                          <span className="text-slate-400">{q.topic} · 难度 {q.difficulty}</span>
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-700">{renderRich(q.stem ?? "")}</div>
+                      </div>
+                    </label>
+                  ))
+              )}
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-xs text-slate-500">已勾选 {addSelected.size} 道</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAddOpen(false)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={addQuestionsToPaper}
+                  disabled={addSelected.size === 0 || addSaving}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {addSaving ? "添加中..." : `添加 ${addSelected.size} 道`}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

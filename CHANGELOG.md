@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.3.9 (2026-08-09) — 试卷管理「添加试题」：从题库选题加入卷子
+- **功能**:试卷管理 → 查看详情抽屉 → 卷内题目区新增「+ 添加试题」按钮,弹出选题弹窗。
+- **选题范围**:按本卷的科目(subject)与题源(sourceType)过滤题库(`GET /api/questions` 的 subject/sourceType 双筛选,复用 V2.3.8 能力),**自动排除已在卷内的题**;弹窗内支持题干关键词搜索;展示每题的科目/题源/状态/知识点/难度与题干预览(renderRich),可多选。
+- **提交**:合并「现有卷内 ids + 勾选 ids」后 PATCH `/papers/:id`(questionIds 全量替换,既有能力),后端自动重算卷就绪度——添加的题若未审核发布,整卷回落 DRAFT。
+- **纯前端改动**(`teacher/papers/page.tsx`),后端零改动;tsc 通过。
+
 ## V2.3.8 (2026-08-09) — 科目与题源分离：新增 sourceType 字段
 - **需求**:题库每道题 + 试卷管理每套卷,都要独立显示「题源/试卷类型」(TMUA/ESAT/NSAA,后续可扩展),把**科目**(数学/物理/化学/生物)与**题源**(TMUA/ESAT...)区分开。
 - **数据模型**(`schema.prisma`):`Question.sourceType` / `Paper.sourceType`(String?,题源/试卷类型,可扩展)。subject 回归纯科目语义。
