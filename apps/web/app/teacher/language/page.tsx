@@ -492,11 +492,33 @@ function PassageImportModal({ onClose, onPick }: { onClose: () => void; onPick: 
 }
 
 // —— 组卷弹窗 ——
-function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions: LangQ[]; passages: Passage[]; onClose: () => void; onSaved: () => void }) {
+type PaperInit = {
+  id?: string;
+  examType: string;
+  skill: string;
+  title: string;
+  mode: string;
+  durationMin: number | null;
+  source?: string | null;
+  kind: string;
+  segments: { skill: string; durationMin: number; questionCount?: number }[];
+  questionIds?: string[];
+};
+function PaperForm({ allQuestions, passages, initial, onClose, onSaved }: { allQuestions: LangQ[]; passages: Passage[]; initial?: PaperInit | null; onClose: () => void; onSaved: () => void }) {
+  const initFull = !!initial && initial.skill === "FULL";
   const [f, setF] = useState({
-    examType: "IELTS", skill: "READING", title: "", mode: "PRACTICE", durationMin: "",
-    source: "", kind: "CUSTOM", selected: [] as string[],
-    fullExam: false, segments: [{ skill: "LISTENING", durationMin: 30 }, { skill: "READING", durationMin: 60 }, { skill: "WRITING", durationMin: 60 }],
+    examType: initial?.examType || "IELTS",
+    skill: initFull ? "READING" : (initial?.skill || "READING"),
+    title: initial?.title || "",
+    mode: initial?.mode || "PRACTICE",
+    durationMin: initial?.durationMin != null ? String(initial.durationMin) : "",
+    source: initial?.source || "",
+    kind: initial?.kind || "CUSTOM",
+    selected: initial?.questionIds || [] as string[],
+    fullExam: initFull,
+    segments: initFull && initial?.segments?.length
+      ? initial.segments
+      : [{ skill: "LISTENING", durationMin: 30 }, { skill: "READING", durationMin: 60 }, { skill: "WRITING", durationMin: 60 }],
   });
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -552,12 +574,17 @@ function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions:
     if (f.mode === "EXAM" && !f.fullExam && !f.durationMin) return setErr("练习模式无需时长;模考模式请填总时长(分钟)");
     setSaving(true);
     try {
-      await api.post("/language/papers", {
+      const payload = {
         examType: f.examType, skill: f.fullExam ? "FULL" : f.skill, title: f.title,
         questionIds: f.selected, mode: f.mode, durationMin: f.durationMin ? Number(f.durationMin) : null,
         source: f.source || null, kind: f.kind,
-        segments: f.fullExam && f.mode === "EXAM" ? f.segments.map((s) => ({ ...s, questionCount: 0 })) : undefined,
-      });
+        segments: f.fullExam && f.mode === "EXAM" ? f.segments.map((s) => ({ skill: s.skill, durationMin: Number(s.durationMin) || 0 })) : undefined,
+      };
+      if (initial?.id) {
+        await api.put(`/language/papers/${initial.id}`, payload);
+      } else {
+        await api.post("/language/papers", payload);
+      }
       onSaved();
       onClose();
     } catch (e) {
@@ -570,7 +597,7 @@ function PaperForm({ allQuestions, passages, onClose, onSaved }: { allQuestions:
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10" onClick={onClose}>
       <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 text-lg font-bold text-slate-800">语言组卷</h3>
+        <h3 className="mb-4 text-lg font-bold text-slate-800">{initial?.id ? "编辑语言卷" : "语言组卷"}</h3>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <label className="block text-xs text-slate-500">考试类型
             <Select value={f.examType} onChange={(v) => setF({ ...f, examType: v })} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
@@ -836,6 +863,7 @@ export default function TeacherLanguagePage() {
   const [questions, setQuestions] = useState<LangQ[]>([]);
   const [editing, setEditing] = useState<LangQ | null | "new">(null);
   const [showPaper, setShowPaper] = useState(false);
+  const [editingPaper, setEditingPaper] = useState<PaperInit | null>(null);
   // 阅读篇章视图
   const [passages, setPassages] = useState<Passage[]>([]);
   const [allPassages, setAllPassages] = useState<Passage[]>([]);
@@ -955,6 +983,20 @@ export default function TeacherLanguagePage() {
       loadPapers();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
+  async function managePaper(p: LangPaper) {
+    try {
+      const d = await api.get<{ questions: { id: string }[] }>(`/language/papers/${p.id}`);
+      setEditingPaper({
+        id: p.id, examType: p.examType, skill: p.skill, title: p.title, mode: p.mode,
+        durationMin: p.durationMin, source: p.source ?? null, kind: p.kind, segments: p.segments,
+        questionIds: (d.questions || []).map((q) => q.id),
+      });
+      setShowPaper(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "加载试卷失败");
     }
   }
 
@@ -1141,7 +1183,7 @@ export default function TeacherLanguagePage() {
               </p>
               <div className="mt-3 flex gap-2">
                 <button className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700" onClick={() => { setAssignPaperId(p.id); setShowAssign(true); }}>布置</button>
-                <button className="rounded-md bg-slate-100 px-3 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setAssignPaperId(undefined)}>管理</button>
+                <button className="rounded-md bg-slate-100 px-3 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => managePaper(p)}>管理</button>
                 <button className="rounded-md bg-red-50 px-3 py-1 text-xs text-red-500 hover:bg-red-100" onClick={() => delPaper(p.id)}>删除</button>
               </div>
             </div>
@@ -1226,8 +1268,9 @@ export default function TeacherLanguagePage() {
         <PaperForm
           allQuestions={pubQuestions}
           passages={allPassages}
+          initial={editingPaper}
           onSaved={() => { loadPapers(); }}
-          onClose={() => setShowPaper(false)}
+          onClose={() => { setShowPaper(false); setEditingPaper(null); }}
         />
       )}
       {showPassageImport && (
