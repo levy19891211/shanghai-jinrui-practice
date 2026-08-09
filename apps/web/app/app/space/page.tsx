@@ -185,7 +185,7 @@ export default function PersonalSpacePage() {
     <button
       key={t}
       onClick={() => setTab(t)}
-      className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+      className={`flex w-full items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
         tab === t
           ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
           : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-800"
@@ -206,7 +206,7 @@ export default function PersonalSpacePage() {
         <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、薄弱点与错题。</p>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
         {tabBtn("grades", "📈", "成绩历史", subjectSessions.length + langSessions.length)}
         {tabBtn("weak", "🎯", "薄弱知识点", weakTopics.filter((t) => t.correctRate < 70).length)}
