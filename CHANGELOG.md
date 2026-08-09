@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.3.27 (2026-08-09) — 批量导入可撤销/删除已选文件
+- **功能**:批量导入面板中三种文件选择都支持**撤销/删除已选文件**:
+  - 「上传文件」模式(.xlsx/.xls/.docx/.pdf):已选文件后显示「撤销」按钮;
+  - 「PDF 双文件」模式:题目文件、答案文件各显示「删除」按钮。
+- **实现**:点击撤销/删除会清空对应 state(`importFileName`/`pdfFileName`/`pdfAnsFileName`)并重置 `<input type=file>` 的 value(`ref.current.value = ""`),保证再次选择同一文件时 onChange 仍会触发。
+- **验证**:tsc 通过。
+
 ## V2.3.26 (2026-08-09) — 试卷管理列表排序(名称字母/数字序 + 时间)
 - **功能**:试卷管理列表右上角新增**排序下拉**:最新优先(默认)/ 名称 A→Z / 名称 Z→A。
 - **实现**:纯前端——`papers/page.tsx` 新增 `sortBy` state;名称排序用 `localeCompare({numeric:true, sensitivity:'base'})`,让 "TMUA 2018 Paper 1" 排在 "TMUA 2022 Paper 1" 前(数字自然序,不是字典序);与学科 Tab/状态 Tab 可叠加。

@@ -910,7 +910,16 @@ export default function TeacherPage() {
                     {importUploading ? "解析中..." : "选择文件 (.xlsx / .xls / .docx / .pdf)"}
                   </button>
                   {importFileName && !importUploading && (
-                    <p className="mt-3 text-xs text-slate-500">已选:{importFileName}</p>
+                    <p className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500">
+                      <span>已选:{importFileName}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setImportFileName(""); if (fileImportRef.current) fileImportRef.current.value = ""; }}
+                        className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-500 hover:border-red-300 hover:text-red-500"
+                      >
+                        撤销
+                      </button>
+                    </p>
                   )}
                 </div>
                 <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
@@ -953,7 +962,18 @@ Answer: B
                       className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700"
                       onChange={(e) => setPdfFileName(e.target.files?.[0]?.name ?? "")}
                     />
-                    {pdfFileName && <p className="mt-1 text-xs text-slate-500">已选题目:{pdfFileName}</p>}
+                    {pdfFileName && (
+                      <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                        <span>已选题目:{pdfFileName}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setPdfFileName(""); if (pdfFileRef.current) pdfFileRef.current.value = ""; }}
+                          className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-500 hover:border-red-300 hover:text-red-500"
+                        >
+                          删除
+                        </button>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-slate-700">
@@ -967,7 +987,18 @@ Answer: B
                       className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-700"
                       onChange={(e) => setPdfAnsFileName(e.target.files?.[0]?.name ?? "")}
                     />
-                    {pdfAnsFileName && <p className="mt-1 text-xs text-slate-500">已选答案:{pdfAnsFileName}</p>}
+                    {pdfAnsFileName && (
+                      <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                        <span>已选答案:{pdfAnsFileName}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setPdfAnsFileName(""); if (pdfAnsFileRef.current) pdfAnsFileRef.current.value = ""; }}
+                          className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-500 hover:border-red-300 hover:text-red-500"
+                        >
+                          删除
+                        </button>
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
