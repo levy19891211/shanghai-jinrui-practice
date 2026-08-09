@@ -884,7 +884,7 @@ router.post(
       if (!target) return fail(res, 403, "您没有被布置这份作业");
       if (target.status === "SUBMITTED") return fail(res, 400, "这份作业已提交,请勿重复作答");
       paper = await prisma.languagePaper.findUnique({ where: { id: assignment.languagePaperId } });
-      if (!paper || paper.status !== "READY") return fail(res, 404, "作业对应试卷不可用");
+      if (!paper) return fail(res, 404, "作业对应的试卷不存在");
     } else if (paperId) {
       paper = await prisma.languagePaper.findUnique({ where: { id: String(paperId) } });
       if (!paper) return fail(res, 404, "试卷不存在");
