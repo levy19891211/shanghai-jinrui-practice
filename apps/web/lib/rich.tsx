@@ -22,8 +22,10 @@ function stripDollarArtifacts(token: string): string {
 
 // 判断一段被 $...$ 包裹的内容是否更像普通英文句子而非数学公式。
 // 若包含多个普通英文单词(非函数名),很可能是数据源里的零散 $ 被误当定界符。
+// 注意:先剔除 LaTeX 命令/环境名(如 \begin {pmatrix} \frac \sqrt),否则会把真公式误判成文本。
 function looksLikeTextInDollars(expr: string): boolean {
-  const words = (expr.match(/\b[a-z]{2,}\b/g) || []).filter((w) => !FUNC_NAMES.has(w));
+  const cleaned = expr.replace(/\\[a-zA-Z]+/g, " ").replace(/\{[a-zA-Z]+\}/g, " ");
+  const words = (cleaned.match(/\b[a-z]{2,}\b/g) || []).filter((w) => !FUNC_NAMES.has(w));
   return words.length >= 2;
 }
 

@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.3.21 (2026-08-09) — 修复 pmatrix 公式被误判为文本外露 + 53 题 answer 存选项内容改字母
+- **问题1(题干显示)**:2020 TMUA Q10 题干中 `$\begin{pmatrix} 3 \\ -5 \end{pmatrix}$` 以 **LaTeX 源码原样外露**(`\begin{pmatrix}...\end{pmatrix}` 字样可见)。根因:`looksLikeTextInDollars` 把 `begin`/`end`/`pmatrix` 当普通英文单词(≥2 个),把整个 `$...$` 误判为"数据残留文本"退回文本。
+- **修复1**:`rich.tsx` `looksLikeTextInDollars` 先剔除 LaTeX 命令(`\begin` 等 `\\[a-zA-Z]+`)与环境名(`{pmatrix}` 等 `{[a-zA-Z]+}`)再统计英文词——`\begin{pmatrix}` 不再被误判。8 用例验证 PASS(含 pmatrix/frac/sqrt/化学式/英文句子/零散 $)。
+- **问题2(判分铁律)**:全库扫描发现 **53 题 answer 存了"选项完整内容"而非字母**(TMUA 2019 10 题、TMUA 2018 Q4、TMUA 2020 Q10、PART B Physics 11 题)。`grading.js` 判分 `a === s` 学生选字母永远判错。
+- **修复2**:写脚本对 `SINGLE_CHOICE` 且 answer 精确匹配 options 某一项的题,统一改为对应字母(A-H)。53 题全部修复,0 跳过。
+- **沉淀**:Bug 库 #27 登记;pmatrix 类 LaTeX 环境命令误判 + answer 数据存选项内容两类问题入预防规则。
+
 ## V2.3.20 (2026-08-09) — 修复 5 题「$$/$ 配对错位」(同卷内两个公式挤一行)
 - **问题**:2018 Q3/Q4 (用户截图题)、2017 两题、2019 一题,stem 里两个公式被挤在同一行,中间公式没被 `$$`/`$` 包裹(裸 LaTeX),尾随 `$$\n` 是孤儿块级。tokenize 正则 `\$\$([\s\S]+?)\$\$` non-greedy 把所有后续内容吞进一个超长块级公式 → KaTeX 报「Unexpected char」 → fallback 输出整段 LaTeX 源码。
 - **修复**:5 题 stem 全部手动重写,每个公式独立一行 + 完整 `$$...$$` 包裹。最终全库扫描:`$$` 配对错 0 题、`$` 配对错 0 题。
