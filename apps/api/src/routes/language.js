@@ -965,7 +965,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const sessions = await prisma.languageSession.findMany({
       where: { submittedAt: { not: null } },
-      include: { records: { include: { question: { select: { qType: true, skill: true, topic: true } } } } },
+      include: { records: { include: { question: { select: { qType: true, skill: true } } } } },
     });
     const students = await prisma.user.count({ where: { role: "STUDENT" } });
     const bySkill = new Map();
