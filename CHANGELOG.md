@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.3.3 (2026-08-09) — 审核队列「含图表」提示 + 编辑粘贴插入图表
+- **功能 1 · 审核队列「含图表」提示**:题库管理/审核队列的状态列新增「含图表」徽标。`containsImage` 检测题干/选项/解析中内嵌的 Markdown 图片语法 `![alt](url)`,命中即显示琥珀色「含图表」标签(带 title 提示),审核时一眼识别图形题。零后端改动,复用已有数据形态。
+- **功能 2 · 编辑粘贴插入图表**:题目编辑表单的题干/选项/解析三个 textarea 均支持**直接粘贴截图**——监听 `onPaste`,从剪贴板 `DataTransferItemList` 提取 `image/*` 文件,复用现有 `POST /api/uploads` 上传链路(磁盘 `/var/www/uploads` + nginx `/uploads/` alias),生成 `![图表](/uploads/xxx.png)` 插入光标处,并 `preventDefault` 防止图片被当文本粘贴。粘贴的图表经 `renderRich` 渲染链路,在题干/选项/解析、审核弹窗、学生端答题页均正常显示。
+- **顺手增强**:题干 textarea 下方新增**题干预览**(实时渲染 `renderRich(stem)`),粘贴/编辑后立即看到公式与图表效果;上传逻辑重构为共用 `uploadAndInsert(file, field, ref)`(文件选择与粘贴共用)。
+- **验证**:`tsc --noEmit` 通过;`containsImage` 6/6 用例(题干含图/选项含图/解析含图/纯文字题/URL 非图片语法/空题干)。
+- **说明**:生产 nginx 已确认 `location /uploads/ { alias /var/www/uploads/; }` 生效(sites-enabled 软链 + `nginx -T`),上传目录由 `uploads.js` `mkdirSync(recursive)` 自动创建(root 权限)。
+
 ## V2.3.2 (2026-08-09) — 补强题库题干 `$` 字符外露修复
 - **现象**:V2.3.1 上线后仍有部分题干显示 `$` 字符外露(`numbersx $.` 这类 `x` 后紧跟空格加 `$` 加 `.`)。
 - **根因**:V2.3.1 新增的 `looksLikeTextInDollars` 兜底分支退回到文本 token 时仍用 `m[0]`(整段匹配,**含外层 `$` 字符**),导致被拦截 case 把 `$` 字符本身当文本渲染。任何被拦截的 `$...$`(内含 ≥2 个普通英文词)都会泄露 2 个 `$` 字符。

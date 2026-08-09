@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, RefObject } from "react";
+import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
 import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
@@ -16,6 +16,12 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-600",
   ARCHIVED: "bg-slate-100 text-slate-400",
 };
+
+// 判断题目是否含图片图表(题干/选项/解析中内嵌 Markdown 图片语法 ![alt](url))
+const IMG_RE = /!\[[^\]]*\]\([^)]+\)/;
+function containsImage(q: Question): boolean {
+  return [q.stem, ...(q.options || []), q.solution].some((t) => typeof t === "string" && IMG_RE.test(t));
+}
 
 // 把 ISO 时间格式化为「YYYY-MM-DD HH:mm」,用于显示导入/创建时间
 function fmtTime(s?: string | null): string {
@@ -120,10 +126,8 @@ export default function TeacherPage() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !uploadTarget) return;
+  // 上传图片并插入到指定 textarea 光标处(共用:文件选择 / 剪贴板粘贴)
+  const uploadAndInsert = async (file: File, field: "stem" | "optionsText" | "solution", ref: RefObject<HTMLTextAreaElement>) => {
     setUploading(true);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -134,10 +138,9 @@ export default function TeacherPage() {
       });
       const res = await api.post<{ url: string; filename: string }>("/uploads", { filename: file.name, data: dataUrl });
       const url = res.url;
-      const alt = file.name.replace(/\.[^.]+$/, "");
+      const alt = (file.name || "图表").replace(/\.[^.]+$/, "") || "图表";
       const snippet = `![${alt}](${url})`;
-      const ref = uploadTarget.ref;
-      const cur = form[uploadTarget.field];
+      const cur = form[field];
       const el = ref.current;
       let next = cur;
       let caret = cur.length;
@@ -151,7 +154,7 @@ export default function TeacherPage() {
         next = cur + sep + snippet;
         caret = next.length;
       }
-      setForm((f) => ({ ...f, [uploadTarget.field]: next }));
+      setForm((f) => ({ ...f, [field]: next }));
       requestAnimationFrame(() => {
         if (el) { el.focus(); el.selectionStart = el.selectionEnd = caret; }
       });
@@ -159,7 +162,30 @@ export default function TeacherPage() {
       alert("图片上传失败:" + (err?.message || err));
     } finally {
       setUploading(false);
-      setUploadTarget(null);
+    }
+  };
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !uploadTarget) return;
+    await uploadAndInsert(file, uploadTarget.field, uploadTarget.ref);
+    setUploadTarget(null);
+  };
+
+  // 直接粘贴截图:检测剪贴板里的图片,上传后插入光标处
+  const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>, field: "stem" | "optionsText" | "solution", ref: RefObject<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault(); // 阻止图片被当作文本粘贴进来
+        await uploadAndInsert(file, field, ref);
+        return;
+      }
     }
   };
   const [paperTitle, setPaperTitle] = useState("");
@@ -633,6 +659,9 @@ export default function TeacherPage() {
                     <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
                       {STATUS_LABEL[q.status]}
                     </span>
+                    {containsImage(q) && (
+                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600" title="题干/选项/解析中包含图片图表">含图表</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
                     <span
@@ -874,10 +903,16 @@ Answer: B
             </div>
             <div className="mt-3">
               <div className="mb-1 flex items-center justify-between">
-                <label className="block text-sm text-slate-600">题干(支持公式 `$x^2$`、图片 `![说明](url)`、LaTeX 文本)</label>
+                <label className="block text-sm text-slate-600">题干(支持公式 `$x^2$`、图片 `![说明](url)`、LaTeX 文本;可直接粘贴图表截图)</label>
                 <button type="button" onClick={() => openImagePicker("stem", stemRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传图片</button>
               </div>
-              <textarea ref={stemRef} className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} placeholder="输入题干... 公式用 $ 包裹,如 求 $x^2 - 5x + 6 = 0$ 的根" />
+              <textarea ref={stemRef} className={`${input} h-20`} value={form.stem} onChange={(e) => setForm({ ...form, stem: e.target.value })} onPaste={(e) => handlePaste(e, "stem", stemRef)} placeholder="输入题干... 公式用 $ 包裹,如 求 $x^2 - 5x + 6 = 0$ 的根;截图可直接粘贴到此" />
+              {form.stem.trim() !== "" && (
+                <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <div className="mb-1 text-xs text-slate-400">题干预览</div>
+                  {renderRich(form.stem)}
+                </div>
+              )}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
@@ -885,7 +920,7 @@ Answer: B
                   <label className="block text-sm text-slate-600">选项(每行一个,支持公式 $ 与图片)</label>
                   <button type="button" onClick={() => openImagePicker("optionsText", optionsRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传</button>
                 </div>
-                <textarea ref={optionsRef} className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} placeholder={"A 选项内容\nB 选项内容\n$\\sqrt{2}$ 或 ![图](/uploads/xx.png)"} />
+                <textarea ref={optionsRef} className={`${input} h-24`} value={form.optionsText} onChange={(e) => setForm({ ...form, optionsText: e.target.value })} onPaste={(e) => handlePaste(e, "optionsText", optionsRef)} placeholder={"A 选项内容\nB 选项内容\n$\\sqrt{2}$ 或 ![图](/uploads/xx.png)"} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">正确答案</label>
@@ -894,7 +929,7 @@ Answer: B
                   <label className="block text-sm text-slate-600">解析</label>
                   <button type="button" onClick={() => openImagePicker("solution", solutionRef)} disabled={uploading} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">📷 上传图片</button>
                 </div>
-                <textarea ref={solutionRef} className={`${input} h-14`} value={form.solution} onChange={(e) => setForm({ ...form, solution: e.target.value })} placeholder="解题思路(可选,支持 ![说明](/uploads/xx.png))" />
+                <textarea ref={solutionRef} className={`${input} h-14`} value={form.solution} onChange={(e) => setForm({ ...form, solution: e.target.value })} onPaste={(e) => handlePaste(e, "solution", solutionRef)} placeholder="解题思路(可选,支持 ![说明](/uploads/xx.png),可直接粘贴截图)" />
               </div>
             </div>
             {uploading && <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-600">图片上传中…</p>}
