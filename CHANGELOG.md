@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.3.18 (2026-08-09) — 修复 2017 第 11 题公式混用 + 视觉模型 prompt 强化
+- **问题**:2017 第 11 题(cmsladx3n000a88r5027kxs8g)题干渲染为 `$$x_1 = 7$$` 居中独占一行,紧跟的 `x_{n+1} = \frac{23x_n - 53}{5x_n + 1}` 完全是裸 LaTeX 源码不渲染,末尾 `$$\n` 是孤儿 display math → 整段排版错乱。
+- **根因**:视觉模型对短公式习惯用 `$$...$$` 块级,但紧跟的下一行公式忘了加 `$` 包裹直接裸写,又用 `$$\n` 试图开新块级却没闭合;`vision.js` 原有 prompt 第 46 行只笼统说「`$` 必有 `$$` 闭合」过于抽象,模型没遵守。
+- **修复**:
+  1. 一次性 UPDATE 该题 stem(裸 `x_{n+1} = ...` 加 `$...$` 包裹、`$$x_1 = 7$$` 改 `$x_1 = 7$`、删孤儿 `$$\n`);
+  2. `vision.js` SYSTEM_PROMPT 新增「**公式定界符选择(关键,防止显示错乱)**」:短公式一律 `$...$` 行内、复杂表达式才 `$$...$$`、严禁块级与行内混用/半边定界符;
+  3. `docs/MATH_RENDERING_BUGS.md` 登记 #25 + 新增预防规则 #25(公式定界符二选一)。
+- 排查过程:`findUnique({ where: { id: "cmsladx3n000" } })` 报 NOT FOUND 但 `findFirst({ where: { stem: { contains } } })` 能找到——**根因**是 cuid 是 25 字符,前 12 字符恰好是 `cmsladx3n000` 误导判断,实际 id 是 `cmsladx3n000a88r5027kxs8g`(用 stem 包含 + update 是更稳的定位方式)。
+
 ## V2.3.17 (2026-08-09) — 按卷审核显示当前卷名 + AI 生成解析统一英文
 - **按卷审核卷名显示**(`teacher/page.tsx`):审核弹窗顶部原先显示题目自己的 `paper` 字段(源卷名,如「PART B Physics」),当卷名被改过(如「ESAT Physics 1」)或题目跨卷引用(如 E2E 卷引用了 TMUA 2021 的题)时会让人误以为「显示的不是本卷的题」。修复:按卷审核(paperId 模式)时,弹窗顶部改为显示**当前卷名**(📄 徽章,悬停可见题目源卷),与页面顶部「正在按试卷审核:『卷名』」横幅一致。
 - **AI 生成解析统一英文**(`questions.js`):`tryGenerateSolution`(自动补解析/一键修正补解析)与「AI 生成解析」按钮的 system prompt 全部改为英文——三段式 Markdown 标题改为 `## Solution Steps / ## Knowledge Points Tested / ## Common Pitfalls`,user prompt 的字段标签与指令同步英文化,并明确「Write the entire explanation in English」。
