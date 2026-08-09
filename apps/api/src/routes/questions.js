@@ -9,7 +9,7 @@ import { cleanUnits } from "../lib/text-normalize.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
-import { parseImportFile } from "../lib/parse-import-file.js";
+import { parseImportFile, mapAnswerToOptionText } from "../lib/parse-import-file.js";
 import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
 import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
 
@@ -431,7 +431,8 @@ router.post(
 // body: { filename, data, answerFilename?, answerData? } — base64 编码
 //   题目文件:必填,走 parsePdf(视觉模型提取题目,答案页也读但不可靠时留空)
 //   答案文件:可选,走 parseAnswerPdf(视觉模型识别答案表 Q21 A / 21. B / Q21 A PHYS → 忽略学科列取字母)
-//   匹配规则:答案表按题号升序,与题目入库顺序一一对应(第 i 个答案 → 第 i 题)
+//   匹配规则:按「题号」匹配(优先题目 qno,无 qno 退回位置),并将答案字母映射为选项文本(可判分);
+//   字母越界(超出选项数量)视为识别错误,清空交教师审核,避免写入明显错误答案。
 router.post(
   "/import-pdf",
   requireAuth,
@@ -480,8 +481,9 @@ router.post(
       }
       if (!rows.length) throw new Error("未从题目文件解析出任何题目");
 
-      // 答案文件:提取 {question, answer} 并按题号升序,与题目入库顺序一一对应
+      // 答案文件:提取 {question, answer} 按题号升序;按「题号匹配」(优先 qno)赋值,避免位置错位
       let ansMatched = 0;
+      let ansCleared = 0; // 越界字母清空计数
       if (ansBuf) {
         updateImportTask(task.id, { progress: 60, message: "正在识别答案文件..." });
         let answers = [];
@@ -490,9 +492,29 @@ router.post(
         } catch (e) {
           throw new Error("答案文件解析失败:" + e.message);
         }
-        for (let i = 0; i < Math.min(rows.length, answers.length); i++) {
-          if (answers[i] && answers[i].answer) {
-            rows[i].answer = answers[i].answer;
+        // 题号(1-based)→ 答案字母 映射
+        const ansByQ = new Map();
+        for (const a of answers) {
+          const q = parseInt(String(a?.question ?? "").replace(/^0+/, ""), 10);
+          const letter = String(a?.answer ?? "").trim();
+          if (Number.isFinite(q) && q > 0 && letter) ansByQ.set(q, letter);
+        }
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          // 优先按题目 qno 匹配;无 qno 时退回「第 i+1 题 ↔ 题号 i+1」位置匹配
+          const qKey = r.qno != null ? Number(r.qno) : i + 1;
+          const letter = ansByQ.get(qKey);
+          if (!letter) continue;
+          const opts = Array.isArray(r.options) ? r.options : [];
+          // 越界防护:字母索引超出选项数量(如 5 个选项却给 G)→ 视为识别错误,清空交教师补
+          if (/^[A-Ha-h]$/.test(letter) && letter.toUpperCase().charCodeAt(0) - 65 >= opts.length) {
+            r.answer = "";
+            ansCleared++;
+            continue;
+          }
+          const mapped = mapAnswerToOptionText(letter, r.options);
+          if (mapped) {
+            r.answer = mapped; // 字母→选项文本(可判分),或本来就是选项文本
             ansMatched++;
           }
         }
@@ -514,7 +536,7 @@ router.post(
         });
       }
       const ansMsg = ansBuf
-        ? `;答案文件匹配 ${ansMatched} 题${ansMatched < rows.length ? `(${rows.length - ansMatched} 题未匹配,需审核页补充)` : ""}`
+        ? `;答案文件匹配 ${ansMatched} 题${ansCleared ? `,${ansCleared} 题答案字母越界已清空待审` : ""}${ansMatched + ansCleared < rows.length ? `(${rows.length - ansMatched - ansCleared} 题未匹配,需审核页补充)` : ""}`
         : ";未提供答案文件,答案留空,需在审核页手动补充";
       const paperMsg = papers.length
         ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`

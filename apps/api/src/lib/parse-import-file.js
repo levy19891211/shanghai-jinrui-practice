@@ -28,7 +28,7 @@ function normHeader(h) {
 }
 
 // 把字母答案(A-H / 多个字母)映射成选项文本;options 为分号字符串或数组
-function mapAnswerToOptionText(answer, options) {
+export function mapAnswerToOptionText(answer, options) {
   if (options == null || answer == null) return answer;
   const opts = Array.isArray(options)
     ? options
@@ -70,6 +70,7 @@ export function finalizeRow(raw) {
     stem: raw.stem ? normalizeNewlines(String(raw.stem)) : "",
     options,
     answer: answer != null ? normalizeNewlines(String(answer)) : "",
+    qno: raw.qno != null ? Number(raw.qno) || null : null, // 题号(视觉模型提取):供双文件导入按题号匹配答案,无则 null
     solution: raw.solution ? normalizeNewlines(String(raw.solution)) : null,
     source: raw.source ? normalizeNewlines(String(raw.source)) : "批量导入",
     status: raw.status ? normalizeNewlines(String(raw.status)) : "PENDING_REVIEW",

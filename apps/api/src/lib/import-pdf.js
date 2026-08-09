@@ -166,6 +166,7 @@ function normalizeRaw(r, filename) {
     subject: r?.subject,
     sourceType: r?.sourceType || null,
     paper: paperFromFilename(filename) || r?.paper,
+    qno: r?.qno != null ? Number(r.qno) || null : null, // 题号:双文件导入按 qno 与答案表匹配,避免位置错位
     topic: r?.topic,
     difficulty: r?.difficulty,
     type: r?.type,
