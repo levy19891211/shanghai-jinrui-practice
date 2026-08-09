@@ -105,6 +105,7 @@ router.get(
         assignment: {
           include: {
             paper: { select: { title: true, mode: true, durationMin: true, subject: true, sourceType: true } },
+            languagePaper: { select: { title: true, mode: true, durationMin: true, examType: true, skill: true } },
           },
         },
       },
@@ -116,6 +117,9 @@ router.get(
       let status = t.status;
       // PENDING 且已过 DDL → 过期
       if (status === "PENDING" && a.dueAt && now > new Date(a.dueAt).getTime()) status = "EXPIRED";
+      const isLanguage = !!a.languagePaperId;
+      const lp = a.languagePaper;
+      const pp = a.paper;
       return {
         id: t.assignmentId,
         title: a.title,
@@ -125,7 +129,10 @@ router.get(
         status,
         submittedAt: t.submittedAt,
         sessionId: t.sessionId,
-        paper: { title: a.paper?.title, mode: a.paper?.mode, durationMin: a.paper?.durationMin, subject: a.paper?.subject, sourceType: a.paper?.sourceType },
+        isLanguage,
+        paper: isLanguage
+          ? { title: lp?.title, mode: lp?.mode, durationMin: lp?.durationMin, subject: null, sourceType: null, isLanguage: true, examType: lp?.examType, skill: lp?.skill }
+          : { title: pp?.title, mode: pp?.mode, durationMin: pp?.durationMin, subject: pp?.subject, sourceType: pp?.sourceType, isLanguage: false },
       };
     });
     ok(res, { list });

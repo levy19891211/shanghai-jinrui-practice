@@ -27,8 +27,8 @@ export default function StudentHome() {
   // 我的作业(教师布置的作业/考试)
   const [assignments, setAssignments] = useState<{
     id: string; title: string; note: string | null; mode: string; dueAt: string | null;
-    status: string; submittedAt: string | null; sessionId: string | null;
-    paper: { title: string; mode: string; durationMin: number | null; subject: string; sourceType: string | null } | null;
+    status: string; submittedAt: string | null; sessionId: string | null; isLanguage?: boolean;
+    paper: { title: string; mode: string; durationMin: number | null; subject: string | null; sourceType: string | null; isLanguage?: boolean; examType?: string | null; skill?: string | null } | null;
   }[]>([]);
 
   useEffect(() => {
@@ -103,16 +103,23 @@ export default function StudentHome() {
   }
 
   // 开始教师布置的作业/考试(带 assignmentId,试卷/时长/DDL 由作业决定,提交后自动回写完成状态)
-  async function startAssignment(a: { id: string; title: string; mode: string; paper: { title: string; mode: string; durationMin: number | null } | null }) {
+  async function startAssignment(a: { id: string; title: string; mode: string; isLanguage?: boolean; paper: { title: string; mode: string; durationMin: number | null } | null }) {
     setError("");
     setLoading(true);
     try {
-      const data = await api.post<CreateSessionData>("/sessions", {
-        mode: a.mode === "EXAM" ? "EXAM" : "PRACTICE",
-        assignmentId: a.id,
-      });
-      sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
-      router.push(`/app/practice/${data.sessionId}`);
+      if (a.isLanguage) {
+        // 语言作业走语言开卷接口,落地到语言练习页
+        const data = await api.post<{ sessionId: string; mode: string; durationMin: number | null; segments: any[]; questions: any[] }>("/language/sessions", { assignmentId: a.id });
+        sessionStorage.setItem(`lang-session-${data.sessionId}`, JSON.stringify(data));
+        router.push(`/app/language/practice/${data.sessionId}`);
+      } else {
+        const data = await api.post<CreateSessionData>("/sessions", {
+          mode: a.mode === "EXAM" ? "EXAM" : "PRACTICE",
+          assignmentId: a.id,
+        });
+        sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
+        router.push(`/app/practice/${data.sessionId}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "开卷失败");
     } finally {
@@ -282,7 +289,7 @@ export default function StudentHome() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    {a.paper?.title ?? "试卷"} · {a.mode === "EXAM" ? "模考" : "练习"}
+                    {a.paper?.title ?? "试卷"} · {a.isLanguage ? "语言" : a.mode === "EXAM" ? "模考" : "练习"}
                     {a.mode === "EXAM" && a.paper?.durationMin ? ` · ${a.paper.durationMin} 分钟` : ""}
                   </p>
                   {a.note && <p className="mt-1 truncate text-xs text-slate-400" title={a.note}>备注:{a.note}</p>}

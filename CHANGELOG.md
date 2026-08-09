@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.4.10 (2026-08-09) — 我的作业页语言作业开卷分流修复
+
+- 根因:「刷题练习 / 我的作业」页对所有作业(含语言作业)统一调用学科开卷接口 `POST /api/sessions`,而该接口只认 `assignment.paper`(学科卷)。语言作业仅有 `languagePaperId`、`paper` 为 null,后端抛 404「作业对应的试卷不存在」。语言学习板块因调用正确的 `/language/sessions` 故能正常开卷。
+- 后端 `GET /me/assignments` 现对语言作业额外 `include languagePaper`,返回 `isLanguage` 标识,并把语言卷 title/mode/durationMin/examType/skill 映射进 `paper` 字段(列表正确显示卷名 + "语言"标签)。
+- 前端 `/app/page.tsx` `startAssignment` 分流:语言作业走 `POST /language/sessions` 并存 `lang-session-{id}`、跳 `/app/language/practice/:id`;学科作业维持原 `POST /sessions` 路径。
+
 ## V2.4.9 (2026-08-09) — 修复语言作业开卷报"试卷不存在" + 防删除孤儿作业
 
 - 学生端打开教师布置的语言作业(`POST /language/sessions` 带 assignmentId)时,若该作业关联的试卷状态不是 READY 会被拦下报"作业对应试卷不可用/不存在"。现在放宽:只要作业关联的试卷存在即可开卷(作业本身即开放许可),不再要求试卷处于 READY 库状态。
