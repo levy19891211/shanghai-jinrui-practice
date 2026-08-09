@@ -83,6 +83,135 @@ router.get(
   })
 );
 
+// DELETE /api/teacher/students/:id — 删除学生(级联删除该学生所有相关数据)
+// 关联数据:Session(及其 AnswerRecord)、WrongBook、RoguelikeRun、AssignmentStudent、User
+router.delete(
+  "/students/:id",
+  asyncHandler(async (req, res) => {
+    const student = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!student || student.role !== "STUDENT") return fail(res, 404, "学生不存在");
+    if (student.id === req.user.id) return fail(res, 400, "不能删除自己");
+
+    // 1) 该学生所有会话 → 会话的作答记录
+    const sessions = await prisma.session.findMany({ where: { studentId: student.id }, select: { id: true } });
+    const sessionIds = sessions.map((s) => s.id);
+    if (sessionIds.length) {
+      await prisma.answerRecord.deleteMany({ where: { sessionId: { in: sessionIds } } });
+      await prisma.session.deleteMany({ where: { id: { in: sessionIds } } });
+    }
+    // 2) 作业分发目标
+    await prisma.assignmentStudent.deleteMany({ where: { studentId: student.id } });
+    // 3) 错题本 / 爬塔记录
+    await prisma.wrongBook.deleteMany({ where: { studentId: student.id } });
+    await prisma.roguelikeRun.deleteMany({ where: { studentId: student.id } });
+    // 4) 学生账号
+    await prisma.user.delete({ where: { id: student.id } });
+
+    ok(res, { id: student.id }, `已删除学生「${student.name}」及其全部数据`);
+  })
+);
+
+// ——— 作业/考试分发 ———
+// GET /api/teacher/assignments — 作业列表(含每份作业的完成统计)
+router.get(
+  "/assignments",
+  asyncHandler(async (req, res) => {
+    const list = await prisma.assignment.findMany({
+      where: { teacherId: req.user.id },
+      include: {
+        paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        targets: { select: { status: true, submittedAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    ok(res, {
+      list: list.map((a) => {
+        const total = a.targets.length;
+        const submitted = a.targets.filter((t) => t.status === "SUBMITTED").length;
+        const inProgress = a.targets.filter((t) => t.status === "IN_PROGRESS").length;
+        return {
+          id: a.id, title: a.title, note: a.note, mode: a.mode, dueAt: a.dueAt, status: a.status, createdAt: a.createdAt,
+          paper: { title: a.paper?.title, mode: a.paper?.mode, subject: a.paper?.subject, sourceType: a.paper?.sourceType },
+          stats: { total, submitted, inProgress, pending: total - submitted - inProgress },
+        };
+      }),
+    });
+  })
+);
+
+// POST /api/teacher/assignments — 创建作业/考试分发(选试卷 + 选学生 + 可选 DDL)
+router.post(
+  "/assignments",
+  asyncHandler(async (req, res) => {
+    const { paperId, title, note, studentIds, dueAt, mode } = req.body || {};
+    if (!paperId) return fail(res, 400, "请选择试卷");
+    if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名学生");
+    const paper = await prisma.paper.findUnique({ where: { id: paperId } });
+    if (!paper) return fail(res, 404, "试卷不存在");
+
+    // 校验学生存在且都是 STUDENT
+    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT" } });
+    if (students.length !== studentIds.length) return fail(res, 400, "存在无效的学生");
+
+    const aMode = mode === "EXAM" ? "EXAM" : paper.mode === "EXAM" ? "EXAM" : "PRACTICE";
+    const parsedDue = dueAt ? new Date(dueAt) : null;
+    if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
+
+    const assignment = await prisma.assignment.create({
+      data: {
+        teacherId: req.user.id,
+        paperId: paper.id,
+        title: String(title || "").trim() || paper.title,
+        note: note ? String(note).trim() : null,
+        mode: aMode,
+        dueAt: parsedDue,
+        targets: { create: studentIds.map((sid) => ({ studentId: sid })) },
+      },
+    });
+    ok(res, { id: assignment.id }, `已向 ${students.length} 名学生布置「${assignment.title}」`);
+  })
+);
+
+// DELETE /api/teacher/assignments/:id — 删除作业(撤回分发)
+router.delete(
+  "/assignments/:id",
+  asyncHandler(async (req, res) => {
+    const assignment = await prisma.assignment.findUnique({ where: { id: req.params.id } });
+    if (!assignment || assignment.teacherId !== req.user.id) return fail(res, 404, "作业不存在");
+    await prisma.assignmentStudent.deleteMany({ where: { assignmentId: assignment.id } });
+    // 学生已开的作业会话保留(不删作答记录),仅解除作业关联
+    await prisma.session.updateMany({ where: { assignmentId: assignment.id }, data: { assignmentId: null } });
+    await prisma.assignment.delete({ where: { id: assignment.id } });
+    ok(res, { id: assignment.id }, "作业已删除");
+  })
+);
+
+// GET /api/teacher/assignments/:id — 作业详情(含每个学生的完成状态)
+router.get(
+  "/assignments/:id",
+  asyncHandler(async (req, res) => {
+    const assignment = await prisma.assignment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        targets: {
+          include: { student: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    });
+    if (!assignment || assignment.teacherId !== req.user.id) return fail(res, 404, "作业不存在");
+    ok(res, {
+      id: assignment.id, title: assignment.title, note: assignment.note, mode: assignment.mode, dueAt: assignment.dueAt,
+      status: assignment.status, createdAt: assignment.createdAt,
+      paper: assignment.paper,
+      targets: assignment.targets.map((t) => ({
+        studentId: t.studentId, name: t.student.name, email: t.student.email,
+        status: t.status, submittedAt: t.submittedAt,
+      })),
+    });
+  })
+);
+
 // GET /api/teacher/stats/overview — 班级学情总览(学生数/刷题量/薄弱知识点 TOP)
 router.get(
   "/stats/overview",

@@ -34,6 +34,7 @@ model User {
   sessions         Session[]
   wrongBook        WrongBook[]
   roguelikeRuns    RoguelikeRun[]
+  assignments      AssignmentStudent[]
 }
 
 model Question {
@@ -116,6 +117,7 @@ model Paper {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
   sessions    Session[]
+  assignments Assignment[]
 }
 
 model Session {
@@ -124,6 +126,8 @@ model Session {
   student      User          @relation(fields: [studentId], references: [id])
   paperId      String?
   paper        Paper?        @relation(fields: [paperId], references: [id])
+  assignmentId String? // 该会话由哪份作业(作业/考试分发)发起;作业类型会话提交后自动回写目标状态
+  assignment   Assignment?   @relation(fields: [assignmentId], references: [id])
   mode         String
   durationMin  Int? // EXAM 模式的限时时长(分钟),超时后不可再作答
   score        Float?
@@ -181,4 +185,38 @@ model RoguelikeRun {
   status    String   @default("ACTIVE") // ACTIVE | WON | DEAD
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 作业/考试分发(教师端向指定学生布置练习卷/模考卷)
+// mode 合法值:PRACTICE | EXAM(决定学生端入口与是否限时)
+// status 合法值:ACTIVE | ARCHIVED(教师可下架)
+model Assignment {
+  id          String    @id @default(cuid())
+  teacherId   String // 发布者(教师/管理员)
+  paperId     String
+  paper       Paper     @relation(fields: [paperId], references: [id])
+  title       String // 作业名称(默认取试卷名)
+  note        String? // 备注/要求
+  mode        String    @default("PRACTICE")
+  dueAt       DateTime? // DDL(可空 = 不限时提交)
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  targets     AssignmentStudent[]
+  sessions    Session[]
+}
+
+// 作业分发目标:一个学生一份作业一条记录,记录完成状态
+// status 合法值:PENDING 未交 | SUBMITTED 已交 | EXPIRED 过期未交
+model AssignmentStudent {
+  id           String     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  studentId    String
+  student      User       @relation(fields: [studentId], references: [id])
+  status       String     @default("PENDING")
+  sessionId    String? // 学生点击开始后创建的会话;提交后同步回写
+  submittedAt  DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@unique([assignmentId, studentId])
 }

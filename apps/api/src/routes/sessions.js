@@ -13,6 +13,16 @@ const QUIZ_FIELDS = {
 
 // 组卷:确定题目集合
 async function resolveQuestionIds(body) {
+  // 作业/考试分发:试卷与时长全部由作业决定,不接收前端传入
+  if (body.assignmentId) {
+    const target = await prisma.assignmentStudent.findUnique({
+      where: { assignmentId_studentId: { assignmentId: String(body.assignmentId), studentId: body._userId } },
+      include: { assignment: { include: { paper: true } } },
+    });
+    if (!target) throw Object.assign(new Error("您没有被布置这份作业"), { code: 403 });
+    if (!target.assignment?.paper) throw Object.assign(new Error("作业对应的试卷不存在"), { code: 404 });
+    return JSON.parse(target.assignment.paper.questionIds || "[]");
+  }
   if (body.paperId) {
     const paper = await prisma.paper.findUnique({ where: { id: body.paperId } });
     if (!paper) throw Object.assign(new Error("试卷不存在"), { code: 404 });
@@ -44,18 +54,36 @@ router.post(
     const mode = req.body?.mode === "EXAM" ? "EXAM" : "PRACTICE";
     let questionIds;
     try {
-      questionIds = await resolveQuestionIds(req.body || {});
+      questionIds = await resolveQuestionIds({ ...(req.body || {}), _userId: req.user.id });
     } catch (e) {
       return fail(res, e.code || 500, e.message);
     }
     if (questionIds.length === 0) return fail(res, 400, "题库为空,暂无可作答题目");
 
+    // 作业/考试分发:模式、试卷、时长、DDL 全部由作业决定
+    let assignmentId = null;
+    let assignmentPaperId = null;
+    if (req.body?.assignmentId) {
+      const target = await prisma.assignmentStudent.findUnique({
+        where: { assignmentId_studentId: { assignmentId: String(req.body.assignmentId), studentId: req.user.id } },
+        include: { assignment: { include: { paper: true } } },
+      });
+      if (!target) return fail(res, 403, "您没有被布置这份作业");
+      if (target.status === "SUBMITTED") return fail(res, 400, "这份作业已提交,请勿重复作答");
+      const assignment = target.assignment;
+      if (assignment?.dueAt && new Date() > assignment.dueAt) return fail(res, 400, "该作业已过截止时间,无法作答");
+      if (!assignment?.paper) return fail(res, 404, "作业对应的试卷不存在");
+      assignmentId = assignment.id;
+      assignmentPaperId = assignment.paper.id;
+    }
+
     // 限时:EXAM 模式必须有时长(整数分钟)。
     // 指定了试卷 → 强制用试卷配置的时长(学生不能改,前端也不传);随机组卷 → 用学生选的时长。
+    // 作业类型的 EXAM → 用作业所选试卷的时长
     let durationMin = null;
     if (mode === "EXAM") {
-      if (req.body?.paperId) {
-        const paper = await prisma.paper.findUnique({ where: { id: req.body.paperId } });
+      if (assignmentPaperId || req.body?.paperId) {
+        const paper = await prisma.paper.findUnique({ where: { id: assignmentPaperId || req.body.paperId } });
         durationMin = paper?.durationMin ?? null;
       } else {
         durationMin = Math.round(Number(req.body?.durationMin));
@@ -66,12 +94,21 @@ router.post(
     const session = await prisma.session.create({
       data: {
         studentId: req.user.id,
-        paperId: req.body?.paperId || null,
+        paperId: assignmentPaperId || req.body?.paperId || null,
+        assignmentId,
         mode,
         durationMin,
         total: questionIds.length,
       },
     });
+
+    // 作业目标回写:记录会话 id,标记进行中(若当前还是 PENDING)
+    if (assignmentId) {
+      await prisma.assignmentStudent.updateMany({
+        where: { assignmentId, studentId: req.user.id, status: "PENDING" },
+        data: { sessionId: session.id, status: "IN_PROGRESS" },
+      });
+    }
     const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
     // 统一将 options 从 JSON 字符串解析为数组,避免前端 q.options.map 报错
     const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
@@ -168,6 +205,15 @@ router.post(
             update: { wrongCount: { increment: 1 }, mastered: false },
           })
         ),
+      // 作业类型会话提交 → 回写作业目标为已交
+      ...(session.assignmentId
+        ? [
+            prisma.assignmentStudent.updateMany({
+              where: { assignmentId: session.assignmentId, studentId: req.user.id },
+              data: { status: "SUBMITTED", submittedAt: new Date() },
+            }),
+          ]
+        : []),
     ]);
     ok(res, { ...result, timedOut }, "判分完成");
   })

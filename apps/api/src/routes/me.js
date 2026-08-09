@@ -94,4 +94,42 @@ router.get(
   })
 );
 
+// GET /api/me/assignments — 我的作业(待完成 + 已完成)
+router.get(
+  "/assignments",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const targets = await prisma.assignmentStudent.findMany({
+      where: { studentId: req.user.id },
+      include: {
+        assignment: {
+          include: {
+            paper: { select: { title: true, mode: true, durationMin: true, subject: true, sourceType: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const now = Date.now();
+    const list = targets.map((t) => {
+      const a = t.assignment;
+      let status = t.status;
+      // PENDING 且已过 DDL → 过期
+      if (status === "PENDING" && a.dueAt && now > new Date(a.dueAt).getTime()) status = "EXPIRED";
+      return {
+        id: t.assignmentId,
+        title: a.title,
+        note: a.note,
+        mode: a.mode,
+        dueAt: a.dueAt,
+        status,
+        submittedAt: t.submittedAt,
+        sessionId: t.sessionId,
+        paper: { title: a.paper?.title, mode: a.paper?.mode, durationMin: a.paper?.durationMin, subject: a.paper?.subject, sourceType: a.paper?.sourceType },
+      };
+    });
+    ok(res, { list });
+  })
+);
+
 export default router;

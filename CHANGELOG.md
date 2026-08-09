@@ -1,5 +1,18 @@
 # 版本历史
 
+## V2.3.30 (2026-08-09) — 教师端学生管理大模块(删除学生 + 作业/考试分发)
+- **功能**:
+  1. **删除学生**:学生成绩概览每行加「删除」按钮,级联删除该学生全部数据(会话/作答记录/错题本/爬塔/作业目标/账号)。
+  2. **作业/考试分发**:教师端「学生管理」新增子 Tab「作业/考试分发」——从**试卷库选卷** + **勾选学生**(支持全选/搜索) + 设定**DDL**(可选) + 布置;作业列表看完成统计(已交/进行中/未交),详情看每生状态,可删除作业。
+  3. **学生端「我的作业」**:学生首页展示教师布置的作业卡片(名称/试卷/DDL/备注/状态),点击开始(EXAM 限时,时长跟随试卷),提交后自动回写「已交」;过期作业自动标「已过期」。
+- **实现**:
+  - schema 新增 `Assignment`(作业)、`AssignmentStudent`(分发目标+状态)模型,`Session.assignmentId` 关联;
+  - `teacher.js`:DELETE /students/:id(级联删除)、GET/POST/DELETE/GET:id /assignments;
+  - `sessions.js`:POST /sessions 支持 assignmentId(作业决定试卷/时长/DDL,校验归属+DDL,标记进行中),submit 时回写 SUBMITTED;
+  - `me.js`:GET /me/assignments(待完成+已完成,DDL 过期自动 EXPIRED);
+  - 教师端 students/page.tsx 重构为子 Tab(学情统计/作业分发);学生端 app/page.tsx 加「我的作业」区块。
+- **验证**:schema validate + db push + generate 通过;tsc 通过;node --check 通过。
+
 ## V2.3.29 (2026-08-09) — 学生端新增「试卷库」(对齐教师端筛选/排序)
 - **功能**:学生端首页新增**试卷库**区块——与教师端试卷管理一致,支持:
   - 学科筛选(全部/数学/物理/化学/生物);
