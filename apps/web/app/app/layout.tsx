@@ -25,12 +25,11 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   if (!ready) return null;
 
   const nav = [
+    { href: "/app/space", label: "个人空间" },
     { href: "/app", label: "刷题练习" },
     { href: "/app/language", label: "语言学习" },
     { href: "/app/roguelike", label: "冒险模式" },
     { href: "/app/interview", label: "面试练习" },
-    { href: "/app/sessions", label: "成绩历史" },
-    { href: "/app/wrongbook", label: "错题本" },
   ];
 
   function logout() {

@@ -24,12 +24,6 @@ export default function StudentHome() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // 我的作业(教师布置的作业/考试)
-  const [assignments, setAssignments] = useState<{
-    id: string; title: string; note: string | null; mode: string; dueAt: string | null;
-    status: string; submittedAt: string | null; sessionId: string | null; isLanguage?: boolean;
-    paper: { title: string; mode: string; durationMin: number | null; subject: string | null; sourceType: string | null; isLanguage?: boolean; examType?: string | null; skill?: string | null } | null;
-  }[]>([]);
 
   useEffect(() => {
     api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
@@ -38,8 +32,6 @@ export default function StudentHome() {
     }).catch(() => {});
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
     api.get<{ list: { id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
-    // 我的作业(教师布置的作业/考试)
-    api.get<{ list: any[] }>("/me/assignments").then((d) => setAssignments(d.list || [])).catch(() => {});
     // 知识点库(供知识点下拉与掌握度"针对练习")
     api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
   }, []);
@@ -95,31 +87,6 @@ export default function StudentHome() {
       });
       sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
       router.push(`/app/practice/${data.sessionId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "开卷失败");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // 开始教师布置的作业/考试(带 assignmentId,试卷/时长/DDL 由作业决定,提交后自动回写完成状态)
-  async function startAssignment(a: { id: string; title: string; mode: string; isLanguage?: boolean; paper: { title: string; mode: string; durationMin: number | null } | null }) {
-    setError("");
-    setLoading(true);
-    try {
-      if (a.isLanguage) {
-        // 语言作业走语言开卷接口,落地到语言练习页
-        const data = await api.post<{ sessionId: string; mode: string; durationMin: number | null; segments: any[]; questions: any[] }>("/language/sessions", { assignmentId: a.id });
-        sessionStorage.setItem(`lang-session-${data.sessionId}`, JSON.stringify(data));
-        router.push(`/app/language/practice/${data.sessionId}`);
-      } else {
-        const data = await api.post<CreateSessionData>("/sessions", {
-          mode: a.mode === "EXAM" ? "EXAM" : "PRACTICE",
-          assignmentId: a.id,
-        });
-        sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
-        router.push(`/app/practice/${data.sessionId}`);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "开卷失败");
     } finally {
@@ -259,62 +226,6 @@ export default function StudentHome() {
         {form.mode === "EXAM" && <p className="mt-3 text-xs text-slate-400">模拟考模式下,时间到将自动交卷,超时后无法继续作答。</p>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
-
-      {/* 我的作业:教师布置的作业/考试,带 DDL,点击直接开始 */}
-      {assignments.length > 0 && (
-        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-6 shadow-sm">
-          <h2 className="text-sm font-medium text-indigo-700">我的作业</h2>
-          <p className="mt-0.5 text-xs text-indigo-400">老师布置的练习/模考,请在截止时间前完成。</p>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {assignments.map((a) => {
-              const overdue = a.dueAt && new Date(a.dueAt).getTime() < Date.now();
-              const statusLabel =
-                a.status === "SUBMITTED" ? "已提交" :
-                a.status === "IN_PROGRESS" ? "进行中" :
-                a.status === "EXPIRED" || overdue ? "已过期" : "待完成";
-              const canStart = a.status !== "SUBMITTED" && !(a.status === "EXPIRED" || overdue);
-              return (
-                <div key={a.id} className="rounded-xl border border-indigo-100 bg-white p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-slate-800" title={a.title}>{a.title}</p>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        a.status === "SUBMITTED" ? "bg-emerald-50 text-emerald-600"
-                        : overdue ? "bg-red-50 text-red-600"
-                        : a.status === "IN_PROGRESS" ? "bg-blue-50 text-blue-600"
-                        : "bg-amber-50 text-amber-600"
-                      }`}
-                    >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {a.paper?.title ?? "试卷"} · {a.isLanguage ? "语言" : a.mode === "EXAM" ? "模考" : "练习"}
-                    {a.mode === "EXAM" && a.paper?.durationMin ? ` · ${a.paper.durationMin} 分钟` : ""}
-                  </p>
-                  {a.note && <p className="mt-1 truncate text-xs text-slate-400" title={a.note}>备注:{a.note}</p>}
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
-                      {a.dueAt ? `DDL:${new Date(a.dueAt).toLocaleString("zh-CN", { hour12: false })}` : "不限时"}
-                    </span>
-                    {canStart ? (
-                      <button
-                        onClick={() => startAssignment(a)}
-                        disabled={loading}
-                        className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        {a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-300">—</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* 试卷库:与教师端试卷管理一致的筛选(学科/套题类型) + 排序,点击直接开卷 */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -456,7 +367,7 @@ export default function StudentHome() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-slate-700">最近成绩</h2>
-          <button onClick={() => router.push("/app/sessions")} className="text-sm text-indigo-600 hover:underline">
+          <button onClick={() => router.push("/app/space")} className="text-sm text-indigo-600 hover:underline">
             查看全部
           </button>
         </div>
