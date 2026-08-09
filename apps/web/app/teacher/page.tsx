@@ -17,10 +17,17 @@ const STATUS_BADGE: Record<string, string> = {
   ARCHIVED: "bg-slate-100 text-slate-400",
 };
 
-// 判断题目是否含图片图表(题干/选项/解析中内嵌 Markdown 图片语法 ![alt](url))
+// 题目配图状态:has = 已内嵌图片;needs = 应配图但缺图(提醒老师手动添加);none = 无需配图
+// IMG_RE:题干/选项/解析中已含 Markdown 图片语法 ![alt](url)
+// NEED_IMG_RE:引用了图表但未内嵌图片的信号词(如 "The diagram shows"、"not to scale"、"如图 1" 等)
+//   —— 故意用组合词而非裸 "figure",避免 "significant figures" 等数学术语误报
 const IMG_RE = /!\[[^\]]*\]\([^)]+\)/;
-function containsImage(q: Question): boolean {
-  return [q.stem, ...(q.options || []), q.solution].some((t) => typeof t === "string" && IMG_RE.test(t));
+const NEED_IMG_RE = /diagram|the figure|in the figure|figure below|figure\s*[0-9一二三]|shown below|as shown|illustrated|pictured|graph below|chart below|table below|not to scale|如图|下图|上图|见图|图\s*[0-9一二三]|表\s*[0-9一二三]|图表|如图所示/i;
+function imageStatus(q: Question): "has" | "needs" | "none" {
+  const texts = [q.stem, ...(q.options || []), q.solution].filter((t): t is string => typeof t === "string");
+  if (texts.some((t) => IMG_RE.test(t))) return "has";
+  if (texts.some((t) => NEED_IMG_RE.test(t))) return "needs";
+  return "none";
 }
 
 // 把 ISO 时间格式化为「YYYY-MM-DD HH:mm」,用于显示导入/创建时间
@@ -689,8 +696,11 @@ export default function TeacherPage() {
                     <span className={`rounded px-2 py-0.5 text-xs ${STATUS_BADGE[q.status]}`}>
                       {STATUS_LABEL[q.status]}
                     </span>
-                    {containsImage(q) && (
-                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600" title="题干/选项/解析中包含图片图表">含图表</span>
+                    {imageStatus(q) === "has" && (
+                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600" title="题干/选项/解析中已内嵌图片图表">含图表</span>
+                    )}
+                    {imageStatus(q) === "needs" && (
+                      <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-500" title="题干/选项/解析引用了图表但未内嵌图片,请编辑手动添加截图">需配图</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">

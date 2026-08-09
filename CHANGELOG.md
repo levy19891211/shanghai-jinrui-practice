@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.3.5 (2026-08-09) — 「含图表」提示升级为三态:已含图 / 应配图但缺图
+- **需求澄清**:「含图表」提示字段不仅要代表题目**已包含**图片,更要点出**题目应该包含图片但可能还没包含**的题,提醒老师手动去补图。
+- **实现**(`teacher/page.tsx`):`containsImage` 升级为三态 `imageStatus(q)`:
+  - `has` → 琥珀色「含图表」:题干/选项/解析中已内嵌 `![alt](url)` 图片;
+  - `needs` → 红色「需配图」:文本引用了图表(`diagram`、`not to scale`、`shown below`、`as shown`、`illustrated`、`如图 1`、`图表` 等信号词)但**未内嵌任何图片**,提示老师进编辑手动添加截图;
+  - `none` → 不显示。
+- **防误报**:信号词用组合词(`the figure`/`in the figure`/`figure below`/`figure 1`)而非裸 `figure`,避免 `significant figures` 等数学术语误报;裸「图/图像/图形」不作为信号,避免「函数图像」类纯文字题误标。
+- **验证**:本地 9 用例 8/9 通过(唯一 FAIL 为抽象语境 `The figure is significant`,非真实题语言);真实数据库扫描:85 题中含图 3 题、应配图缺图 2 题(`diagram not to scale` / `The diagram shows`),`significant figures` 误报已排除。`tsc --noEmit` 通过。
+
 ## V2.3.4 (2026-08-09) — 题库搜题功能
 - **功能**:题库管理/审核队列页面的筛选工具栏新增**搜题框**——输入任意字段(中文/英文/公式片段)回车或点「搜索」,即返回题干中包含该字段的题目;搜索词以「」标签展示在工具栏,可一键 ✕ 清除。
 - **后端**:`GET /api/questions` 的 `buildWhere` 新增 `?q=` 参数,对 `stem` 做 `contains` 搜索(SQLite LIKE,大小写不敏感),与其他筛选(状态/学科/知识点/难度/排序)可叠加。
