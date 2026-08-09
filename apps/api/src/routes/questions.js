@@ -334,8 +334,7 @@ router.post(
     updateImportTask(task.id, { message: `准备导入 ${rows.length} 条...` });
     // 后台执行,不阻塞响应
     runImportTask(task.id, async () => {
-      const { imported, errors, created } = await importRows(req, rows, (p, m) =>
-        updateImportTask(task.id, { progress: Math.round(p * 0.9), message: m })
+      const { imported, errors, created } = await importRows(req, rows, (p, m) =>        updateImportTask(task.id, { progress: Math.round(p * 0.9), message: m })
       );
 
       // 套题自动组卷
@@ -347,6 +346,7 @@ router.post(
           title: req.body?.paperTitle,
           mode: req.body?.paperMode,
           durationMin: req.body?.paperDurationMin,
+          kind: "CUSTOM", // JSON/CSV 粘贴导入 = 自编套题
         });
       }
       const paperMsg = papers.length
@@ -505,6 +505,7 @@ router.post(
           title: req.body?.paperTitle,
           mode: req.body?.paperMode,
           durationMin: req.body?.paperDurationMin,
+          kind: "OFFICIAL", // PDF 双文件导入 = 官方原版套题
         });
       }
       const ansMsg = ansBuf

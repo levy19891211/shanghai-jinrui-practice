@@ -10,6 +10,13 @@ import { prisma } from "./db.js";
 
 export const MIN_SET_SIZE = 2; // 少于 2 道不视为套题(单题不必成卷)
 
+// 判断来源是否为官方原版套题(用于 Paper.kind 打标)。
+// 官方原版:source 含「真题」或为「PDF 导入」等;自编/手动组卷则为 CUSTOM。
+export function isOfficialSource(source) {
+  const s = String(source || "");
+  return /真题|官方|PDF 导入|Official|Past Paper/i.test(s);
+}
+
 export function setKeyOf({ subject, paper, source }) {
   return [subject || "", paper || "", source || ""].join("::");
 }
@@ -133,6 +140,8 @@ export async function syncAutoPaperSets(created, options = {}) {
       const r = await recalcPaper(existing.id);
       results.push({ id: existing.id, paperId: existing.id, title: existing.title, action: "merged", added, total: merged.length, status: r?.status });
     } else {
+      // kind:显式传入优先;否则按来源判断——PDF 导入/真题通常为官方原版套题
+      const kind = options.kind || (isOfficialSource(g.source) ? "OFFICIAL" : "CUSTOM");
       const paper = await prisma.paper.create({
         data: {
           title: (single && options.title) || titleOf(g),
@@ -143,6 +152,7 @@ export async function syncAutoPaperSets(created, options = {}) {
           questionIds: JSON.stringify(g.ids),
           source: g.source,
           origin: "AUTO_SET",
+          kind,
           sourceKey: key,
           status: "DRAFT", // 新套题必然全是待审核,先置 DRAFT,审核完成后由 recalcPaper 自动转 READY
         },

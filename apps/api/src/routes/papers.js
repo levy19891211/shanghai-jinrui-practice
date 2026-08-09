@@ -93,6 +93,7 @@ router.post(
         durationMin: Number(durationMin) || null,
         questionIds: JSON.stringify(picked.map((q) => q.id)),
         origin: "MANUAL",
+        kind: "CUSTOM", // 手动组卷 = 组卷套题
       },
     });
     // 手动组卷只从已发布题目中抽取,推导后应为 READY;仍走一遍重算保证口径统一
@@ -117,6 +118,8 @@ router.get(
     if (isTeacher && req.query.origin) where.origin = String(req.query.origin);
     // 按学科筛选(老师可用;学生端默认只看已开放卷,不受此影响)
     if (isTeacher && req.query.subject) where.subject = String(req.query.subject);
+    // 套题类型筛选:OFFICIAL 官方原版 / CUSTOM 组卷套题
+    if (isTeacher && req.query.kind) where.kind = String(req.query.kind);
     const list = await prisma.paper.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
 
     if (!isTeacher) {
@@ -134,7 +137,7 @@ router.get(
         return {
           id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
           durationMin: p.durationMin, questionCount: stats.total,
-          source: p.source, origin: p.origin, status: p.status,
+          source: p.source, origin: p.origin, kind: p.kind, status: p.status,
           stats, createdAt: p.createdAt,
         };
       }),

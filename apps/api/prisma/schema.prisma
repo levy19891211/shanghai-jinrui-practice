@@ -110,6 +110,7 @@ model Paper {
   questionIds String
   source      String? // 来源,如 "TMUA 2016 真题"
   origin      String   @default("MANUAL")
+  kind        String   @default("CUSTOM") // 套题类型:OFFICIAL 官方原版套题(如 PDF 导入的 TMUA/ESAT 真题) | CUSTOM 组卷套题(手动组卷或自编导入)
   sourceKey   String?  @unique
   status      String   @default("READY")
   createdAt   DateTime @default(now())
