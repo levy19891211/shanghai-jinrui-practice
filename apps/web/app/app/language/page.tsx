@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import Select from "@/components/Select";
 
 type LangPaper = {
   id: string;
@@ -122,12 +121,32 @@ export default function StudentLanguagePage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-800">语言学习</h1>
-        <div className="flex gap-2">
-          <Select size="sm" value={examType} placeholder="全部考试" onChange={setExamType} options={EXAMS.map((x) => ({ value: x, label: EXAM_LABEL[x] }))} />
-          <Select size="sm" value={skill} placeholder="全部技能" onChange={setSkill} options={[...SKILLS.map((s) => ({ value: s, label: SKILL_LABEL[s] })), { value: "FULL", label: "全真连考" }]} />
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
+        <h1 className="mr-2 text-xl font-bold text-slate-800">语言学习</h1>
+        <span className="mx-1 text-xs text-slate-300">|</span>
+        {[{ v: "", l: "全部" }, ...EXAMS.map((x) => ({ v: x, l: EXAM_LABEL[x] }))].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setExamType(t.v)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+              examType === t.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
+        <span className="mx-1 text-xs text-slate-300">|</span>
+        {[{ v: "", l: "全部" }, ...SKILLS.map((s) => ({ v: s, l: SKILL_LABEL[s] })), { v: "FULL", l: "全真连考" }].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setSkill(t.v)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+              skill === t.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
       </div>
 
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
@@ -162,7 +181,7 @@ export default function StudentLanguagePage() {
                       disabled={!!startingId}
                       onClick={() => a.paper && start(a.paper.id, a.id)}
                     >
-                      {startingId === a.id ? "开卷中..." : a.status === "IN_PROGRESS" ? "继续作答" : "开始作答"}
+                      {startingId === a.id ? "开卷中..." : a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
                     </button>
                   )}
                 </div>
@@ -178,26 +197,29 @@ export default function StudentLanguagePage() {
           {libPapers.length === 0 && <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无可用试卷</p>}
           <div className="grid gap-3 md:grid-cols-2">
             {libPapers.map((p) => (
-              <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{EXAM_LABEL[p.examType] || p.examType}</span>
-                  <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[p.skill] || "#666" }}>{SKILL_LABEL[p.skill] || p.skill}</span>
-                  {p.kind === "OFFICIAL" && <span className="rounded-md bg-cyan-50 px-1.5 py-0.5 text-xs text-cyan-700">原版</span>}
-                  {p.kind === "CUSTOM" && <span className="rounded-md bg-purple-50 px-1.5 py-0.5 text-xs text-purple-700">组卷</span>}
+              <button
+                key={p.id}
+                onClick={() => start(p.id)}
+                disabled={!!startingId}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-60"
+              >
+                <div className="min-w-0">
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{EXAM_LABEL[p.examType] || p.examType}</span>
+                    <span className="rounded-md px-1.5 py-0.5 text-xs font-medium text-white" style={{ background: SKILL_COLOR[p.skill] || "#666" }}>{SKILL_LABEL[p.skill] || p.skill}</span>
+                    {p.kind === "OFFICIAL" && <span className="rounded-md bg-cyan-50 px-1.5 py-0.5 text-xs text-cyan-700">原版</span>}
+                    {p.kind === "CUSTOM" && <span className="rounded-md bg-purple-50 px-1.5 py-0.5 text-xs text-purple-700">组卷</span>}
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">{p.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {p.questionCount} 题 · {p.mode === "EXAM" ? `限时 ${p.durationMin ?? ""} 分钟` : "练习"}
+                    {p.segments.length > 0 && ` · ${p.segments.map((s) => `${SKILL_LABEL[s.skill]}${s.durationMin}min`).join("→")}`}
+                  </p>
                 </div>
-                <p className="text-sm font-semibold text-slate-800">{p.title}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {p.questionCount} 题 · {p.mode === "EXAM" ? `限时 ${p.durationMin ?? ""} 分钟` : "练习"}
-                  {p.segments.length > 0 && ` · ${p.segments.map((s) => `${SKILL_LABEL[s.skill]}${s.durationMin}min`).join("→")}`}
-                </p>
-                <button
-                  className="mt-3 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                  disabled={!!startingId}
-                  onClick={() => start(p.id)}
-                >
-                  {startingId === p.id ? "开卷中..." : p.mode === "EXAM" ? "开始模考" : "开始练习"}
-                </button>
-              </div>
+                <span className="shrink-0 text-xs font-medium text-indigo-600">
+                  {startingId === p.id ? "开卷中..." : p.mode === "EXAM" ? "开始模考 →" : "开始练习 →"}
+                </span>
+              </button>
             ))}
           </div>
         </div>
