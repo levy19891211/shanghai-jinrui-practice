@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.3.7 (2026-08-09) — PDF 导入文件级统一 subject/paper，根治拆卷
+- **问题**:同一份 PDF 导入后被拆成多套卷。根因是视觉模型**逐题**判断 subject,同卷内偶尔判错(如 NSAA 2023 物理卷中 4 题被判成 ESAT),而 `paper-set.js` 按 `subject::paper::source` 三元组建卷,导致一份 PDF 拆成两套独立卷。
+- **修复**(`apps/api/src/lib/import-pdf.js`):`parsePdf` 中新增 `unifyFileMeta`,在视觉模型返回后对**同一份 PDF 的所有题强制统一 subject/paper**:
+  - paper:文件名解析优先(如 `TMUA-2021-paper-1.pdf` → `TMUA 2021 Paper 1`)→ 文件内多数派 → 首个非空;
+  - subject:文件名强信号(ESAT/TMUA/数学/物理/化学/生物,中英均可)→ 统一后 paper 组内多数派 → 文件内多数派;
+  - 归一化映射(Physics→物理 等)与 `routes/questions.js` 的 `SUBJECT_NORM` 保持一致;空 subject/paper 的题会被补齐,不再因个别字段缺失被丢弃。
+- **验证**:本地 16 用例全过——NSAA 场景(16 物理 + 4 误判 ESAT → 20 题统一物理/PART B Physics)、TMUA 文件名强信号、Physics/物理混拼归一、无信号多数派、空数组/全空边界。
+- **效果**:以后同一份 PDF 无论视觉模型怎么逐题误判,都只会生成一套卷;真混合卷(如 ESAT 数学+物理)若文件名含 ESAT 也统一为 ESAT 一套卷(知识点归类不受影响,ESAT 池含数学+物理)。
+
 ## V2.3.6 (2026-08-09) — 试卷管理支持修改名称/科目/模式
 - **功能**:试卷管理详情抽屉新增「试卷设置」区,老师可直接修改每套卷的**名称**(已有)、**科目**(TMUA/ESAT/数学/物理/化学/生物)、**模式**(练习/模拟考)与**限时**(模拟考时)。
 - **后端**(`papers.js` PATCH `/papers/:id`):新增 `subject` 支持,合法科目白名单校验;改科目时**同步更新 sourceKey**(subject::paper::source),避免下次导入同套题因唯一键不一致而建新卷;与已有卷的 sourceKey 冲突时报错提示(先改名/删除冲突卷)。
