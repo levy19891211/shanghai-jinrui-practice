@@ -9,6 +9,17 @@ export default function WrongBookPage() {
   const [list, setList] = useState<WrongItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [subjectTab, setSubjectTab] = useState("");
+  // 解析折叠:默认全部收起,点击「查看解析」展开对应题(Set 记录已展开的 questionId)
+  const [openSolutions, setOpenSolutions] = useState<Set<string>>(new Set());
+
+  function toggleSolution(qid: string) {
+    setOpenSolutions((prev) => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  }
 
   async function load() {
     const d = await api.get<{ list: WrongItem[] }>("/me/wrongbook");
@@ -42,13 +53,31 @@ export default function WrongBookPage() {
             <span>难度 {w.difficulty}</span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(w.stem)}</p>
-          {w.solution ? (
-            <div className="mt-3 whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
-              <b className="text-[#00467F]">解析:</b> {renderRich(w.solution, { smart: false })}
-            </div>
-          ) : (
-            <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-xs text-slate-400">暂无解析,老师尚未补充</p>
-          )}
+          {/* 解析:默认折叠,点击「查看解析」展开 */}
+          <div className="mt-3">
+            <button
+              onClick={() => toggleSolution(w.questionId)}
+              className="flex items-center gap-1.5 rounded-lg border border-[#c9b98f] bg-[#f6f1e2] px-3 py-1.5 text-xs font-medium text-[#3a3528] transition hover:bg-[#efe8d2]"
+              aria-expanded={openSolutions.has(w.questionId)}
+            >
+              <svg
+                className={`h-3 w-3 transition-transform ${openSolutions.has(w.questionId) ? "rotate-90" : ""}`}
+                viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+              >
+                <path d="M6 3l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {w.solution ? (openSolutions.has(w.questionId) ? "收起解析" : "查看解析") : "暂无解析"}
+            </button>
+            {openSolutions.has(w.questionId) && (
+              w.solution ? (
+                <div className="mt-2 whitespace-pre-wrap rounded border-l-4 border-[#c9b98f] bg-[#f6f1e2] px-3 py-2 text-sm leading-relaxed text-[#3a3528]">
+                  <b className="text-[#00467F]">解析:</b> {renderRich(w.solution, { smart: false })}
+                </div>
+              ) : (
+                <p className="mt-2 rounded bg-slate-50 px-3 py-2 text-xs text-slate-400">暂无解析,老师尚未补充</p>
+              )
+            )}
+          </div>
         </div>
         <div className="shrink-0 text-right">
           <p className="text-xs text-slate-400">错 {w.wrongCount} 次</p>
