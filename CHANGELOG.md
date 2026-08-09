@@ -1,5 +1,13 @@
 # 版本历史
 
+## V2.4.11 (2026-08-09) — 修复不同套题导入被错误合并成一张卷
+
+- 根因:批量导入按 `subject::paper::source`(sourceKey)分组自动成卷。`source` 恒为"PDF 导入";`paper` 由 `paperFromFilename` + 视觉模型推断,而 `paperFromFilename` 仅对文件名含 `ESAT/TMUA + 年份 + Paper N` 返回卷名,否则返回空 → 物理等非此类 PDF 的 `paper` 回落成泛化值(如"PART B Physics"),导致每批物理题三元组完全相同,`syncAutoPaperSets` 把多套题全并成一张卷。且前端导入请求未传 `paperTitle`,后端即便收到也只改显示标题、不参与分组。
+- 修复后端 `import-pdf.js` `paperFromFilename`:非 ESAT/TMUA 文件名时回落到文件名本身(去扩展名/分隔符),保证不同文件名各自成卷、同名文件仍按 sourceKey 合并(dedup)。
+- 导入路由(`/import-file`、`/import-pdf`)新增:老师填写的 `paperTitle`(套题名称)优先覆盖本批题目的 `paper`,作为分组与成卷依据,使显式命名可强制分卷。
+- 前端教师端批量导入弹窗(上传文件 / PDF 双文件 两种模式)新增「套题名称」输入框,提交时随 `paperTitle` 传给后端,并附分卷说明。
+- 数据修正:将此前误合并的一张 60 题物理卷按导入时间拆回 3 张独立卷(各 20 题,分别对应 02:09 / 13:41 / 13:55 三个导入批次;该卷未被任何作业/会话引用,可安全拆分)。
+
 ## V2.4.10 (2026-08-09) — 我的作业页语言作业开卷分流修复
 
 - 根因:「刷题练习 / 我的作业」页对所有作业(含语言作业)统一调用学科开卷接口 `POST /api/sessions`,而该接口只认 `assignment.paper`(学科卷)。语言作业仅有 `languagePaperId`、`paper` 为 null,后端抛 404「作业对应的试卷不存在」。语言学习板块因调用正确的 `/language/sessions` 故能正常开卷。

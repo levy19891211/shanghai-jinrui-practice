@@ -218,6 +218,9 @@ export default function TeacherPage() {
     }
   };
   const [paperTitle, setPaperTitle] = useState("");
+  // 导入弹窗里的「套题名称」:显式指定后,本批题目归入以此命名的卷;不填则由文件名/视觉模型推断。
+  // 用于避免不同套题被自动合并成一张卷(见后端 syncAutoPaperSets 的 sourceKey 分组)。
+  const [importPaperTitle, setImportPaperTitle] = useState("");
   // 一键自动修正
   const [fixOpen, setFixOpen] = useState(false);
   const [fixQ, setFixQ] = useState<Question | null>(null);
@@ -420,7 +423,7 @@ export default function TeacherPage() {
         r.onerror = () => reject(r.error);
         r.readAsDataURL(file);
       });
-      const { taskId } = await api.post<{ taskId: string }>("/questions/import-file", { filename: file.name, data: dataUrl });
+      const { taskId } = await api.post<{ taskId: string }>("/questions/import-file", { filename: file.name, data: dataUrl, paperTitle: importPaperTitle.trim() || undefined });
       const r = await pollImportTask(taskId);
       setImportResult(r);
       await load();
@@ -454,7 +457,7 @@ export default function TeacherPage() {
         });
       const data = await read(file);
       const answerData = ansFile ? await read(ansFile) : undefined;
-      const { taskId } = await api.post<{ taskId: string }>("/questions/import-pdf", { filename: file.name, data, answerFilename: ansFile?.name, answerData });
+      const { taskId } = await api.post<{ taskId: string }>("/questions/import-pdf", { filename: file.name, data, answerFilename: ansFile?.name, answerData, paperTitle: importPaperTitle.trim() || undefined });
       const r = await pollImportTask(taskId);
       setImportResult(r);
       setPdfFileName("");
@@ -893,6 +896,17 @@ export default function TeacherPage() {
               </>
             ) : importMode === "file" ? (
               <>
+                <div className="mb-3">
+                  <label className="mb-1 block text-sm text-slate-600">套题名称(可选,用于分卷)</label>
+                  <input
+                    type="text"
+                    value={importPaperTitle}
+                    onChange={(e) => setImportPaperTitle(e.target.value)}
+                    placeholder="如 物理电磁学 / 2023 物理真题;不填则按文件名自动分卷"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">不同名称各自成卷;相同名称(或同名文件)会合并为同一卷,便于分批导入同一套题。</p>
+                </div>
                 <div className="mt-3 rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-center">
                   <input
                     ref={fileImportRef}
@@ -951,6 +965,17 @@ Answer: B
               </>
             ) : (
               <>
+                <div className="mb-3">
+                  <label className="mb-1 block text-sm text-slate-600">套题名称(可选,用于分卷)</label>
+                  <input
+                    type="text"
+                    value={importPaperTitle}
+                    onChange={(e) => setImportPaperTitle(e.target.value)}
+                    placeholder="如 物理电磁学 / 2023 物理真题;不填则按文件名自动分卷"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">不同名称各自成卷;相同名称(或同名文件)会合并为同一卷,便于分批导入同一套题。</p>
+                </div>
                 {/* PDF 双文件导入:题目文件(必填) + 答案文件(可选) */}
                 <div className="mt-3 space-y-3 rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50/30 px-4 py-5">
                   <div>

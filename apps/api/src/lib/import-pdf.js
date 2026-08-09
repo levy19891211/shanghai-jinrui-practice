@@ -58,7 +58,10 @@ export function paperFromFilename(filename) {
   const pNum = (f.match(/paper\s*(\d+)/i) || f.match(/p\s*(\d+)/i) || [])[1] || "";
   if (subj && year && pNum) return `${subj} ${year} Paper ${pNum}`;
   if (subj && pNum) return `${subj} Paper ${pNum}`;
-  return "";
+  // 兜底:用文件名本身(去扩展名/分隔符)作为卷名。
+  // 这样物理/化学等非 ESAT·TMUA 的真题 PDF 只要文件名不同就会各自成卷,
+  // 同名文件重复导入仍按 sourceKey 自动合并(dedup),避免不同套题被错误并卷。
+  return f;
 }
 
 // ——— 文件级元数据统一:彻底避免同一份 PDF 被拆成多套卷 ———

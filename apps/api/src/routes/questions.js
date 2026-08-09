@@ -387,6 +387,9 @@ router.post(
       let rows;
       try {
         rows = await parseImportFile(filename, buf);
+      // 老师显式指定的套题名称优先于文件内/视觉模型推断的 paper,作为分组与成卷依据,
+      // 保证同一批次的题目归入同一卷、不同名称的批次各自成卷(防止不同套题被错误并卷)。
+      if (req.body?.paperTitle) rows = rows.map((r) => ({ ...r, paper: String(req.body.paperTitle).trim() }));
       } catch (e) {
         if (e.message === "VISION_NOT_CONFIGURED") {
           throw new Error(
@@ -467,6 +470,8 @@ router.post(
       let rows;
       try {
         rows = await parsePdf(filename, buf);
+        // 套题名称优先:覆盖视觉模型/文件名推断的 paper,作为分组键(见 import-pdf.js paperFromFilename)
+        if (req.body?.paperTitle) rows = rows.map((r) => ({ ...r, paper: String(req.body.paperTitle).trim() }));
       } catch (e) {
         if (e.message === "VISION_NOT_CONFIGURED") {
           throw new Error("PDF 导入需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API");
