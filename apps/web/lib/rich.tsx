@@ -64,9 +64,10 @@ function tokenize(text: string): Token[] {
     } else {
       // 行内公式:若内容明显是普通英文句子而非数学,退回成文本,交给 smartMath 自动识别真正的数学片段。
       // 这能防止数据里只保留了一个闭合 $ 时,整段正文被吞进一个巨大的 $...$ 公式。
+      // 退回时只保留 expr(剥掉外层 $),避免 $ 字符本身被当文本显示。
       const expr = m[4];
       if (looksLikeTextInDollars(expr)) {
-        tokens.push({ type: "text", text: m[0] });
+        tokens.push({ type: "text", text: expr });
       } else {
         tokens.push({ type: "math", expr, display: false });
       }
