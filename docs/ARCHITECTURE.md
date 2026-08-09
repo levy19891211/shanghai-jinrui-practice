@@ -1,10 +1,10 @@
-# 工程架构文档 — 上海金瑞学校 附加笔试刷题系统(TMUA / ESAT)
+# 工程架构文档 — 金瑞升学金鹰系统(TMUA / ESAT)
 
 > 本文件是系统的设计蓝本。**任何架构级变更必须先更新此文档**,再动代码。
 
 ## 1. 系统定位
 
-系统名称:**上海金瑞学校 附加笔试刷题系统**。面向 TMUA(Test of Mathematics for University Admission)与 ESAT(Engineering and Science Admissions Test)备考的在线刷题系统。
+系统名称:**金瑞升学金鹰系统**。面向 TMUA(Test of Mathematics for University Admission)与 ESAT(Engineering and Science Admissions Test)备考的在线刷题系统。
 
 - **学生端**:按知识点/试卷刷题、限时模拟考、错题本、成绩与掌握度分析
 - **老师端**:题库维护(新增/编辑/批量导入)、组卷、查看学生成绩与学情统计

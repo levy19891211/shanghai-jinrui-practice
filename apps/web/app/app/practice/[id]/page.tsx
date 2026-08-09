@@ -181,7 +181,7 @@ export default function PracticePage() {
         <div className="overflow-hidden rounded-lg bg-[#fbf8f1] shadow-lg ring-1 ring-[#d9d2c2]">
           {/* 头 */}
           <div className="bg-gradient-to-br from-[#00467F] to-[#1f6fb2] px-8 py-6 text-white">
-            <h1 className="text-lg font-bold tracking-wide">上海金瑞学校 · 附加笔试刷题系统</h1>
+            <h1 className="text-lg font-bold tracking-wide">金瑞升学金鹰系统</h1>
             <p className="mt-1 text-xs opacity-90">{modeLabel} · 成绩报告</p>
             {result?.timedOut && <p className="mt-2 inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs">考试时间已到,系统已自动交卷</p>}
           </div>
@@ -267,7 +267,7 @@ export default function PracticePage() {
         <div className="bg-gradient-to-br from-[#00467F] to-[#1f6fb2] px-8 py-5 text-white">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-base font-bold tracking-wide">上海金瑞学校 · 附加笔试</h1>
+              <h1 className="text-base font-bold tracking-wide">金瑞升学金鹰系统</h1>
               <p className="mt-0.5 text-xs opacity-90">
                 {modeLabel} · 共 {total} 题 · 每题 1 分
                 {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.round((deadline - Date.now() + remaining! * 1000) / 60000) : ""} 分钟</span>}

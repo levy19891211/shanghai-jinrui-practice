@@ -36,7 +36,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <span className="text-sm font-bold text-indigo-600">上海金瑞学校 · 附加笔试刷题 · 老师端</span>
+            <span className="text-sm font-bold text-indigo-600">金瑞升学金鹰系统 · 老师端</span>
             <nav className="flex gap-1">
               {nav.map((n) => (
                 <Link

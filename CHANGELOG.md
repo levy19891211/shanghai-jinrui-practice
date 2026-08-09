@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.3.33 (2026-08-09) — 系统重命名为「金瑞升学金鹰系统」
+- **改动**:全站品牌名称由「上海金瑞学校 附加笔试刷题系统」统一改为「**金瑞升学金鹰系统**」:
+  - 前端用户可见:登录页标题/副标题、浏览器 tab 标题(metadata)、学生端头部、老师端头部、答题页成绩报告与作答页标题;
+  - 文档:apps/web/README.md、docs/DEPLOY.md、API.md、ARCHITECTURE.md、TEST_CASES.md、VC_HANDOFF.md、MATH_RENDERING_BUGS.md、schema 注释、graphics-preview.html 等 15 处文件。
+- **验证**:tsc 通过;源码全量 grep 无旧名残留(.next 构建产物随重新 build 自动更新)。
+
 ## V2.3.32 (2026-08-09) — PDF 导入丢题修复(视觉模型漏题重试 + 预警)
 - **问题**:导入 2022 TMUA Paper 2 时只收到 16 题,缺 4 道(Q7-Q10)。核对该 PDF(首页写明 20 questions)与官方答案页,确认缺失的正是 PDF 第 9-12 页的 Q7/Q8/Q9/Q10——这 4 页恰好构成视觉模型单批(每 4 页)调用,该批被模型漏提取且无重试机制。
 - **修复**:

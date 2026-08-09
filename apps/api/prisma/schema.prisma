@@ -1,4 +1,4 @@
-// Prisma schema — TMUA/ESAT 刷题系统
+// Prisma schema — 金瑞升学金鹰系统(TMUA/ESAT)
 // 开发环境:SQLite(不支持 enum,字段用 String 并注释合法值)
 // 生产环境:切换 provider 为 "postgresql" 后可恢复为 enum 类型
 
