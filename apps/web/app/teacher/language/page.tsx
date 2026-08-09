@@ -78,6 +78,8 @@ type ReviewSession = {
 
 const EXAMS = ["IELTS", "TOEFL", "KET_PET", "OTHER"];
 const SKILLS = ["LISTENING", "READING", "WRITING", "SPEAKING"];
+// 题库筛选点选顺序(阅读优先)
+const SKILL_CHIPS = ["READING", "LISTENING", "WRITING", "SPEAKING"];
 const QTYPES: Record<string, string[]> = {
   LISTENING: ["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING"],
   READING: ["TRUE_FALSE_NG", "FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"],
@@ -98,12 +100,13 @@ const STATUS_LABEL: Record<string, string> = {
 const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString("zh-CN", { hour12: false }) : "—");
 
 // —— 题目编辑弹窗 ——
-function QuestionForm({ initial, onSaved, onClose }: { initial?: LangQ | null; onSaved: () => void; onClose: () => void }) {
-  const [f, setF] = useState<Record<string, any>>(() =>
-    initial
-      ? { ...initial, options: [...(initial.options || [])] }
-      : { examType: "IELTS", skill: "READING", qType: "TRUE_FALSE_NG", part: null, groupTitle: "", stem: "", options: ["", ""], answer: "", solution: "", audioUrl: null, materialId: null, wordLimit: null, difficulty: 3 }
-  );
+function QuestionForm({ initial, defaults, onSaved, onClose }: { initial?: LangQ | null; defaults?: { examType: string; skill: string }; onSaved: () => void; onClose: () => void }) {
+  const [f, setF] = useState<Record<string, any>>(() => {
+    if (initial) return { ...initial, options: [...(initial.options || [])] };
+    const dExam = defaults?.examType || "IELTS";
+    const dSkill = defaults?.skill || "READING";
+    return { examType: dExam, skill: dSkill, qType: QTYPES[dSkill]?.[0] || "SINGLE_CHOICE", part: null, groupTitle: "", stem: "", options: ["", ""], answer: "", solution: "", audioUrl: null, materialId: null, wordLimit: null, difficulty: 3 };
+  });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [materials, setMaterials] = useState<{ id: string; title: string | null; skill: string }[]>([]);
@@ -858,14 +861,17 @@ export default function TeacherLanguagePage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // 题库筛选
-  const [examType, setExamType] = useState("");
+  // 题库筛选(点选:考试类型 + 技能,默认 雅思 + 阅读)
+  const [examType, setExamType] = useState("IELTS");
+  const [skill, setSkill] = useState("READING");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
-  const [editing, setEditing] = useState<LangQ | null>(null);
+  const [questions, setQuestions] = useState<LangQ[]>([]);
+  const [editing, setEditing] = useState<LangQ | null | "new">(null);
   const [showPaper, setShowPaper] = useState(false);
   // 阅读篇章视图
   const [passages, setPassages] = useState<Passage[]>([]);
+  const [allPassages, setAllPassages] = useState<Passage[]>([]);
   const [pubQuestions, setPubQuestions] = useState<LangQ[]>([]);
   const [editingPassage, setEditingPassage] = useState<Passage | null | "new">(null);
   const [passageDraft, setPassageDraft] = useState<PassageDraft | null>(null);
@@ -877,13 +883,31 @@ export default function TeacherLanguagePage() {
   const [assignDetail, setAssignDetail] = useState<any>(null);
 
   const loadPassages = useCallback(async () => {
+    if (skill !== "READING") return;
     const qs = new URLSearchParams({ skill: "READING" });
     if (examType) qs.set("examType", examType);
     if (status) qs.set("status", status);
     if (q) qs.set("q", q);
     const d = await api.get<{ list: Passage[] }>(`/language/passages?${qs.toString()}`);
     setPassages(d.list);
-  }, [examType, status, q]);
+  }, [skill, examType, status, q]);
+
+  // 非阅读技能(听力/写作/口语)按题目列表展示
+  const loadQuestions = useCallback(async () => {
+    if (skill === "READING") return;
+    const qs = new URLSearchParams({ skill });
+    if (examType) qs.set("examType", examType);
+    if (status) qs.set("status", status);
+    if (q) qs.set("q", q);
+    const d = await api.get<{ list: LangQ[] }>(`/language/questions?${qs.toString()}`);
+    setQuestions(d.list);
+  }, [skill, examType, status, q]);
+
+  // 组卷用:不受题库筛选影响的全部篇章
+  const loadAllPassages = useCallback(async () => {
+    const d = await api.get<{ list: Passage[] }>("/language/passages?skill=READING");
+    setAllPassages(d.list);
+  }, []);
 
   // 组卷选题用:与题库筛选解耦,始终取全部已发布题
   const loadPub = useCallback(async () => {
@@ -910,21 +934,40 @@ export default function TeacherLanguagePage() {
     (async () => {
       setLoading(true);
       try {
-        await Promise.all([loadPassages(), loadPub(), loadPapers(), loadReview(), loadAssigns()]);
+        await Promise.all([loadPassages(), loadQuestions(), loadAllPassages(), loadPub(), loadPapers(), loadReview(), loadAssigns()]);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "加载失败");
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadPassages, loadPub, loadPapers, loadReview, loadAssigns]);
+  }, [loadPassages, loadQuestions, loadAllPassages, loadPub, loadPapers, loadReview, loadAssigns]);
 
   async function reviewPassage(id: string, pass: boolean) {
     try {
       await api.post(`/language/passages/${id}/review`, { pass });
-      await Promise.all([loadPassages(), loadPub()]);
+      await Promise.all([loadPassages(), loadAllPassages(), loadPub()]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
+  async function reviewQuestion(id: string, pass: boolean) {
+    try {
+      await api.post(`/language/questions/${id}/review`, { pass });
+      await Promise.all([loadQuestions(), loadPub()]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
+  async function delQuestion(id: string) {
+    if (!window.confirm("确认删除该题目?其作答记录与错题本数据将一并删除。")) return;
+    try {
+      await api.del(`/language/questions/${id}`);
+      await Promise.all([loadQuestions(), loadPub()]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "删除失败");
     }
   }
 
@@ -932,7 +975,7 @@ export default function TeacherLanguagePage() {
     if (!window.confirm(`确认删除整篇「${p.title || "未命名篇章"}」?其 ${p.questionCount} 道绑定题目及相关作答/错题记录将一并删除。`)) return;
     try {
       await api.del(`/language/passages/${p.id}`);
-      await Promise.all([loadPassages(), loadPub()]);
+      await Promise.all([loadPassages(), loadAllPassages(), loadPub()]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "删除失败");
     }
@@ -962,11 +1005,14 @@ export default function TeacherLanguagePage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-slate-800">语言学习</h1>
         <div className="flex flex-wrap gap-2">
-          {tab === "questions" && (
+          {tab === "questions" && skill === "READING" && (
             <>
               <button className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200" onClick={() => setShowPassageImport(true)}>导入阅读篇章(PDF)</button>
               <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => { setPassageDraft(null); setEditingPassage("new"); }}>+ 新建阅读篇章</button>
             </>
+          )}
+          {tab === "questions" && skill !== "READING" && (
+            <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setEditing("new")}>+ 新增{SKILL_LABEL[skill]}题目</button>
           )}
           {tab === "papers" && <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setShowPaper(true)}>+ 新建语言卷</button>}
           {tab === "assign" && <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" onClick={() => setShowAssign(true)}>+ 布置作业</button>}
@@ -987,18 +1033,37 @@ export default function TeacherLanguagePage() {
 
       {!loading && tab === "questions" && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap gap-2 border-b border-slate-100 p-3">
-            <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={examType} onChange={(e) => setExamType(e.target.value)}>
-              <option value="">全部考试</option>
-              {EXAMS.map((x) => <option key={x} value={x}>{EXAM_LABEL[x]}</option>)}
-            </select>
-            <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">全部状态</option>
-              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder="搜索篇章标题/正文..." value={q} onChange={(e) => setQ(e.target.value)} />
-            <span className="ml-auto self-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">阅读篇章 {passages.length} 篇</span>
+          <div className="space-y-2.5 border-b border-slate-100 p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 w-14 shrink-0 text-xs font-medium text-slate-400">考试类型</span>
+              {EXAMS.map((x) => (
+                <button key={x} onClick={() => setExamType(x)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${examType === x ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50"}`}>
+                  {EXAM_LABEL[x]}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 w-14 shrink-0 text-xs font-medium text-slate-400">技能</span>
+              {SKILL_CHIPS.map((s) => (
+                <button key={s} onClick={() => setSkill(s)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${skill === s ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50"}`}>
+                  {SKILL_LABEL[s]}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <select className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="">全部状态</option>
+                {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <input className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600" placeholder={skill === "READING" ? "搜索篇章标题/正文..." : "搜索题干..."} value={q} onChange={(e) => setQ(e.target.value)} />
+              <span className="ml-auto self-center rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">
+                {skill === "READING" ? `阅读篇章 ${passages.length} 篇` : `${SKILL_LABEL[skill]} ${questions.length} 题`}
+              </span>
+            </div>
           </div>
+          {skill === "READING" && (
           <div className="space-y-3 p-3">
             {passages.length === 0 && (
               <p className="py-8 text-center text-sm text-slate-400">暂无阅读篇章,点右上「+ 新建阅读篇章」或「导入阅读篇章(PDF)」</p>
@@ -1055,6 +1120,42 @@ export default function TeacherLanguagePage() {
                 );
               })}
           </div>
+          )}
+          {skill !== "READING" && (
+            <div className="divide-y divide-slate-100">
+              {questions.length === 0 && (
+                <p className="py-8 text-center text-sm text-slate-400">暂无{SKILL_LABEL[skill]}题目,点右上「+ 新增{SKILL_LABEL[skill]}题目」录入</p>
+              )}
+              {questions.map((item) => (
+                <div key={item.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{EXAM_LABEL[item.examType] || item.examType}</span>
+                      <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-600">{SKILL_LABEL[item.skill]}</span>
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{QTYPE_LABEL[item.qType] || item.qType}</span>
+                      {item.audioUrl && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600">🔊 音频</span>}
+                      <span className={`rounded-md px-1.5 py-0.5 text-xs ${item.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600" : item.status === "REJECTED" ? "bg-red-50 text-red-600" : item.status === "PENDING_REVIEW" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                        {STATUS_LABEL[item.status] || item.status}
+                      </span>
+                    </div>
+                    {item.groupTitle && <p className="text-xs font-semibold text-slate-500">{item.groupTitle}</p>}
+                    <p className="line-clamp-2 text-sm text-slate-700">{item.stem}</p>
+                    {item.reviewNote && <p className="mt-0.5 text-xs text-red-500">退回原因: {item.reviewNote}</p>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(item.status === "PENDING_REVIEW" || item.status === "REJECTED") && (
+                      <button className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700" onClick={() => reviewQuestion(item.id, true)}>通过</button>
+                    )}
+                    {item.status === "PUBLISHED" && (
+                      <button className="rounded-md bg-red-100 px-2.5 py-1 text-xs text-red-600 hover:bg-red-200" onClick={() => reviewQuestion(item.id, false)}>退回</button>
+                    )}
+                    <button className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-200" onClick={() => setEditing(item)}>编辑</button>
+                    <button className="rounded-md bg-red-50 px-2.5 py-1 text-xs text-red-500 hover:bg-red-100" onClick={() => delQuestion(item.id)}>删除</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1151,15 +1252,16 @@ export default function TeacherLanguagePage() {
 
       {editing && (
         <QuestionForm
-          initial={editing}
-          onSaved={() => { loadPassages(); loadPub(); }}
+          initial={editing === "new" ? null : editing}
+          defaults={{ examType, skill }}
+          onSaved={() => { loadPassages(); loadAllPassages(); loadQuestions(); loadPub(); }}
           onClose={() => setEditing(null)}
         />
       )}
       {showPaper && (
         <PaperForm
           allQuestions={pubQuestions}
-          passages={passages}
+          passages={allPassages}
           onSaved={() => { loadPapers(); }}
           onClose={() => setShowPaper(false)}
         />
@@ -1174,7 +1276,7 @@ export default function TeacherLanguagePage() {
         <PassageForm
           initial={editingPassage === "new" ? null : editingPassage}
           draft={editingPassage === "new" ? passageDraft : null}
-          onSaved={() => { loadPassages(); loadPub(); }}
+          onSaved={() => { loadPassages(); loadAllPassages(); loadPub(); }}
           onClose={() => { setEditingPassage(null); setPassageDraft(null); }}
         />
       )}
