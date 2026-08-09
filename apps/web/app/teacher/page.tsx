@@ -1117,7 +1117,12 @@ Answer: B
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
               <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.subject}</span>
               {reviewQ.sourceType && <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{reviewQ.sourceType}</span>}
-              {reviewQ.paper && <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.paper}</span>}
+              {/* 按卷审核时显示当前卷名,避免题目 paper 字段(源卷名)与卷名不一致造成困惑 */}
+              {paperId && paperTitle ? (
+                <span className="rounded bg-violet-50 px-2 py-0.5 text-violet-600" title={`题目源卷:${reviewQ.paper || "—"}`}>📄 {paperTitle}</span>
+              ) : (
+                reviewQ.paper && <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{reviewQ.paper}</span>
+              )}
               {reviewQ.topics && reviewQ.topics.length ? (
                 reviewQ.topics.map((t) => (
                   <span key={t} className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{t}</span>

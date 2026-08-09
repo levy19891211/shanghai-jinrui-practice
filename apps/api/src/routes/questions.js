@@ -118,18 +118,18 @@ function cleanOptionPrefix(o) {
   return String(o ?? "").replace(/^[\(\[【（]?[A-Ja-j][\.\s:、)）\]】」、\]】]+/, "").trimStart();
 }
 
-// 组装发给 LLM 的题目信息
+// 组装发给 LLM 的题目信息(解析统一用英文输出)
 function buildSolutionPrompt({ stem, options, answer, topic }) {
   const optText = Array.isArray(options) && options.length
     ? options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("\n")
-    : "(无选项 / 填空题)";
+    : "(no options / open question)";
   return [
-    `【科目/知识点】${topic || "数学"}`,
-    `【题干】${stem}`,
-    `【选项】\n${optText}`,
-    `【参考答案】${answer || "(见题干或解析)"}`,
+    `[Subject / Topic] ${topic || "Mathematics"}`,
+    `[Question] ${stem}`,
+    `[Options]\n${optText}`,
+    `[Answer] ${answer || "(see question or explanation)"}`,
     "",
-    "请基于以上信息给出解析,务必包含解题步骤、考查知识点、易错点提醒三部分。",
+    "Based on the above question, write a solution explanation **in English** covering three parts: Solution Steps, Knowledge Points Tested, and Common Pitfalls.",
   ].join("\n");
 }
 
@@ -147,9 +147,9 @@ async function tryGenerateSolution(q) {
   try {
     const raw = await chatComplete({
       system:
-        "你是资深的英国大学附加数学笔试(TMUA/ESAT 等)辅导老师。请针对题目给出清晰、严谨、面向学生的解题解析。" +
-        "严格按以下三部分用 Markdown 小标题组织:\n## 解题步骤\n## 考查知识点\n## 易错点提醒\n" +
-        "数学公式用 LaTeX 行内 $...$ 或独立 $$...$$ 表示。只输出解析内容,不要寒暄。",
+        "You are an experienced tutor for UK university admissions mathematics tests (TMUA, ESAT, etc.). Provide a clear, rigorous, student-friendly solution explanation for the given question. " +
+        "Write the entire explanation **in English**, organized into exactly three sections using Markdown headings:\n## Solution Steps\n## Knowledge Points Tested\n## Common Pitfalls\n" +
+        "Use LaTeX inline $...$ or display $$...$$ for mathematics. Output only the solution content, no greetings.",
       user: buildSolutionPrompt({ stem: q.stem, options: safeParseOptions(q.options), answer: q.answer, topic: q.topic }),
       temperature: 0.2,
       maxTokens: 900,
@@ -843,9 +843,9 @@ router.post(
     try {
       raw = await chatComplete({
         system:
-          "你是资深的英国大学附加数学笔试(TMUA/ESAT 等)辅导老师。请针对题目给出清晰、严谨、面向学生的解题解析。" +
-          "严格按以下三部分用 Markdown 小标题组织:\n## 解题步骤\n## 考查知识点\n## 易错点提醒\n" +
-          "数学公式用 LaTeX 行内 $...$ 或独立 $$...$$ 表示。只输出解析内容,不要寒暄。",
+          "You are an experienced tutor for UK university admissions mathematics tests (TMUA, ESAT, etc.). Provide a clear, rigorous, student-friendly solution explanation for the given question. " +
+          "Write the entire explanation **in English**, organized into exactly three sections using Markdown headings:\n## Solution Steps\n## Knowledge Points Tested\n## Common Pitfalls\n" +
+          "Use LaTeX inline $...$ or display $$...$$ for mathematics. Output only the solution content, no greetings.",
         user: prompt,
         temperature: 0.2,
         maxTokens: 900,
