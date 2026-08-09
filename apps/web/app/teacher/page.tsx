@@ -30,6 +30,14 @@ function imageStatus(q: Question): "has" | "needs" | "none" {
   return "none";
 }
 
+// 题目缺项检查:缺答案(必填,缺了不能发布)/缺解析(可选但建议补充)
+function questionIssues(q: Question): { missingAnswer: boolean; missingSolution: boolean } {
+  return {
+    missingAnswer: !String(q.answer ?? "").trim(),
+    missingSolution: !String(q.solution ?? "").trim(),
+  };
+}
+
 // 把 ISO 时间格式化为「YYYY-MM-DD HH:mm」,用于显示导入/创建时间
 function fmtTime(s?: string | null): string {
   if (!s) return "—";
@@ -391,6 +399,11 @@ export default function TeacherPage() {
 
   async function doReview(action: "approve" | "reject") {
     if (!reviewQ) return;
+    // 铁律:缺答案的题不能发布(后端也会拦截,这里前端提前提示)
+    if (action === "approve" && questionIssues(reviewQ).missingAnswer) {
+      setReviewError("该题缺少答案,不能发布。请先关闭弹窗,点「编辑」补充答案后再审核通过。");
+      return;
+    }
     setReviewing(true);
     setReviewError("");
     try {
@@ -706,6 +719,12 @@ export default function TeacherPage() {
                     {imageStatus(q) === "needs" && (
                       <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-500" title="题干/选项/解析引用了图表但未内嵌图片,请编辑手动添加截图">需配图</span>
                     )}
+                    {questionIssues(q).missingAnswer && (
+                      <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-600" title="缺少答案,此类题目不能通过审核发布,请先编辑补充">缺答案</span>
+                    )}
+                    {questionIssues(q).missingSolution && (
+                      <span className="ml-1.5 rounded bg-orange-50 px-1.5 py-0.5 text-xs text-orange-600" title="缺少解析(建议补充,便于学生复习)">缺解析</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
                     <span
@@ -1018,6 +1037,12 @@ Answer: B
               )}
               <span className="rounded bg-slate-100 px-2 py-0.5">难度 {reviewQ.difficulty}</span>
               {reviewQ.source && <span className="rounded bg-slate-100 px-2 py-0.5">{reviewQ.source}</span>}
+              {questionIssues(reviewQ).missingAnswer && (
+                <span className="rounded bg-red-100 px-2 py-0.5 font-medium text-red-600" title="缺少答案,不能通过审核发布">缺答案</span>
+              )}
+              {questionIssues(reviewQ).missingSolution && (
+                <span className="rounded bg-orange-50 px-2 py-0.5 text-orange-600" title="缺少解析(建议补充)">缺解析</span>
+              )}
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1070,7 +1095,14 @@ Answer: B
                 </button>
               )}
               <button onClick={() => doReview("reject")} disabled={reviewing} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">驳回</button>
-              <button onClick={() => doReview("approve")} disabled={reviewing} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">{reviewing ? "处理中..." : "通过审核并发布"}</button>
+              <button
+                onClick={() => doReview("approve")}
+                disabled={reviewing || questionIssues(reviewQ).missingAnswer}
+                title={questionIssues(reviewQ).missingAnswer ? "缺少答案,不能发布。请先补充答案" : undefined}
+                className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {reviewing ? "处理中..." : questionIssues(reviewQ).missingAnswer ? "缺答案,不能发布" : "通过审核并发布"}
+              </button>
             </div>
           </div>
         </div>

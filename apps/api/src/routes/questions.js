@@ -550,6 +550,12 @@ router.put(
       data.topicIds = JSON.stringify(kp.topicIds);
       data.topic = kp.topic;
     }
+    // 铁律:缺答案的题不能发布——编辑时清空答案且题处于(或将被置为)发布状态,一律拒绝
+    const finalAnswer = b.answer !== undefined ? String(b.answer).trim() : String(existed.answer || "").trim();
+    const finalStatus = b.status || existed.status;
+    if (finalStatus === "PUBLISHED" && !finalAnswer) {
+      return fail(res, 400, "缺答案的题目不能发布。请补充答案,或先把状态改为非发布状态(如草稿/待审核)。");
+    }
     const q = await prisma.question.update({ where: { id: req.params.id }, data });
     // 状态可能被手动改动,同步刷新所在试卷的就绪度
     if (data.status !== undefined) await recalcPapersOfQuestion(q.id);
@@ -571,6 +577,10 @@ router.post(
     const { action, note } = req.body || {};
     if (action !== "approve" && action !== "reject") {
       return fail(res, 400, "action 必须是 approve 或 reject");
+    }
+    // 铁律:缺答案的题一定不能发布(学生答题依赖 answer 判分)。PDF 导入允许 answer 暂缺,老师补全前不可通过审核。
+    if (action === "approve" && !String(existed.answer || "").trim()) {
+      return fail(res, 400, "该题缺少答案,不能发布。请先点「编辑」补充答案后再审核通过。");
     }
     const data = {
       status: action === "approve" ? "PUBLISHED" : "REJECTED",
