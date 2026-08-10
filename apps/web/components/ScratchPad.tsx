@@ -438,12 +438,16 @@ export default function ScratchPad({
             <span className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white" style={{ background: color }} />
           </button>
           {colorOpen && (
-            <div className="absolute right-full top-1/2 z-50 mr-2 w-36 -translate-y-1/2 rounded-xl border border-slate-200/80 bg-white/95 p-2 shadow-[0_10px_34px_rgba(15,23,42,0.18)] backdrop-blur-md">
+            <div
+              className={`absolute top-0 z-50 w-36 rounded-xl border border-slate-200/80 bg-white p-2 shadow-[0_10px_34px_rgba(15,23,42,0.18)] ${
+                (tpos?.x ?? 999) < 220 ? "left-full ml-2" : "right-full mr-2"
+              }`}
+            >
               <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-500">
                 颜色
                 <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
               </p>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1">
                 {COLORS.map((c) => {
                   const active = color === c.v;
                   return (
@@ -451,12 +455,12 @@ export default function ScratchPad({
                       key={c.v}
                       onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
                       title={c.label}
-                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
+                      className={`flex h-6 w-6 items-center justify-center rounded-full transition-transform ${
                         active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
                       }`}
                       style={{ background: c.v }}
                     >
-                      {active && <span className="text-xs font-bold text-white drop-shadow">✓</span>}
+                      {active && <span className="text-[11px] font-bold text-white drop-shadow">✓</span>}
                     </button>
                   );
                 })}
@@ -477,7 +481,11 @@ export default function ScratchPad({
             <IconSize width={size} />
           </button>
           {sizeOpen && (
-            <div className="absolute right-full top-1/2 z-50 mr-2 w-48 -translate-y-1/2 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_34px_rgba(15,23,42,0.18)] backdrop-blur-md">
+            <div
+              className={`absolute top-0 z-50 w-48 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-[0_10px_34px_rgba(15,23,42,0.18)] ${
+                (tpos?.x ?? 999) < 220 ? "left-full ml-2" : "right-full mr-2"
+              }`}
+            >
               <p className="flex items-center justify-between text-xs font-medium text-slate-600">
                 笔尖粗细
                 <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-600">{Math.round(size * 10) / 10}px</span>
