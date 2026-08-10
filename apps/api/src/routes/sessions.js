@@ -183,10 +183,12 @@ router.post(
     let allIds = null;
     try {
       const parsed = session.questionIds ? JSON.parse(session.questionIds) : null;
-      if (Array.isArray(parsed) && parsed.length > 0) allIds = parsed;
+      // 去重,避免试卷/题目列表里同一题重复导致结果重复
+      if (Array.isArray(parsed)) allIds = [...new Set(parsed.map(String))];
     } catch {
       /* ignore */
     }
+    if (allIds && allIds.length === 0) allIds = null;
     if (allIds) {
       const existingIds = new Set(session.records.map((r) => r.questionId));
       const missing = allIds.filter((id) => !existingIds.has(id));
@@ -264,18 +266,25 @@ router.get(
     const isTeacher = ["TEACHER", "ADMIN"].includes(req.user.role);
     if (!isOwner && !isTeacher) return fail(res, 403, "无权限查看");
 
-    const details = session.records.map((r) => ({
-      questionId: r.questionId,
-      selected: r.selected,
-      isCorrect: r.isCorrect,
-      timeSpent: r.timeSpent,
-      options: JSON.parse(r.question.options || "[]"),
-      // 提交后(本人/老师)才可见答案与解析
-      answer: session.submittedAt ? r.question.answer : undefined,
-      solution: session.submittedAt ? r.question.solution : undefined,
-      stem: r.question.stem,
-      topic: r.question.topic,
-    }));
+    const seenQ = new Set();
+    const details = session.records
+      .filter((r) => {
+        if (seenQ.has(r.questionId)) return false;
+        seenQ.add(r.questionId);
+        return true;
+      })
+      .map((r) => ({
+        questionId: r.questionId,
+        selected: r.selected,
+        isCorrect: r.isCorrect,
+        timeSpent: r.timeSpent,
+        options: JSON.parse(r.question.options || "[]"),
+        // 提交后(本人/老师)才可见答案与解析
+        answer: session.submittedAt ? r.question.answer : undefined,
+        solution: session.submittedAt ? r.question.solution : undefined,
+        stem: r.question.stem,
+        topic: r.question.topic,
+      }));
     ok(res, {
       id: session.id,
       mode: session.mode,

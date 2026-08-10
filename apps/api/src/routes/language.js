@@ -1065,7 +1065,16 @@ router.post(
       band,
       needsReview: subjective.length > 0,
       timedOut: false,
-      details: records.map((r) => ({ questionId: r.questionId, selected: r.selected, isCorrect: r.isCorrect })),
+      details: (() => {
+        const seen = new Set();
+        return records
+          .filter((r) => {
+            if (seen.has(r.questionId)) return false;
+            seen.add(r.questionId);
+            return true;
+          })
+          .map((r) => ({ questionId: r.questionId, selected: r.selected, isCorrect: r.isCorrect }));
+      })(),
     }, "判分完成");
   })
 );
@@ -1091,21 +1100,30 @@ router.get(
       correctCount: session.correctCount, band: session.band,
       startedAt: session.startedAt, submittedAt: session.submittedAt,
       paper: session.paper ? { id: session.paper.id, title: session.paper.title } : null,
-      details: session.records.map((r) => ({
-        questionId: r.questionId,
-        stem: r.question.stem,
-        options: parseOptions(r.question.options),
-        answer: r.question.answer,
-        solution: r.question.solution,
-        audioUrl: r.question.audioUrl,
-        material: r.question.material ? { id: r.question.material.id, title: r.question.material.title, content: r.question.material.content } : null,
-        selected: r.selected,
-        isCorrect: r.isCorrect,
-        band: r.band,
-        feedback: r.feedback,
-        recordAudioUrl: r.audioUrl,
-        qType: r.question.qType,
-      })),
+      details: (() => {
+        const seen = new Set();
+        return session.records
+          .filter((r) => {
+            if (seen.has(r.questionId)) return false;
+            seen.add(r.questionId);
+            return true;
+          })
+          .map((r) => ({
+            questionId: r.questionId,
+            stem: r.question.stem,
+            options: parseOptions(r.question.options),
+            answer: r.question.answer,
+            solution: r.question.solution,
+            audioUrl: r.question.audioUrl,
+            material: r.question.material ? { id: r.question.material.id, title: r.question.material.title, content: r.question.material.content } : null,
+            selected: r.selected,
+            isCorrect: r.isCorrect,
+            band: r.band,
+            feedback: r.feedback,
+            recordAudioUrl: r.audioUrl,
+            qType: r.question.qType,
+          }));
+      })(),
     });
   })
 );

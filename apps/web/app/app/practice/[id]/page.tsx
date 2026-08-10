@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
@@ -199,8 +199,19 @@ export default function PracticePage() {
   const total = questions.length;
 
   /* ============ 已提交:成绩总结 + 逐题解析 ============ */
+  // 按 questionId 去重,避免同一题因任何原因重复出现(防御性)
+  const detailItems = useMemo(() => {
+    const raw = detail?.details ?? [];
+    const seen = new Set<string>();
+    return raw.filter((d) => {
+      if (!d?.questionId || seen.has(d.questionId)) return false;
+      seen.add(d.questionId);
+      return true;
+    });
+  }, [detail]);
+
   if (detail?.submittedAt) {
-    const items = detail.details ?? [];
+    const items = detailItems;
     const correct = detail.correctCount ?? 0;
     const wrong = items.filter((d) => d.selected != null && !d.isCorrect).length;
     const blank = items.filter((d) => d.selected == null).length;
