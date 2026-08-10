@@ -38,6 +38,10 @@ export default function StudentHome() {
 
   async function start() {
     setError("");
+    if (form.mode === "EXAM" && !form.paperId && (!form.durationMin || form.durationMin <= 0)) {
+      setError("模拟考模式请填写时长(分钟)");
+      return;
+    }
     setLoading(true);
     try {
       const data = await api.post<CreateSessionData>("/sessions", {
@@ -202,12 +206,16 @@ export default function StudentHome() {
           </div>
           {form.mode === "EXAM" && !form.paperId && (
             <div>
-              <label className="mb-1 block text-sm text-slate-600">时长</label>
-              <select className={`${input} ui-select`} value={form.durationMin} onChange={(e) => setForm({ ...form, durationMin: Number(e.target.value) })}>
-                {[25, 40, 60].map((n) => (
-                  <option key={n} value={n}>{n} 分钟</option>
-                ))}
-              </select>
+              <label className="mb-1 block text-sm text-slate-600">时长(分钟)</label>
+              <input
+                type="number"
+                min={1}
+                max={240}
+                className="h-9 w-28 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500"
+                value={form.durationMin || ""}
+                onChange={(e) => setForm({ ...form, durationMin: e.target.value === "" ? 0 : Number(e.target.value) })}
+                placeholder="自定义时长"
+              />
             </div>
           )}
           {form.mode === "EXAM" && form.paperId && (
