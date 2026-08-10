@@ -70,8 +70,8 @@ export default function LangGrowthPanel({
   onStart,
 }: {
   sessions: LangSession[];
-  assignments: LangAssignment[];
-  onStart: (a: LangAssignment) => void;
+  assignments?: LangAssignment[];
+  onStart?: (a: LangAssignment) => void;
 }) {
   const router = useRouter();
   const [hlOpen, setHlOpen] = useState(true);
@@ -259,8 +259,8 @@ export default function LangGrowthPanel({
     [done],
   );
 
-  const pending = assignments.filter((a) => a.status === "PENDING" || a.status === "IN_PROGRESS");
-  const past = assignments.filter((a) => !pending.includes(a));
+  const pending = assignments?.filter((a) => a.status === "PENDING" || a.status === "IN_PROGRESS") || [];
+  const past = assignments?.filter((a) => !pending.includes(a)) || [];
 
   const fmtTime = (s?: string | null) => {
     if (!s) return "";
@@ -268,7 +268,7 @@ export default function LangGrowthPanel({
     return d.toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
   };
 
-  if (done.length === 0 && assignments.length === 0) {
+  if (done.length === 0 && (!assignments || assignments.length === 0)) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
         <p className="text-4xl">🗣️</p>
@@ -479,41 +479,7 @@ export default function LangGrowthPanel({
         </div>
       )}
 
-      {/* 我的语言作业 */}
-      {assignments.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-700">我的语言作业（{pending.length} 项待完成）</h2>
-          <div className="mt-3 space-y-2">
-            {pending.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => onStart(a)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-white p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">{a.title}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {a.paper?.title}
-                    {a.paper?.examType ? ` · ${EXAM_LABEL[a.paper.examType] || a.paper.examType}` : ""}
-                    {a.paper?.skill ? ` · ${SKILL_LABEL[a.paper.skill] || a.paper.skill}` : ""}
-                    {a.dueAt ? ` · 截止 ${fmtTime(a.dueAt)}` : ""}
-                  </p>
-                </div>
-                <span className="shrink-0 text-sm font-medium text-indigo-600">{a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}</span>
-              </button>
-            ))}
-            {past.map((a) => (
-              <div key={a.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-600">{a.title}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">已完成</p>
-                </div>
-                <span className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 已提交</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 我的语言作业已移至个人空间「我的作业」tab(按试卷分区显示) */}
 
       {/* 动态记录(时间线,以 Band 呈现) */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

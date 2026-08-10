@@ -197,9 +197,9 @@ export default function PersonalSpacePage() {
     }
   }
 
-  // 笔试作业(语言作业已独立到「语言成长」界面)
-  const pendingAssigns = assignments.filter((a) => !a.isLanguage && (a.status === "PENDING" || a.status === "IN_PROGRESS"));
-  const pastAssigns = assignments.filter((a) => !a.isLanguage && (a.status === "SUBMITTED" || a.status === "EXPIRED" || (a.dueAt && new Date(a.dueAt).getTime() < Date.now())));
+  // 我的作业:统一所有作业(笔试 + 语言),后续按分区渲染
+  const pendingAssigns = assignments.filter((a) => a.status === "PENDING" || a.status === "IN_PROGRESS");
+  const pastAssigns = assignments.filter((a) => a.status === "SUBMITTED" || a.status === "EXPIRED" || (a.dueAt && new Date(a.dueAt).getTime() < Date.now()));
   const sessById = useMemo(() => {
     const m = new Map<string, SessionSummary>();
     subjectSessions.forEach((s) => m.set(s.id, s));
@@ -225,6 +225,14 @@ export default function PersonalSpacePage() {
     [pendingSorted, now],
   );
   const otherPending = useMemo(() => pendingSorted.filter((a) => !urgentAssigns.includes(a)), [pendingSorted, urgentAssigns]);
+
+  // 试卷分区(笔试/语言),让"我的作业"页按板块清晰展示
+  const subjectUrgent = useMemo(() => urgentAssigns.filter((a) => !a.isLanguage), [urgentAssigns]);
+  const langUrgent = useMemo(() => urgentAssigns.filter((a) => a.isLanguage), [urgentAssigns]);
+  const subjectOtherPending = useMemo(() => otherPending.filter((a) => !a.isLanguage), [otherPending]);
+  const langOtherPending = useMemo(() => otherPending.filter((a) => a.isLanguage), [otherPending]);
+  const subjectPast = useMemo(() => pastAssigns.filter((a) => !a.isLanguage), [pastAssigns]);
+  const langPast = useMemo(() => pastAssigns.filter((a) => a.isLanguage), [pastAssigns]);
 
   // 渲染单张作业卡(urgent=true 走红色紧急样式 + 倒计时)
   function renderAssignCard(a: Assignment, urgent: boolean) {
@@ -359,8 +367,8 @@ export default function PersonalSpacePage() {
       {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
 
       {!loading && tab === "assignments" && (
-        <div className="space-y-6">
-          {/* 紧急区 · 24 小时内截止 */}
+        <div className="space-y-8">
+          {/* 紧急区 · 24 小时内截止(全部) */}
           {urgentAssigns.length > 0 && (
             <section>
               <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-red-600">
@@ -373,55 +381,109 @@ export default function PersonalSpacePage() {
             </section>
           )}
 
-          {/* 待完成/进行中 */}
-          <section>
-            <h2 className="mb-3 text-base font-bold text-slate-700">📌 待完成作业 ({pendingAssigns.length})</h2>
-            {pendingAssigns.length === 0 ? (
-              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的作业,去练习区放松一下吧~</p>
+          {/* 笔试作业 */}
+          <section className="space-y-6">
+            <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-sm">📐</span>
+              笔试作业 ({subjectUrgent.length + subjectOtherPending.length} 项待完成 · {subjectPast.length} 已完成)
+            </h2>
+            {subjectUrgent.length + subjectOtherPending.length === 0 ? (
+              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的笔试作业,去练习区放松一下吧~</p>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
-                {otherPending.map((a) => renderAssignCard(a, false))}
+                {subjectUrgent.map((a) => renderAssignCard(a, true))}
+                {subjectOtherPending.map((a) => renderAssignCard(a, false))}
               </div>
             )}
+
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-500">📋 笔试作业 · 往期表现 ({subjectPast.length})</h3>
+              {subjectPast.length === 0 ? (
+                <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">还没有已提交的笔试作业。</p>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-normal">作业</th>
+                        <th className="px-4 py-3 font-normal">类型</th>
+                        <th className="px-4 py-3 font-normal">状态</th>
+                        <th className="px-4 py-3 font-normal">成绩</th>
+                        <th className="px-4 py-3 font-normal">提交时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subjectPast.map((a) => {
+                        const sess = a.sessionId ? sessById.get(a.sessionId) : undefined;
+                        const rate = sess && sess.total ? Math.round((sess.score! / sess.total) * 100) : null;
+                        return (
+                          <tr key={a.id} className="border-t border-slate-100">
+                            <td className="px-4 py-3 font-medium text-slate-700">{a.title}</td>
+                            <td className="px-4 py-3">{a.mode === "EXAM" ? "模考" : "练习"}</td>
+                            <td className="px-4 py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs ${a.status === "SUBMITTED" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>{statusLabel(a)}</span>
+                            </td>
+                            <td className="px-4 py-3">{rate !== null ? `${sess!.score} / ${sess!.total} (${rate}%)` : "—"}</td>
+                            <td className="px-4 py-3 text-slate-500">{a.submittedAt ? new Date(a.submittedAt).toLocaleString("zh-CN") : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </section>
 
-          {/* 往期作业表现 */}
-          <section>
-            <h2 className="mb-3 text-base font-bold text-slate-700">📋 往期作业表现 ({pastAssigns.length})</h2>
-            {pastAssigns.length === 0 ? (
-              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">还没有已提交的作业记录。</p>
+          {/* 语言作业 */}
+          <section className="space-y-6">
+            <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-sm">🗣️</span>
+              语言作业 ({langUrgent.length + langOtherPending.length} 项待完成 · {langPast.length} 已完成)
+            </h2>
+            {langUrgent.length + langOtherPending.length === 0 ? (
+              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的语言作业。</p>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3 font-normal">作业</th>
-                      <th className="px-4 py-3 font-normal">类型</th>
-                      <th className="px-4 py-3 font-normal">状态</th>
-                      <th className="px-4 py-3 font-normal">成绩</th>
-                      <th className="px-4 py-3 font-normal">提交时间</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pastAssigns.map((a) => {
-                      const sess = a.sessionId ? sessById.get(a.sessionId) : undefined;
-                      const rate = sess && sess.total ? Math.round((sess.score! / sess.total) * 100) : null;
-                      return (
+              <div className="grid gap-3 md:grid-cols-2">
+                {langUrgent.map((a) => renderAssignCard(a, true))}
+                {langOtherPending.map((a) => renderAssignCard(a, false))}
+              </div>
+            )}
+
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-500">📋 语言作业 · 往期表现 ({langPast.length})</h3>
+              {langPast.length === 0 ? (
+                <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">还没有已提交的语言作业。</p>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-normal">作业</th>
+                        <th className="px-4 py-3 font-normal">类型</th>
+                        <th className="px-4 py-3 font-normal">状态</th>
+                        <th className="px-4 py-3 font-normal">提交时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {langPast.map((a) => (
                         <tr key={a.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 font-medium text-slate-700">{a.title}</td>
-                          <td className="px-4 py-3">{a.isLanguage ? "语言" : a.mode === "EXAM" ? "模考" : "练习"}</td>
+                          <td className="px-4 py-3 font-medium text-slate-700">
+                            {a.title}
+                            {a.paper?.examType ? <span className="ml-2 text-xs text-slate-400">· {EXAM_LABEL[a.paper.examType] || a.paper.examType}</span> : ""}
+                          </td>
+                          <td className="px-4 py-3">{a.mode === "EXAM" ? "模考" : "练习"}</td>
                           <td className="px-4 py-3">
                             <span className={`rounded-full px-2 py-0.5 text-xs ${a.status === "SUBMITTED" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>{statusLabel(a)}</span>
                           </td>
-                          <td className="px-4 py-3">{rate !== null ? `${sess!.score} / ${sess!.total} (${rate}%)` : "—"}</td>
                           <td className="px-4 py-3 text-slate-500">{a.submittedAt ? new Date(a.submittedAt).toLocaleString("zh-CN") : "—"}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </section>
         </div>
       )}
@@ -727,7 +789,7 @@ export default function PersonalSpacePage() {
           )}
             </>
           ) : (
-            <LangGrowthPanel sessions={langSessions} assignments={langAssignments} onStart={(a) => startAssignment(a as unknown as Assignment)} />
+            <LangGrowthPanel sessions={langSessions} />
           )}
         </div>
       )}
