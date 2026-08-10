@@ -29,12 +29,15 @@ const COLORS = [
   { v: "#7b1fa2", label: "紫色" },
   { v: "#ec407a", label: "粉色" },
 ];
-const SIZE_MIN = 1;
-const SIZE_MAX = 14;
+const SIZES = [
+  { label: "细", v: 2.5 },
+  { label: "中", v: 5 },
+  { label: "粗", v: 9 },
+];
 const DRAW_THRESHOLD = 5; // 拖动超过该距离才开始书写,否则视为轻点(穿透点击)
 
 const TB_W = 58;
-const TB_H = 300;
+const TB_H = 640;
 
 /* ---------- SVG 线性图标 ---------- */
 function Svg({ children, title }: { children: ReactNode; title?: string }) {
@@ -55,19 +58,6 @@ const IconPen = () => (
     <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
     <path d="m15 5 4 4" />
   </Svg>
-);
-const IconColor = () => (
-  <Svg title="颜色">
-    <path d="M12 22a10 10 0 1 1 10-10c0 1.7-1.3 3-3 3h-2.3a2.4 2.4 0 0 0-2.4 2.4c0 .6.2 1.1.6 1.5.4.4.7 1 .7 1.6a2.5 2.5 0 0 1-2.5 2.5Z" />
-    <circle cx="7.5" cy="11.5" r="1.1" fill="currentColor" stroke="none" />
-    <circle cx="10.5" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
-    <circle cx="14.5" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
-  </Svg>
-);
-const IconSize = ({ width }: { width: number }) => (
-  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" aria-label="笔尖粗细">
-    <path d="M4 19 20 5" strokeWidth={Math.max(2, Math.min(width * 1.2, 8))} />
-  </svg>
 );
 const IconEraser = () => (
   <Svg title="橡皮">
@@ -111,8 +101,6 @@ export default function ScratchPad({
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState(COLORS[0].v);
   const [size, setSize] = useState(5);
-  const [colorOpen, setColorOpen] = useState(false);
-  const [sizeOpen, setSizeOpen] = useState(false);
   const drawingRef = useRef(false);
   const currentRef = useRef<Stroke | null>(null);
   const lastRef = useRef<{ x: number; y: number } | null>(null);
@@ -374,10 +362,7 @@ export default function ScratchPad({
 
   const divider = <div className="my-0.5 h-px w-7 bg-slate-200" />;
 
-  // 工具栏展开(颜色/粗细面板)时加宽并左移,避免右侧出屏
-  const tbExpanded = colorOpen || sizeOpen;
-  const tbWidth = tbExpanded ? (sizeOpen ? 204 : 174) : 58;
-  const tbLeft = tpos ? Math.max(8, Math.min(tpos.x, window.innerWidth - tbWidth - 8)) : 8;
+  const tbLeft = tpos ? Math.max(8, Math.min(tpos.x, window.innerWidth - TB_W - 8)) : 8;
 
   return open ? (
     <>
@@ -400,13 +385,13 @@ export default function ScratchPad({
         />
       </div>
 
-      {/* 工具栏:固定定位、可拖动,默认右侧垂直居中;展开颜色/粗细时自动加宽并左移 */}
+      {/* 工具栏:固定定位、可拖动,右侧竖排 */}
       <div
         className="pointer-events-auto fixed z-50 flex flex-col items-center gap-0.5 rounded-2xl border border-slate-200/70 bg-white/90 p-1.5 shadow-[0_10px_34px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-md"
         style={{
           left: tbLeft,
           top: tpos?.y ?? 80,
-          width: tbWidth,
+          width: TB_W,
           touchAction: "none",
           userSelect: "none",
           WebkitUserSelect: "none",
@@ -431,96 +416,42 @@ export default function ScratchPad({
         {toolBtn("eraser", "橡皮(拖动擦除,轻点可点题)", <IconEraser />)}
         {divider}
 
-        {/* 颜色:展开在工具栏内 */}
-        <button
-          onClick={() => { setColorOpen((o) => !o); setSizeOpen(false); }}
-          title="笔迹颜色"
-          className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
-            colorOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          }`}
-        >
-          <IconColor />
-          <span className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white" style={{ background: color }} />
-        </button>
-
-        {/* 粗细:展开在工具栏内 */}
-        <button
-          onClick={() => { setSizeOpen((o) => !o); setColorOpen(false); }}
-          title="笔尖粗细"
-          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
-            sizeOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-          }`}
-        >
-          <IconSize width={size} />
-        </button>
+        {/* 颜色:竖条小圆点(常驻,点选即用) */}
+        <div className="flex flex-col items-center gap-1 py-1">
+          {COLORS.map((c) => {
+            const active = color === c.v && tool === "pen";
+            return (
+              <button
+                key={c.v}
+                onClick={() => { setColor(c.v); setTool("pen"); }}
+                title={c.label}
+                className={`flex h-5 w-5 items-center justify-center rounded-full transition-transform ${
+                  active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
+                }`}
+                style={{ background: c.v }}
+              >
+                {active && <span className="text-[10px] font-bold text-white drop-shadow">✓</span>}
+              </button>
+            );
+          })}
+        </div>
         {divider}
 
-        {/* 展开的颜色/粗细内嵌面板(纯 flex 流式,无弹出层) */}
-        {colorOpen && (
-          <div className="my-1 w-[150px] rounded-xl border border-slate-200 bg-white p-2">
-            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-500">
-              颜色
-              <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {COLORS.map((c) => {
-                const active = color === c.v;
-                return (
-                  <button
-                    key={c.v}
-                    onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
-                    title={c.label}
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform ${
-                      active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
-                    }`}
-                    style={{ background: c.v }}
-                  >
-                    {active && <span className="text-xs font-bold text-white drop-shadow">✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {sizeOpen && (
-          <div className="my-1 w-[180px] rounded-2xl border border-slate-200 bg-white p-3">
-            <p className="flex items-center justify-between text-xs font-medium text-slate-600">
-              笔尖粗细
-              <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-600">{Math.round(size * 10) / 10}px</span>
-            </p>
-            <input
-              type="range"
-              min={SIZE_MIN}
-              max={SIZE_MAX}
-              step={0.5}
-              value={size}
-              onChange={(e) => setSize(Number(e.target.value))}
-              className="mt-2.5 w-full accent-indigo-600"
-              title="拖动调整笔尖粗细"
-            />
-            <div className="mt-2 flex items-center justify-center rounded-lg bg-slate-50 py-2.5">
-              <span className="block rounded-full bg-slate-800" style={{ width: 100, height: Math.max(2, size) }} />
-            </div>
-            <div className="mt-2 flex gap-1">
-              {[
-                { l: "细", v: 2 },
-                { l: "中", v: 5 },
-                { l: "粗", v: 10 },
-              ].map((p) => (
-                <button
-                  key={p.l}
-                  onClick={() => setSize(p.v)}
-                  className={`flex-1 rounded-md py-1 text-xs transition-colors ${
-                    size === p.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {p.l}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 粗细:预览线(常驻,点选即用) */}
+        <div className="flex flex-col items-center gap-0.5 py-1">
+          {SIZES.map((s) => (
+            <button
+              key={s.label}
+              onClick={() => setSize(s.v)}
+              title={`笔触:${s.label}`}
+              className={`flex h-6 w-9 items-center justify-center rounded-lg transition-colors ${
+                size === s.v ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              }`}
+            >
+              <span className="block rounded-full bg-current" style={{ width: 20, height: Math.max(2, Math.round(s.v * 0.9)) }} />
+            </button>
+          ))}
+        </div>
         {divider}
 
         {actionBtn("撤销上一步", <IconUndo />, strokes.length === 0, undo)}
@@ -534,11 +465,6 @@ export default function ScratchPad({
           <IconClose />
         </button>
       </div>
-
-      {/* 弹窗遮罩:点外部关闭选色/粗细弹窗(工具栏在其上层,不受影响) */}
-      {(colorOpen || sizeOpen) && (
-        <div className="fixed inset-0 z-40" onClick={() => { setColorOpen(false); setSizeOpen(false); }} />
-      )}
 
       <p className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/60 px-4 py-1.5 text-xs text-white/90 backdrop-blur-sm">
         拖动书写 · 轻点可正常点选答案/切题 · 工具栏可拖动
