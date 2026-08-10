@@ -98,7 +98,7 @@ export default function TeacherStudentsPage() {
 
   const loadAssignments = useCallback(async () => {
     try {
-      // 学生管理仅展示作业(练习);考试请到「考试管理」
+      // 教学管理仅展示作业(练习);考试请到「考试管理」
       const d = await api.get<{ list: AssignmentRow[] }>("/teacher/assignments?mode=PRACTICE");
       setAssignList(d.list);
     } catch (e) {
@@ -154,7 +154,7 @@ export default function TeacherStudentsPage() {
         paperId: assignForm.paperId,
         title: assignForm.title,
         note: assignForm.note,
-        mode: "PRACTICE", // 学生管理仅布置作业(练习);考试请到「考试管理」
+        mode: "PRACTICE", // 教学管理仅布置作业(练习);考试请到「考试管理」
         dueAt: assignForm.dueAt || undefined,
         studentIds: Array.from(selectedStudents),
       });
@@ -199,7 +199,7 @@ export default function TeacherStudentsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between">
-        <h1 className="text-xl font-bold">学生管理</h1>
+        <h1 className="text-xl font-bold">教学管理</h1>
         <div className="flex gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
           <button
             onClick={() => setTab("stats")}
