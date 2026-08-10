@@ -256,6 +256,10 @@ async function importRows(req, rows, onProgress) {
         if (!r.sourceType) r.sourceType = String(r.subject).toUpperCase();
         r.subject = "数学";
       }
+      // 兜底:sourceType 为纯数学类题源但视觉模型/原始数据未给学科(如 MAT 被并入题源词后学科为空)
+      if (!r.subject && /^(TMUA|MAT|STEP|BMAT|PAT|ENGAA)$/i.test(String(r.sourceType || ""))) {
+        r.subject = "数学";
+      }
       // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
       const stem = cleanUnits(String(r.stem || ""));
       const cleanOpts = options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))));

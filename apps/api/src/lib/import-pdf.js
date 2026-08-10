@@ -148,9 +148,12 @@ export function unifyFileMeta(raws, filename) {
   //    故卷名信号优先级高于逐题投票,避免被误投票覆盖。
   const sourceType = fnSourceType || sourceTypeFromFilename(paper) || modeOf(sourceTypeVotes) || "";
 
-  // 4) 统一 subject:paper 组内学科多数派 → 文件内学科多数派 → TMUA 兜底"数学"
+  // 4) 统一 subject:paper 组内学科多数派 → 文件内学科多数派 → 纯数学类题源兜底"数学"
+  //    视觉模型常把 MAT/TMUA 等题的 subject 误读成题源词(归到 sourceType),导致学科为空;
+  //    NSAA/ESAT 含物理/化学,保留逐题学科投票结果,此处只给「纯数学类题源」兜底为"数学"。
+  const MATH_SOURCE_TYPES = ["TMUA", "MAT", "STEP", "BMAT", "PAT", "ENGAA"];
   let subject = modeOf(groupSubjectVotes) || modeOf(allSubjectVotes) || "";
-  if (!subject && sourceType === "TMUA") subject = "数学";
+  if (!subject && sourceType && MATH_SOURCE_TYPES.includes(sourceType)) subject = "数学";
 
   // 5) 应用到每一道题
   // 注意:subject/sourceType 算不出就置 null,绝不回退 r?.subject——

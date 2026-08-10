@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.4.64 (2026-08-10) — 修复 MAT 批量导入后学科(subject)为空导致试卷不可见
+- 根因:PDF 导入时视觉模型把 MAT 题的 subject 误读成题源词(归到 sourceType),学科 subject 因此为空;`unifyFileMeta` 仅对 TMUA 兜底为"数学",MAT/BMAT/STEP/PAT/ENGAA 无兜底,导致题与试卷 subject 为空。
+- 后果:老师端试卷列表按 subject 过滤,MAT 卷(subject 空)不出现在"数学"分类下,看似"导入失败"。
+- 修复:`import-pdf.js` 给纯数学类题源(TMUA/MAT/STEP/BMAT/PAT/ENGAA)统一兜底 subject="数学";`questions.js` 导入行补同等兜底(覆盖粘贴导入路径)。
+- 数据回填:已导入的 168 道 MAT 题与「MAT 2007 2023 MC Questions」卷 subject 回填为"数学",并修正该卷 sourceKey。
+
 ## V2.4.63 (2026-08-10) — 修复「我的作业」紧急区与待完成区重复
 - 紧急区(24 小时内截止)已单独成区展示;笔试/语言「待完成」区改为只展示**非紧急**作业,剔除已出现在紧急区的作业,避免重复出现。
 - 删除不再使用的 subjectUrgent / langUrgent 派生变量。
