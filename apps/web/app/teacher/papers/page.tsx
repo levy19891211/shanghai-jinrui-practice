@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
@@ -93,6 +94,8 @@ export default function TeacherPapersPage() {
   const [detail, setDetail] = useState<PaperManageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [diffBusy, setDiffBusy] = useState<string | null>(null); // 正在修改难度的题目 id
+  const router = useRouter();
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
   const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
@@ -235,6 +238,28 @@ export default function TeacherPapersPage() {
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  // 一键改难度:直接调题目更新接口,成功后刷新本地详情
+  async function setQuestionDifficulty(qid: string, d: number) {
+    setError("");
+    setDiffBusy(qid);
+    try {
+      await api.put(`/questions/${qid}`, { difficulty: d });
+      flash(`已将难度改为 ${d} 星`);
+      setDetail((prev) =>
+        prev ? { ...prev, questions: prev.questions.map((x) => (x.id === qid ? { ...x, difficulty: d } : x)) } : prev
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改难度失败");
+    } finally {
+      setDiffBusy(null);
+    }
+  }
+
+  // 打开该题在「题库管理」里的编辑弹窗
+  function openQuestionEdit(qid: string) {
+    router.push(`/teacher?edit=${qid}`);
   }
 
   // 保存详情抽屉里的科目/题源/模式/限时修改
@@ -932,19 +957,42 @@ export default function TeacherPapersPage() {
                               <span className={`rounded px-2 py-0.5 ${Q_STATUS_BADGE[q.status ?? ""] ?? ""}`}>
                                 {Q_STATUS_LABEL[q.status ?? ""] ?? q.status}
                               </span>
-                              <span className="text-slate-400">
-                                {q.topic} · 难度 {q.difficulty}
+                              <span className="flex items-center gap-1.5 text-slate-400">
+                                <span>{q.topic}</span>
+                                <span className="flex items-center gap-0.5" title="点击★一键修改难度">
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <button
+                                      key={n}
+                                      onClick={() => setQuestionDifficulty(q.id, n)}
+                                      disabled={diffBusy === q.id}
+                                      title={`难度 ${n} 星(${DIFF_LABEL[n]})`}
+                                      className={`text-sm leading-none transition hover:scale-125 disabled:opacity-50 ${n <= (q.difficulty ?? 0) ? "text-amber-400" : "text-slate-300"}`}
+                                    >
+                                      ★
+                                    </button>
+                                  ))}
+                                </span>
                               </span>
                             </>
                           )}
                         </div>
-                        <button
-                          onClick={() => removeQuestion(q.id)}
-                          disabled={detailBusy}
-                          className="shrink-0 text-xs text-slate-400 hover:text-red-500 disabled:opacity-50"
-                        >
-                          移出本卷
-                        </button>
+                        <div className="flex shrink-0 items-center gap-3">
+                          {!q.missing && (
+                            <button
+                              onClick={() => openQuestionEdit(q.id)}
+                              className="shrink-0 text-xs font-medium text-indigo-600 hover:underline"
+                            >
+                              编辑
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeQuestion(q.id)}
+                            disabled={detailBusy}
+                            className="shrink-0 text-xs text-slate-400 hover:text-red-500 disabled:opacity-50"
+                          >
+                            移出本卷
+                          </button>
+                        </div>
                       </div>
                       {!q.missing && (
                         <>

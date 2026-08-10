@@ -287,6 +287,19 @@ export default function TeacherPage() {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
 
+  // 从「试卷管理」跳转过来:?edit=<id> → 列表加载后自动打开该题的编辑弹窗
+  useEffect(() => {
+    if (!list.length) return;
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (!id) return;
+    const q = list.find((x) => x.id === id);
+    if (q) {
+      openEdit(q);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.length]);
+
   // 探测服务端是否配置了 LLM,决定「AI 重调」按钮可用性
   useEffect(() => {
     api
