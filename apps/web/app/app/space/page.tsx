@@ -65,6 +65,7 @@ export default function PersonalSpacePage() {
   const [overallRate, setOverallRate] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const [growth, setGrowth] = useState<GrowthData | null>(null);
+  const [hlOpen, setHlOpen] = useState(true);
   const [wrongList, setWrongList] = useState<WrongItem[]>([]);
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -279,8 +280,21 @@ export default function PersonalSpacePage() {
     .slice().reverse().slice(-10)
     .map((s, i) => ({ name: `${i + 1}`, rate: Math.round((s.score! / s.total!) * 100), mode: s.mode === "EXAM" ? "模考" : "练习" }));
 
-  const radarData = byTopic.filter((t) => typeof t.correctRate === "number").map((t) => ({ topic: t.topic, rate: t.correctRate }));
+  const radarData = byTopic
+    .filter((t) => typeof t.correctRate === "number" && t.attempts > 0)
+    .sort((a, b) => (b.attempts || 0) - (a.attempts || 0))
+    .slice(0, 10)
+    .map((t) => ({ topic: t.topic, rate: t.correctRate }));
   const weakTopics = useMemo(() => [...byTopic].sort((a, b) => a.correctRate - b.correctRate), [byTopic]);
+  // 难度表现:固定 1–5 星,缺省也显示 0%
+  const difficultyFull = [1, 2, 3, 4, 5].map((d) => {
+    const f = byDifficulty.find((x) => x.difficulty === d);
+    return { difficulty: d, correctRate: f ? f.correctRate : 0, attempts: f ? f.attempts : 0 };
+  });
+  // 成就/高光分组(用于可折叠高光时刻)
+  const milestones = growth?.milestones || [];
+  const highlightMs = milestones.filter((m) => m.highlight);
+  const otherMs = milestones.filter((m) => !m.highlight);
 
   // 语言学习表现:按技能聚合(前端从已有 langSessions 计算)
   const langBySkill = useMemo(() => {
@@ -502,16 +516,26 @@ export default function PersonalSpacePage() {
                         {growth.summary.spanDays} 天 · 共 {growth.summary.totalAnswered} 题 · 峰值 {growth.summary.peakRate}%
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-400">折线为累计正确率,清楚看见你每个阶段的进步。</p>
+                    <p className="mt-1 text-xs text-slate-400">折线为<strong className="text-slate-500">累计正确率</strong>,清楚看见你每个阶段的进步。图例中标明了每条线的含义:</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <span className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <span className="inline-block h-2.5 w-5 rounded-full bg-[#6366f1]" /> 总体正确率(累计)
+                      </span>
+                      {Object.keys(growth.points[growth.points.length - 1].subjects || {}).map((s, i) => (
+                        <span key={s} className="flex items-center gap-1.5 text-xs text-slate-600">
+                          <span className="inline-block h-2.5 w-5 rounded-full" style={{ background: SUBJECT_LINE_COLORS[i % SUBJECT_LINE_COLORS.length] }} /> {s}正确率(累计)
+                        </span>
+                      ))}
+                    </div>
                     <div className="mt-4 h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={growth.points} margin={{ top: 8, right: 12, bottom: 0, left: -20 }}>
                           <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
                           <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                           <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
-                          <Line type="monotone" dataKey="overallRate" name="总体" stroke="#6366f1" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                          <Line type="monotone" dataKey="overallRate" name="总体正确率" stroke="#6366f1" strokeWidth={3} dot={{ r: 3 }} connectNulls />
                           {Object.keys(growth.points[growth.points.length - 1].subjects || {}).map((s, i) => (
-                            <Line key={s} type="monotone" dataKey={`subjects.${s}`} name={s} stroke={SUBJECT_LINE_COLORS[i % SUBJECT_LINE_COLORS.length]} strokeWidth={1.5} dot={false} connectNulls />
+                            <Line key={s} type="monotone" dataKey={`subjects.${s}`} name={`${s}正确率`} stroke={SUBJECT_LINE_COLORS[i % SUBJECT_LINE_COLORS.length]} strokeWidth={1.5} dot={false} connectNulls />
                           ))}
                         </LineChart>
                       </ResponsiveContainer>
@@ -539,24 +563,56 @@ export default function PersonalSpacePage() {
                   )}
 
                   {/* 成就 & 高光时刻 时间轴 */}
-                  {growth.milestones && growth.milestones.length > 0 && (
+                  {milestones.length > 0 && (
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <h2 className="text-sm font-medium text-slate-700">成就 &amp; 高光时刻 ({growth.milestones.length})</h2>
+                      <h2 className="text-sm font-medium text-slate-700">成就 &amp; 高光时刻 ({milestones.length})</h2>
                       <p className="mt-1 text-xs text-slate-400">每一个值得记住的节点,都在这里留痕。</p>
-                      <ol className="relative mt-4 space-y-4 border-l-2 border-indigo-100 pl-5">
-                        {growth.milestones.map((m) => (
-                          <li key={m.id} className="relative">
-                            <span className={`absolute -left-[27px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${m.highlight ? "bg-amber-400 text-white ring-2 ring-amber-200" : "bg-indigo-100 text-indigo-600"}`}>{m.icon}</span>
-                            <div className={`rounded-xl p-3 ${m.highlight ? "bg-amber-50" : "bg-slate-50"}`}>
-                              <div className="flex items-center justify-between gap-2">
-                                <p className={`text-sm font-semibold ${m.highlight ? "text-amber-700" : "text-slate-800"}`}>{m.title}</p>
-                                <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
-                              </div>
-                              <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+
+                      {highlightMs.length > 0 && (
+                        <div className="mt-4">
+                          <button
+                            type="button"
+                            onClick={() => setHlOpen((o) => !o)}
+                            className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-left transition hover:bg-amber-100/60"
+                          >
+                            <span className="flex items-center gap-2 text-sm font-semibold text-amber-700">🌟 高光时刻 ({highlightMs.length})</span>
+                            <span className="text-xs text-amber-600">{hlOpen ? "收起 ▲" : "展开 ▼"}</span>
+                          </button>
+                          {hlOpen && (
+                            <div className="mt-3 space-y-3">
+                              {highlightMs.map((m) => (
+                                <div key={m.id} className="relative rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-700">
+                                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[11px] text-white">{m.icon}</span>
+                                      {m.title}
+                                    </p>
+                                    <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
+                                  </div>
+                                  <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+                                </div>
+                              ))}
                             </div>
-                          </li>
-                        ))}
-                      </ol>
+                          )}
+                        </div>
+                      )}
+
+                      {otherMs.length > 0 && (
+                        <ol className="relative mt-4 space-y-4 border-l-2 border-indigo-100 pl-5">
+                          {otherMs.map((m) => (
+                            <li key={m.id} className="relative">
+                              <span className="absolute -left-[27px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[11px] text-indigo-600">{m.icon}</span>
+                              <div className="rounded-xl bg-slate-50 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-slate-800">{m.title}</p>
+                                  <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
+                                </div>
+                                <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                     </div>
                   )}
                 </section>
@@ -612,24 +668,21 @@ export default function PersonalSpacePage() {
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h2 className="text-sm font-medium text-slate-700">难度表现(1–5 星)</h2>
-                  {byDifficulty.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-400">暂无数据。</p>
-                  ) : (
-                    <div className="mt-4 h-44">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={byDifficulty} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
-                          <XAxis dataKey="difficulty" tick={{ fontSize: 12 }} tickFormatter={(d: number) => `${d}星`} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                          <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                          <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} labelFormatter={(l: number) => `难度 ${l} 星`} />
-                          <Bar dataKey="correctRate" radius={[4, 4, 0, 0]}>
-                            {byDifficulty.map((d, i) => (
-                              <Cell key={i} fill={d.correctRate >= 70 ? "#6366f1" : d.correctRate >= 40 ? "#f59e0b" : "#ef4444"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                  <p className="mt-1 text-xs text-slate-400">无论是否有作答,1–5 星难度均完整展示。</p>
+                  <div className="mt-4 h-44">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={difficultyFull} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                        <XAxis dataKey="difficulty" tick={{ fontSize: 12 }} tickFormatter={(d: number) => `${d}星`} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                        <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} labelFormatter={(l: number) => `难度 ${l} 星`} />
+                        <Bar dataKey="correctRate" radius={[4, 4, 0, 0]}>
+                          {difficultyFull.map((d, i) => (
+                            <Cell key={i} fill={d.correctRate >= 70 ? "#6366f1" : d.correctRate >= 40 ? "#f59e0b" : "#ef4444"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
 
@@ -637,12 +690,13 @@ export default function PersonalSpacePage() {
               {radarData.length >= 3 && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h2 className="text-sm font-medium text-slate-700">知识点掌握度雷达图</h2>
-                  <div className="mt-2 h-64">
+                  <p className="mt-1 text-xs text-slate-400">展示练习最多的 {Math.min(radarData.length, 10)} 个知识点(正确率 %),字号已放大便于查看。</p>
+                  <div className="mt-2 h-[380px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart data={radarData} outerRadius="70%">
+                      <RadarChart data={radarData} outerRadius="80%">
                         <PolarGrid stroke="#e2e8f0" />
-                        <PolarAngleAxis dataKey="topic" tick={{ fontSize: 11, fill: "#475569" }} />
-                        <Radar dataKey="rate" stroke="#6366f1" fill="#6366f1" fillOpacity={0.25} />
+                        <PolarAngleAxis dataKey="topic" tick={{ fontSize: 13, fill: "#334155" }} />
+                        <Radar dataKey="rate" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
                         <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
                       </RadarChart>
                     </ResponsiveContainer>
