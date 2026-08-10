@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
@@ -55,6 +56,9 @@ export default function StudentHome() {
     topics: [] as string[], // 错题组卷:按知识点多选
   });
   const [wrongTopics, setWrongTopics] = useState<{ topic: string; count: number }[]>([]);
+  // 题目收藏 / 我的原创题 入口计数
+  const [favCount, setFavCount] = useState(0);
+  const [myQCount, setMyQCount] = useState(0);
 
   useEffect(() => {
     api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
@@ -67,6 +71,9 @@ export default function StudentHome() {
     api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
     // 我的试卷
     api.get<{ list: MyPaper[] }>("/papers/mine").then((d) => setMyPapers(d.list || [])).catch(() => {});
+    // 题目收藏 / 我的原创题 计数
+    api.get<{ list: unknown[] }>("/me/favorites").then((d) => setFavCount(d.list?.length || 0)).catch(() => {});
+    api.get<{ list: unknown[] }>("/me/questions").then((d) => setMyQCount(d.list?.length || 0)).catch(() => {});
   }, []);
 
   async function start() {
@@ -380,6 +387,30 @@ export default function StudentHome() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* 题目收藏 / 我的原创题 入口 */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Link
+          href="/app/favorites"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-amber-300 hover:bg-amber-50/40"
+        >
+          <div>
+            <p className="text-sm font-medium text-slate-800">⭐ 题目收藏</p>
+            <p className="mt-1 text-xs text-slate-500">做题时收藏的题目,供自己查阅复习</p>
+          </div>
+          <span className="shrink-0 text-xs font-medium text-amber-600">已收藏 {favCount} 题 →</span>
+        </Link>
+        <Link
+          href="/app/my-questions"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40"
+        >
+          <div>
+            <p className="text-sm font-medium text-slate-800">✏️ 我的原创题</p>
+            <p className="mt-1 text-xs text-slate-500">上传/新建自己的题目,提交老师审核入库</p>
+          </div>
+          <span className="shrink-0 text-xs font-medium text-indigo-600">共 {myQCount} 题 →</span>
+        </Link>
       </div>
 
       {/* 试卷库:与教师端试卷管理一致的筛选(学科/套题类型) + 排序,点击直接开卷 */}

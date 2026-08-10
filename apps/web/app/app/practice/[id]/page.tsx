@@ -53,6 +53,9 @@ export default function PracticePage() {
   // 手写批注层(半透明叠在题目上方;浏览模式下可正常答题/切题)
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchInteractive, setScratchInteractive] = useState(false);
+  // 题目收藏
+  const [favSet, setFavSet] = useState<Set<string>>(new Set());
+  const [favBusy, setFavBusy] = useState<string | null>(null);
 
   const isExam = !!deadline;
 
@@ -106,6 +109,10 @@ export default function PracticePage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    // 已收藏的题目 id 集合
+    api.get<{ list: { question: { id: string } }[] }>("/me/favorites")
+      .then((d) => setFavSet(new Set(d.list.map((f) => f.question.id))))
+      .catch(() => {});
   }, [id]);
 
   const saveAnswer = useCallback((qid: string, selected: string) => {
@@ -164,6 +171,25 @@ export default function PracticePage() {
     setAnswers(next);
     sessionStorage.setItem(`answers-${id}`, JSON.stringify(next));
     saveAnswer(qid, selected);
+  }
+
+  // 收藏 / 取消收藏题目
+  async function toggleFav(qid: string) {
+    if (favBusy) return;
+    setFavBusy(qid);
+    try {
+      if (favSet.has(qid)) {
+        await api.del(`/me/favorites/${qid}`);
+        setFavSet((prev) => { const n = new Set(prev); n.delete(qid); return n; });
+      } else {
+        await api.post("/me/favorites", { questionId: qid });
+        setFavSet((prev) => new Set(prev).add(qid));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "收藏操作失败");
+    } finally {
+      setFavBusy(null);
+    }
   }
 
   if (loading) return <p className="py-10 text-center text-sm text-slate-500">加载中...</p>;
@@ -329,12 +355,24 @@ export default function PracticePage() {
         {/* 题目卡片 */}
         <div className="px-6 py-6">
           <div className="rounded border border-[#d9d2c2] bg-white p-5">
-            <div className="flex items-baseline gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-bold text-[#b8860b]">Q{current + 1}.</span>
               <span className="rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(q.topic) }}>
                 {q.topic}
               </span>
               <span className="text-xs text-[#8a8377]">难度 {q.difficulty}</span>
+              <button
+                onClick={() => toggleFav(q.id)}
+                disabled={favBusy === q.id}
+                title={favSet.has(q.id) ? "取消收藏本题" : "收藏本题,供以后查阅"}
+                className={`ml-auto flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:opacity-50 ${
+                  favSet.has(q.id)
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                }`}
+              >
+                {favSet.has(q.id) ? "★ 已收藏" : "☆ 收藏"}
+              </button>
             </div>
             <div className="mt-3 text-[15.5px] leading-relaxed text-[#1a1a1a]">{renderRich(q.stem)}</div>
             <div className="mt-4 space-y-1.5">

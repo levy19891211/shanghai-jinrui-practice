@@ -30,6 +30,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     { href: "/teacher/papers", label: "试卷组卷" },
     { href: "/teacher/students", label: "教学管理" },
     { href: "/teacher/knowledge", label: "知识点管理" },
+    { href: "/teacher/student-questions", label: "原创题审核" },
   ];
 
   return (

@@ -1,5 +1,15 @@
 # 版本历史
 
+## V2.4.48 (2026-08-10) — 学生题目收藏 + 我的原创题 + 教师原创题审核
+
+- **题目收藏**:做题页每题右上角「☆ 收藏/★ 已收藏」;学生端新增「⭐ 题目收藏」页(`/app/favorites`),收藏题含答案/解析供查阅,可移除收藏。新表 `FavoriteQuestion`。
+- **我的原创题**:学生端新增「✏️ 我的原创题」页(`/app/my-questions`,与题目收藏并列入口卡片):
+  - 新建题目表单(科目/知识点/难度/题干/选项/答案/解析),题干框**直接粘贴截图**走图片识别自动预填(`POST /me/questions/import-image`);
+  - 草稿(DRAFT)→ 勾选**批量提交审核**(PENDING_REVIEW)→ 老师通过(PUBLISHED 入库)/驳回(REJECTED 带原因);可编辑/删除草稿。
+- **学生原创题审核**(教师端新页面 `/teacher/student-questions` + 导航):列表标注**出题学生姓名/邮箱**(题源=「学生原创题」,永久标记),三态 Tab(待审核/已入库/已驳回),支持**批量通过入库 / 批量驳回(原因)**,单题通过/驳回,可展开答案与解析。
+- 后端:`me.js` 收藏 CRUD + 原创题 CRUD/图片识别/批量提交;`teacher.js` 审核列表/单题与批量通过驳回。
+- 需 `prisma db push`(新表 FavoriteQuestion)+ `prisma generate`。
+
 ## V2.4.47 (2026-08-10) — 弹窗改用 React Portal 挂到 document.body(彻底脱离 toolbar)
 
 - 弹窗改用 `createPortal` 挂到 `document.body` 上,直接用按钮 `getBoundingClientRect()` 计算 viewport 像素位置(fixed+inline left/top),**完全脱离** toolbar 的 backdrop-filter 包含块与 stacking context,iOS Safari 上宽度/位置渲染异常被绕开。

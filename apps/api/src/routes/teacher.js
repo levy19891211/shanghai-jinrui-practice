@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { parseJsonArray } from "../lib/vision.js";
 
 const router = Router();
 // 老师/管理员专用
@@ -270,6 +271,95 @@ router.get(
         .map(({ topic, attempts, correct }) => ({ topic, attempts, correctRate: attempts ? Math.round((correct / attempts) * 100) : 0 }))
         .sort((a, b) => a.correctRate - b.correctRate),
     });
+  })
+);
+
+/* ============ 学生原创题审核 ============ */
+// GET /api/teacher/student-questions — 学生原创题列表(含出题学生姓名),?status= 过滤
+router.get(
+  "/student-questions",
+  asyncHandler(async (req, res) => {
+    const status = req.query.status ? String(req.query.status) : "PENDING_REVIEW";
+    const list = await prisma.question.findMany({
+      where: { source: "学生原创题", status },
+      orderBy: { createdAt: "desc" },
+    });
+    const userIds = [...new Set(list.map((q) => q.createdBy).filter(Boolean))];
+    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });
+    const userMap = new Map(users.map((u) => [u.id, u]));
+    ok(res, {
+      list: list.map((q) => ({
+        id: q.id,
+        subject: q.subject,
+        topic: q.topic,
+        difficulty: q.difficulty,
+        stem: q.stem,
+        options: parseJsonArray(q.options),
+        answer: q.answer,
+        solution: q.solution,
+        status: q.status,
+        reviewNote: q.reviewNote,
+        createdAt: q.createdAt,
+        studentName: userMap.get(q.createdBy)?.name || "未知",
+        studentEmail: userMap.get(q.createdBy)?.email || "",
+      })),
+    });
+  })
+);
+
+// POST /api/teacher/student-questions/batch-approve — 批量通过(入库,PUBLISHED)
+router.post(
+  "/student-questions/batch-approve",
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return fail(res, 400, "请选择要通过的题目");
+    const r = await prisma.question.updateMany({
+      where: { id: { in: ids }, source: "学生原创题", status: "PENDING_REVIEW" },
+      data: { status: "PUBLISHED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: null },
+    });
+    ok(res, null, `已通过 ${r.count} 题并入题库`);
+  })
+);
+
+// POST /api/teacher/student-questions/batch-reject — 批量驳回
+router.post(
+  "/student-questions/batch-reject",
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return fail(res, 400, "请选择要驳回的题目");
+    const reason = String(req.body?.reason || "").trim() || "未说明原因";
+    const r = await prisma.question.updateMany({
+      where: { id: { in: ids }, source: "学生原创题", status: "PENDING_REVIEW" },
+      data: { status: "REJECTED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: reason },
+    });
+    ok(res, null, `已驳回 ${r.count} 题`);
+  })
+);
+
+// POST /api/teacher/student-questions/:id/approve — 单题通过
+router.post(
+  "/student-questions/:id/approve",
+  asyncHandler(async (req, res) => {
+    const r = await prisma.question.updateMany({
+      where: { id: req.params.id, source: "学生原创题", status: "PENDING_REVIEW" },
+      data: { status: "PUBLISHED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: null },
+    });
+    if (!r.count) return fail(res, 404, "题目不存在或状态已变更");
+    ok(res, null, "已通过并入题库");
+  })
+);
+
+// POST /api/teacher/student-questions/:id/reject — 单题驳回(带原因)
+router.post(
+  "/student-questions/:id/reject",
+  asyncHandler(async (req, res) => {
+    const reason = String(req.body?.reason || "").trim() || "未说明原因";
+    const r = await prisma.question.updateMany({
+      where: { id: req.params.id, source: "学生原创题", status: "PENDING_REVIEW" },
+      data: { status: "REJECTED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: reason },
+    });
+    if (!r.count) return fail(res, 404, "题目不存在或状态已变更");
+    ok(res, null, "已驳回");
   })
 );
 

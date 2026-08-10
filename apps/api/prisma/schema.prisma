@@ -37,6 +37,7 @@ model User {
   assignments      AssignmentStudent[]
   languageSessions LanguageSession[]
   languageWrongBook LanguageWrongBook[]
+  favorites        FavoriteQuestion[]
 }
 
 model Question {
@@ -64,6 +65,19 @@ model Question {
   updatedAt  DateTime      @updatedAt
   records    AnswerRecord[]
   wrongBook  WrongBook[]
+  favorites  FavoriteQuestion[]
+}
+
+// 题目收藏(学生端做题时收藏题目供自己查阅)
+model FavoriteQuestion {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id])
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([studentId, questionId])
 }
 
 // 知识点(老师手动维护,供题目归类)
