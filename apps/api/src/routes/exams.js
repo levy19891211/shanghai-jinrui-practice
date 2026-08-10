@@ -126,7 +126,7 @@ async function analyzeExam(assignmentId) {
   };
 }
 
-// GET /api/exams — 考试列表
+// GET /api/exams — 考试列表(含平均成绩/平均正确率,供考情分析点选卡片展示)
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -138,11 +138,25 @@ router.get(
       },
       orderBy: { createdAt: "desc" },
     });
+    // 一次算出各考试的已提交会话成绩,供平均分/平均正确率
+    const sessionRows = await prisma.session.findMany({
+      where: { assignmentId: { in: list.map((a) => a.id) }, submittedAt: { not: null }, total: { gt: 0 } },
+      select: { assignmentId: true, score: true, total: true, correctCount: true },
+    });
+    const agg = new Map();
+    for (const s of sessionRows) {
+      const e = agg.get(s.assignmentId) || { n: 0, rateSum: 0, scoreSum: 0 };
+      e.n += 1;
+      e.rateSum += (s.correctCount ?? 0) / s.total;
+      e.scoreSum += s.score || 0;
+      agg.set(s.assignmentId, e);
+    }
     ok(res, {
       list: list.map((a) => {
         const total = a.targets.length;
         const submitted = a.targets.filter((t) => t.status === "SUBMITTED").length;
         const inProgress = a.targets.filter((t) => t.status === "IN_PROGRESS").length;
+        const e = agg.get(a.id);
         return {
           id: a.id,
           title: a.title,
@@ -153,6 +167,8 @@ router.get(
           createdAt: a.createdAt,
           paper: a.paper ? { title: a.paper.title, mode: a.paper.mode, subject: a.paper.subject, sourceType: a.paper.sourceType, durationMin: a.paper.durationMin } : null,
           stats: { total, submitted, inProgress, pending: total - submitted - inProgress },
+          avgRate: e && e.n ? Math.round((e.rateSum / e.n) * 100) : null,
+          avgScore: e && e.n ? Math.round((e.scoreSum / e.n) * 100) / 100 : null,
         };
       }),
     });

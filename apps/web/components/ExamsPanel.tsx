@@ -13,6 +13,8 @@ interface ExamRow {
   createdAt: string;
   paper: { title: string; mode: string; subject: string; sourceType: string | null; durationMin: number | null } | null;
   stats: { total: number; submitted: number; inProgress: number; pending: number };
+  avgRate: number | null;
+  avgScore: number | null;
 }
 
 interface PaperOption {
@@ -277,17 +279,39 @@ export default function ExamsPanel() {
       {tab === "analysis" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <label className="mb-2 block text-sm font-medium text-slate-700">选择考试查看考情</label>
-            <select
-              className={`${input} max-w-xl ui-select`}
-              value={analysis?.exam.id ?? ""}
-              onChange={(e) => e.target.value && openAnalysis(e.target.value)}
-            >
-              <option value="">请选择一场考试…</option>
-              {exams.map((a) => (
-                <option key={a.id} value={a.id}>{a.title}</option>
-              ))}
-            </select>
+            <label className="mb-3 block text-sm font-medium text-slate-700">选择考试查看考情(按发布时间从近到远)</label>
+            {exams.length === 0 ? (
+              <p className="text-sm text-slate-400">还没有安排考试。请先到「考试安排」新建考试。</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {exams.map((a) => {
+                  const active = analysis?.exam.id === a.id;
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => openAnalysis(a.id)}
+                      className={`rounded-xl border p-3 text-left transition ${
+                        active
+                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
+                          : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium text-slate-800">{a.title}</span>
+                        {active && <span className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-xs text-white">查看中</span>}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                        <span>发布 {fmtTime(a.createdAt)}</span>
+                        <span>参考 {a.stats.submitted}/{a.stats.total} 人</span>
+                        <span className={a.avgRate != null ? "font-medium text-indigo-600" : ""}>
+                          平均成绩 {a.avgRate != null ? `${a.avgRate}%` : "—"}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {analysisLoading && <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">加载考情中…</p>}
