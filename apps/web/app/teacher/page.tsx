@@ -343,7 +343,7 @@ export default function TeacherPage() {
   }
 
   async function remove(q: Question) {
-    if (!window.confirm(`确认删除题目「${q.stem.slice(0, 20)}...」?该操作不可恢复。`)) return;
+    if (!window.confirm(`确认删除题目「${q.stem.slice(0, 20)}...」?该题的作答记录与错题本数据将一并删除,且不可恢复。`)) return;
     try {
       await api.del(`/questions/${q.id}`);
       setMessage("已删除");
@@ -844,7 +844,7 @@ export default function TeacherPage() {
                         {genBusy === q.id ? "生成中..." : "AI 生成解析"}
                       </button>
                       <button onClick={() => openEdit(q)} className="whitespace-nowrap text-indigo-600 hover:underline">编辑</button>
-                      {user?.role === "ADMIN" && (
+                      {(user?.role === "ADMIN" || user?.role === "TEACHER") && (
                         <button onClick={() => remove(q)} className="whitespace-nowrap text-red-500 hover:underline">删除</button>
                       )}
                     </div>

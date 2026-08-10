@@ -1045,17 +1045,29 @@ function describePlan(plan) {
   return parts.join(",");
 }
 
-// DELETE /api/questions/:id — 删除题目(管理员)
+// DELETE /api/questions/:id — 删除题目(教师/管理员)
+// 联动清理:该题的作答记录、错题本条目、各试卷 questionIds 中的引用,再物理删除,
+// 避免 FK 约束报错与试卷内悬空引用。
 router.delete(
   "/:id",
   requireAuth,
-  requireRole("ADMIN"),
+  requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
     const existed = await prisma.question.findUnique({ where: { id: req.params.id } });
     if (!existed) return fail(res, 404, "题目不存在");
-    await prisma.question.delete({ where: { id: req.params.id } });
-    // 卷内引用会失效,重算让试卷退回 DRAFT 并在管理页提示「缺失题目」
-    await recalcPapersOfQuestion(req.params.id);
+    const qid = req.params.id;
+    // FK 限制:先删该题的作答记录与错题本条目
+    await prisma.answerRecord.deleteMany({ where: { questionId: qid } });
+    await prisma.wrongBook.deleteMany({ where: { questionId: qid } });
+    // 从所有试卷的 questionIds 中移除该题引用
+    const papers = await prisma.paper.findMany({ where: { questionIds: { contains: qid } }, select: { id: true, questionIds: true } });
+    for (const p of papers) {
+      const next = parseIds(p).filter((id) => id !== qid);
+      await prisma.paper.update({ where: { id: p.id }, data: { questionIds: JSON.stringify(next) } });
+    }
+    await prisma.question.delete({ where: { id: qid } });
+    // 重算受影响的试卷状态(可能因此退回 DRAFT)
+    await recalcPapersOfQuestion(qid);
     ok(res, null, "删除成功");
   })
 );
