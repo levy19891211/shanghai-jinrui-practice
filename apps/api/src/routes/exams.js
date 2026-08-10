@@ -17,7 +17,7 @@ async function analyzeExam(assignmentId) {
       targets: { include: { student: { select: { id: true, name: true, email: true } } } },
     },
   });
-  if (!exam || exam.mode !== "EXAM") return null;
+  if (!exam || exam.mode !== "EXAM" || !exam.paperId) return null; // 仅学科卷考试
 
   const sessions = await prisma.session.findMany({
     where: { assignmentId: exam.id },
@@ -131,7 +131,7 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const list = await prisma.assignment.findMany({
-      where: { teacherId: req.user.id, mode: "EXAM" },
+      where: { teacherId: req.user.id, mode: "EXAM", paperId: { not: null } }, // 只管理学科卷考试,语言卷(雅思)模考不在此模块
       include: {
         paper: { select: { title: true, mode: true, subject: true, sourceType: true, durationMin: true } },
         targets: { select: { status: true } },
