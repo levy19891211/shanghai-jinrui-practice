@@ -183,6 +183,35 @@ export default function ScratchPad({
     }
   }, [open]);
 
+  // iPad/触屏防拖动:书写期间锁定文档 overscroll,避免拉动页面/回弹
+  useEffect(() => {
+    if (!open) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.overscrollBehavior;
+    const prevBody = body.style.overscrollBehavior;
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      html.style.overscrollBehavior = prevHtml;
+      body.style.overscrollBehavior = prevBody;
+    };
+  }, [open]);
+
+  // iOS Safari 兜底:非被动拦截 canvas 的 touchstart/touchmove,彻底阻止页面滚动
+  useEffect(() => {
+    if (!open) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const stop = (e: TouchEvent) => e.preventDefault();
+    canvas.addEventListener("touchstart", stop, { passive: false });
+    canvas.addEventListener("touchmove", stop, { passive: false });
+    return () => {
+      canvas.removeEventListener("touchstart", stop);
+      canvas.removeEventListener("touchmove", stop);
+    };
+  }, [open]);
+
   const pos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: e.clientX, y: e.clientY };
@@ -333,11 +362,17 @@ export default function ScratchPad({
   return open ? (
     <>
       {/* 完全透明的批注层:只捕获书写,不遮题目 */}
-      <div className="pointer-events-none fixed inset-0 z-50">
+      <div className="pointer-events-none fixed inset-0 z-50" style={{ touchAction: "none" }}>
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 touch-none"
-          style={{ pointerEvents: browse ? "none" : "auto" }}
+          className="absolute inset-0"
+          style={{
+            pointerEvents: browse ? "none" : "auto",
+            touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
+          }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={endStroke}
@@ -348,7 +383,13 @@ export default function ScratchPad({
       {/* 工具栏:固定定位、可拖动,默认右侧垂直居中 */}
       <div
         className="pointer-events-auto fixed z-50 flex flex-col items-center gap-0.5 rounded-2xl border border-slate-200/70 bg-white/90 p-1.5 shadow-[0_10px_34px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-md"
-        style={{ left: tpos?.x ?? 8, top: tpos?.y ?? 80 }}
+        style={{
+          left: tpos?.x ?? 8,
+          top: tpos?.y ?? 80,
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+        }}
       >
         {/* 拖动把手 */}
         <div
