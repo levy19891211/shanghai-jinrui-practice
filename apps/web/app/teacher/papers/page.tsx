@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
@@ -93,6 +94,8 @@ export default function TeacherPapersPage() {
   const [detail, setDetail] = useState<PaperManageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [diffBusy, setDiffBusy] = useState<string | null>(null); // 正在修改难度的题目 id
+  const router = useRouter();
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
   const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
@@ -234,6 +237,28 @@ export default function TeacherPapersPage() {
       setError(e instanceof Error ? e.message : "读取试卷失败");
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  // 编辑本题:跳到题库管理并自动打开该题的编辑弹窗
+  function openQuestionEdit(qid: string) {
+    router.push(`/teacher?edit=${qid}`);
+  }
+
+  // 直接点选修改难度:调题目更新接口,成功后刷新本地详情
+  async function setQuestionDifficulty(qid: string, d: number) {
+    setError("");
+    setDiffBusy(qid);
+    try {
+      await api.put(`/questions/${qid}`, { difficulty: d });
+      flash(`已将难度改为 ${d} 星`);
+      setDetail((prev) =>
+        prev ? { ...prev, questions: prev.questions.map((x) => (x.id === qid ? { ...x, difficulty: d } : x)) } : prev
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改难度失败");
+    } finally {
+      setDiffBusy(null);
     }
   }
 
@@ -938,13 +963,38 @@ export default function TeacherPapersPage() {
                             </>
                           )}
                         </div>
-                        <button
-                          onClick={() => removeQuestion(q.id)}
-                          disabled={detailBusy}
-                          className="shrink-0 text-xs text-slate-400 hover:text-red-500 disabled:opacity-50"
-                        >
-                          移出本卷
-                        </button>
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          <button
+                            onClick={() => removeQuestion(q.id)}
+                            disabled={detailBusy}
+                            className="shrink-0 text-xs text-slate-400 hover:text-red-500 disabled:opacity-50"
+                          >
+                            移出本卷
+                          </button>
+                          {!q.missing && (
+                            <>
+                              <button
+                                onClick={() => openQuestionEdit(q.id)}
+                                className="shrink-0 text-xs font-medium text-indigo-600 hover:underline"
+                              >
+                                编辑本题
+                              </button>
+                              <div className="flex items-center gap-0.5" title="点击★直接修改难度">
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                  <button
+                                    key={n}
+                                    onClick={() => setQuestionDifficulty(q.id, n)}
+                                    disabled={diffBusy === q.id}
+                                    title={`难度 ${n} 星`}
+                                    className={`text-sm leading-none transition hover:scale-125 disabled:opacity-50 ${n <= (q.difficulty ?? 0) ? "text-amber-400" : "text-slate-300"}`}
+                                  >
+                                    ★
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                       {!q.missing && (
                         <>

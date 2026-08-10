@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
@@ -131,26 +131,6 @@ export default function TeacherPage() {
   const [paperId, setPaperId] = useState("");
   // 知识点库(按表单学科加载,供多选归类)
   const [kps, setKps] = useState<{ id: string; name: string }[]>([]);
-
-  // 按套题查看:分组浏览,每组一个「查看」按钮,展开后每题旁有「编辑」
-  const [setView, setSetView] = useState(false);
-  const [openSets, setOpenSets] = useState<Set<string>>(new Set());
-  const [diffBusy, setDiffBusy] = useState<string | null>(null); // 正在一键改难度的题目 id
-
-  // 按 paper 分组(空 paper 归入「散题」)
-  const setGroups = useMemo(() => {
-    const groups = new Map<string, { paper: string; questions: Question[] }>();
-    list.forEach((q) => {
-      const k = q.paper || "";
-      const g = groups.get(k);
-      if (g) g.questions.push(q);
-      else groups.set(k, { paper: k, questions: [q] });
-    });
-    const arr: { paper: string; questions: Question[]; subject: string }[] = [];
-    groups.forEach((g) => arr.push({ ...g, subject: g.questions[0]?.subject || "" }));
-    arr.sort((a, b) => (a.paper === "" ? 1 : b.paper === "" ? -1 : a.paper.localeCompare(b.paper, "zh")));
-    return arr;
-  }, [list]);
 
   useEffect(() => {
     if (!showForm) return;
@@ -307,6 +287,19 @@ export default function TeacherPage() {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
 
+  // 从「试卷管理」跳转过来:?edit=<id> → 列表加载后自动打开该题的编辑弹窗
+  useEffect(() => {
+    if (!list.length) return;
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (!id) return;
+    const q = list.find((x) => x.id === id);
+    if (q) {
+      openEdit(q);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.length]);
+
   // 探测服务端是否配置了 LLM,决定「AI 重调」按钮可用性
   useEffect(() => {
     api
@@ -371,22 +364,6 @@ export default function TeacherPage() {
       setTimeout(() => setMessage(""), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除失败");
-    }
-  }
-
-  // 一键改难度:直接调题目更新接口,成功后刷新列表
-  async function setQuestionDifficulty(qid: string, d: number) {
-    setError("");
-    setDiffBusy(qid);
-    try {
-      await api.put(`/questions/${qid}`, { difficulty: d });
-      setList((prev) => prev.map((x) => (x.id === qid ? { ...x, difficulty: d } : x)));
-      setMessage("难度已更新");
-      setTimeout(() => setMessage(""), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "修改难度失败");
-    } finally {
-      setDiffBusy(null);
     }
   }
 
@@ -768,14 +745,6 @@ export default function TeacherPage() {
         >
           退回题一键修正
         </button>
-        <button
-          onClick={() => setSetView((v) => !v)}
-          className={`h-9 rounded-lg px-3.5 text-sm font-medium transition ${
-            setView ? "bg-indigo-600 text-white" : "border border-indigo-300 text-indigo-600 hover:bg-indigo-50"
-          }`}
-        >
-          {setView ? "平铺列表" : "按套题查看"}
-        </button>
       </div>
 
       {paperId && (
@@ -794,78 +763,6 @@ export default function TeacherPage() {
 
       {list.length === 0 ? (
         <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">暂无题目</p>
-      ) : setView ? (
-        <div className="space-y-3">
-          {setGroups.map((g) => {
-            const open = openSets.has(g.paper);
-            return (
-              <div key={g.paper || "__nopaper__"} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-semibold text-slate-800">{g.paper || "散题(未成卷)"}</span>
-                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{g.questions.length} 题</span>
-                    {g.subject && <span className="shrink-0 rounded bg-teal-50 px-2 py-0.5 text-xs text-teal-600">{g.subject}</span>}
-                  </div>
-                  <button
-                    onClick={() =>
-                      setOpenSets((prev) => {
-                        const n = new Set(prev);
-                        if (n.has(g.paper)) n.delete(g.paper);
-                        else n.add(g.paper);
-                        return n;
-                      })
-                    }
-                    className="shrink-0 rounded-lg border border-indigo-300 px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50"
-                  >
-                    {open ? "收起" : "查看"}
-                  </button>
-                </div>
-                {open && (
-                  <div className="divide-y divide-slate-100">
-                    {g.questions.map((q) => (
-                      <div key={q.id} className="px-4 py-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                              <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">{q.subject}</span>
-                              {q.topics && q.topics.length > 0 && (
-                                <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{q.topics[0]}</span>
-                              )}
-                              <span className="flex items-center gap-0.5" title="点击★一键改难度">
-                                {[1, 2, 3, 4, 5].map((n) => (
-                                  <button
-                                    key={n}
-                                    onClick={() => setQuestionDifficulty(q.id, n)}
-                                    disabled={diffBusy === q.id}
-                                    title={`难度 ${n} 星`}
-                                    className={`text-sm leading-none transition hover:scale-125 disabled:opacity-50 ${n <= (q.difficulty ?? 0) ? "text-amber-400" : "text-slate-300"}`}
-                                  >
-                                    ★
-                                  </button>
-                                ))}
-                              </span>
-                              <span className={`rounded px-2 py-0.5 ${STATUS_BADGE[q.status]}`}>{STATUS_LABEL[q.status]}</span>
-                            </div>
-                            <div className="mt-1 truncate text-sm text-slate-700" title={plainText(q.stem)}>
-                              {plainText(q.stem)}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-3 text-xs">
-                            {(q.status === "PENDING_REVIEW" || q.status === "REJECTED") && (
-                              <button onClick={() => openReview(q)} className="font-medium text-blue-600 hover:underline">审核</button>
-                            )}
-                            <button onClick={() => openEdit(q)} className="font-medium text-indigo-600 hover:underline">编辑</button>
-                            <button onClick={() => remove(q)} className="text-red-500 hover:underline">删除</button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
           {/* min-w 保证各列不被挤压,操作列按钮不换行;超宽时容器横向滚动 */}
