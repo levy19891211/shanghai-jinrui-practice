@@ -1,7 +1,6 @@
 "use client";
 // 批注书写层(完全透明叠在题目上方直接手写,不遮题、不保存、不参与判分)。
-// 工具栏:右侧竖排、精致玻璃质感、**可拖动**(默认右侧垂直居中);「👁 浏览」点击穿透,不干扰答题。
-// 健壮性:pointer capture 异常捕获、stroke 引用稳定、resize 不随笔画重建、null 防御。
+// 交互:拖动=书写;轻点=穿透点击(可正常选答案/切题)。工具栏右侧竖排、可拖动、颜色/粗细更清晰。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -15,20 +14,26 @@ interface Stroke {
   points: { x: number; y: number }[];
 }
 
+// 8 色
 const COLORS = [
   { v: "#1a1a1a", label: "黑色" },
+  { v: "#334155", label: "深灰" },
   { v: "#1f6fb2", label: "蓝色" },
-  { v: "#c62828", label: "红色" },
   { v: "#2e7d32", label: "绿色" },
+  { v: "#c62828", label: "红色" },
+  { v: "#e65100", label: "橙色" },
+  { v: "#7b1fa2", label: "紫色" },
+  { v: "#ec407a", label: "粉色" },
 ];
 const SIZES = [
-  { label: "细", v: 2.5, r: 3 },
-  { label: "中", v: 5, r: 5 },
-  { label: "粗", v: 9, r: 8 },
+  { label: "细", v: 2.5 },
+  { label: "中", v: 5 },
+  { label: "粗", v: 9 },
 ];
-// 工具栏初始尺寸估算(用于右侧居中)
+const DRAW_THRESHOLD = 5; // 拖动超过该距离才开始书写,否则视为轻点(穿透点击)
+
 const TB_W = 58;
-const TB_H = 560;
+const TB_H = 600;
 
 /* ---------- SVG 线性图标 ---------- */
 function Svg({ children, title }: { children: ReactNode; title?: string }) {
@@ -95,7 +100,9 @@ export default function ScratchPad({
   const drawingRef = useRef(false);
   const currentRef = useRef<Stroke | null>(null);
   const lastRef = useRef<{ x: number; y: number } | null>(null);
-  // 工具栏位置(可拖动),null = 尚未初始化
+  // 按下起点(用于轻点→穿透点击)
+  const tapStartRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  // 工具栏位置(可拖动)
   const [tpos, setTpos] = useState<{ x: number; y: number } | null>(null);
   const initedRef = useRef(false);
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
@@ -103,7 +110,6 @@ export default function ScratchPad({
   const size = SIZES[sizeIdx].v;
   const browse = tool === "browse";
 
-  // strokes 引用同步,保证 redraw 稳定(不随笔画重建,避免 effect 连锁)
   useEffect(() => {
     strokesRef.current = strokes;
   }, [strokes]);
@@ -136,7 +142,7 @@ export default function ScratchPad({
     redrawRef.current = redraw;
   });
 
-  // 画布尺寸自适应(DPR 高清);仅打开/窗口变化时重建,不随笔画触发
+  // 画布尺寸自适应(DPR 高清);仅打开/窗口变化时重建
   useEffect(() => {
     if (!open) return;
     const canvas = canvasRef.current;
@@ -161,7 +167,7 @@ export default function ScratchPad({
     onInteractivityChange?.(browse);
   }, [browse, onInteractivityChange]);
 
-  // 打开:重置画笔 + 初始化默认位置(右侧垂直居中);收起:清空草稿(不保存)
+  // 打开:重置画笔 + 默认位置(右侧垂直居中);收起:清空草稿(不保存)
   useEffect(() => {
     if (open) {
       setTool("pen");
@@ -199,36 +205,78 @@ export default function ScratchPad({
     ctx.stroke();
   };
 
+  /* 按下:记录起点,不立即画。移动超过阈值才开始书写;否则轻点=穿透点击 */
   const onDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (browse) return;
     e.preventDefault();
-    drawingRef.current = true;
     const p = pos(e);
-    currentRef.current = { tool, color, size, points: [p] };
-    lastRef.current = p;
+    tapStartRef.current = { x: p.x, y: p.y, cx: e.clientX, cy: e.clientY };
+    drawingRef.current = false;
+    currentRef.current = null;
+    lastRef.current = null;
     try {
       canvasRef.current?.setPointerCapture(e.pointerId);
     } catch {
-      /* 忽略:捕获失败不影响绘制 */
+      /* ignore */
     }
   };
 
   const onMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!drawingRef.current || !currentRef.current) return;
+    if (browse) return;
+    const start = tapStartRef.current;
+    if (!start) return;
     const p = pos(e);
+    const drawTool: "pen" | "eraser" = tool === "eraser" ? "eraser" : "pen";
+    if (!drawingRef.current) {
+      // 未超过阈值:轻点移动,不书写
+      if (Math.hypot(p.x - start.x, p.y - start.y) < DRAW_THRESHOLD) return;
+      // 超过阈值:开始一笔(从起点画起)
+      drawingRef.current = true;
+      currentRef.current = { tool: drawTool, color, size, points: [{ x: start.x, y: start.y }] };
+      lastRef.current = { x: start.x, y: start.y };
+      return;
+    }
     const prev = lastRef.current;
-    if (prev) drawSegment(prev, p, currentRef.current);
-    currentRef.current = { ...currentRef.current, points: [...currentRef.current.points, p] };
+    if (prev && currentRef.current) drawSegment(prev, p, currentRef.current);
+    currentRef.current = currentRef.current
+      ? { ...currentRef.current, points: [...currentRef.current.points, p] }
+      : { tool: drawTool, color, size, points: [p] };
     lastRef.current = p;
   };
 
+  /* 抬起:若画过则落笔;否则把点击转发给下层(选答案/切题仍可用) */
   const endStroke = () => {
     if (drawingRef.current && currentRef.current && currentRef.current.points.length >= 2) {
       setStrokes((prev) => [...prev, currentRef.current!]);
+    } else if (!drawingRef.current && tapStartRef.current) {
+      forwardClick(tapStartRef.current.cx, tapStartRef.current.cy);
     }
+    tapStartRef.current = null;
     drawingRef.current = false;
     currentRef.current = null;
     lastRef.current = null;
+  };
+
+  const cancelStroke = () => {
+    tapStartRef.current = null;
+    drawingRef.current = false;
+    currentRef.current = null;
+    lastRef.current = null;
+  };
+
+  /* 轻点穿透:临时隐藏画布,找到下层元素并派发 click */
+  const forwardClick = (x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const prev = canvas.style.pointerEvents;
+    canvas.style.pointerEvents = "none";
+    const el = document.elementFromPoint(x, y);
+    canvas.style.pointerEvents = prev;
+    if (el && el !== canvas) {
+      el.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y })
+      );
+    }
   };
 
   const undo = () => setStrokes((prev) => prev.slice(0, -1));
@@ -293,7 +341,7 @@ export default function ScratchPad({
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={endStroke}
-          onPointerCancel={endStroke}
+          onPointerCancel={cancelStroke}
         />
       </div>
 
@@ -315,39 +363,52 @@ export default function ScratchPad({
           <span className="h-1 w-1 rounded-full bg-slate-300" />
           <span className="h-1 w-1 rounded-full bg-slate-300" />
         </div>
+
         {toolBtn("browse", "浏览:可正常答题/切题", <IconBrowse />)}
-        {toolBtn("pen", "画笔", <IconPen />)}
-        {toolBtn("eraser", "橡皮", <IconEraser />)}
+        {toolBtn("pen", "画笔(拖动书写,轻点可点题)", <IconPen />)}
+        {toolBtn("eraser", "橡皮(拖动擦除,轻点可点题)", <IconEraser />)}
         {divider}
-        <div className="flex flex-col items-center gap-1.5 py-0.5">
-          {COLORS.map((c) => (
-            <button
-              key={c.v}
-              onClick={() => { setColor(c.v); setTool("pen"); }}
-              title={c.label}
-              className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
-                color === c.v && tool === "pen" ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-2 hover:ring-slate-300"
-              }`}
-              style={{ background: c.v }}
-            />
-          ))}
+
+        {/* 颜色:2×4 网格,选中带对勾 */}
+        <div className="px-0.5 py-1">
+          <div className="grid grid-cols-2 gap-1.5">
+            {COLORS.map((c) => {
+              const active = color === c.v && tool === "pen";
+              return (
+                <button
+                  key={c.v}
+                  onClick={() => { setColor(c.v); setTool("pen"); }}
+                  title={c.label}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
+                    active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-2 hover:ring-slate-300"
+                  }`}
+                  style={{ background: c.v }}
+                >
+                  {active && <span className="text-[10px] font-bold text-white drop-shadow">✓</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
         {divider}
-        <div className="flex flex-col items-center gap-1 py-0.5">
+
+        {/* 粗细:预览线(粗细直观) */}
+        <div className="flex flex-col items-center gap-0.5 py-1">
           {SIZES.map((s, i) => (
             <button
               key={s.label}
               onClick={() => setSizeIdx(i)}
               title={`笔触:${s.label}`}
-              className={`flex h-8 w-10 items-center justify-center rounded-lg transition-colors ${
+              className={`flex h-8 w-12 items-center justify-center rounded-lg transition-colors ${
                 sizeIdx === i ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               }`}
             >
-              <span className="rounded-full bg-current" style={{ width: s.r * 2, height: s.r * 2 }} />
+              <span className="block rounded-full bg-current" style={{ width: 26, height: Math.max(2, Math.round(s.v * 0.9)) }} />
             </button>
           ))}
         </div>
         {divider}
+
         {actionBtn("撤销上一步", <IconUndo />, strokes.length === 0, undo)}
         {actionBtn("清空全部批注", <IconTrash />, strokes.length === 0, clear)}
         {divider}
@@ -361,7 +422,7 @@ export default function ScratchPad({
       </div>
 
       <p className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/60 px-4 py-1.5 text-xs text-white/90 backdrop-blur-sm">
-        批注不参与判分 · 「👁 浏览」可正常答题/切题 · 工具栏可拖动
+        拖动书写 · 轻点可正常点选答案/切题 · 工具栏可拖动
       </p>
     </>
   ) : null;
