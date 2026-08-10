@@ -381,23 +381,43 @@ export default function PersonalSpacePage() {
             </section>
           )}
 
-          {/* 笔试作业 */}
-          <section className="space-y-6">
-            <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-sm">📐</span>
-              笔试作业 ({subjectUrgent.length + subjectOtherPending.length} 项待完成 · {subjectPast.length} 已完成)
-            </h2>
-            {subjectUrgent.length + subjectOtherPending.length === 0 ? (
-              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的笔试作业,去练习区放松一下吧~</p>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {subjectUrgent.map((a) => renderAssignCard(a, true))}
-                {subjectOtherPending.map((a) => renderAssignCard(a, false))}
-              </div>
-            )}
+          {/* 待完成作业放前:笔试 + 语言 */}
+          <section className="space-y-8">
+            <div className="space-y-4">
+              <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-sm">📐</span>
+                笔试作业 ({subjectUrgent.length + subjectOtherPending.length} 项待完成)
+              </h2>
+              {subjectUrgent.length + subjectOtherPending.length === 0 ? (
+                <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的笔试作业,去练习区放松一下吧~</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {subjectUrgent.map((a) => renderAssignCard(a, true))}
+                  {subjectOtherPending.map((a) => renderAssignCard(a, false))}
+                </div>
+              )}
+            </div>
 
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-500">📋 笔试作业 · 往期表现 ({subjectPast.length})</h3>
+            <div className="space-y-4">
+              <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-sm">🗣️</span>
+                语言作业 ({langUrgent.length + langOtherPending.length} 项待完成)
+              </h2>
+              {langUrgent.length + langOtherPending.length === 0 ? (
+                <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的语言作业。</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {langUrgent.map((a) => renderAssignCard(a, true))}
+                  {langOtherPending.map((a) => renderAssignCard(a, false))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 往期表现放后:笔试 + 语言 */}
+          <section className="space-y-8">
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-500">📋 笔试作业 · 往期表现 ({subjectPast.length})</h3>
               {subjectPast.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">还没有已提交的笔试作业。</p>
               ) : (
@@ -433,25 +453,9 @@ export default function PersonalSpacePage() {
                 </div>
               )}
             </div>
-          </section>
 
-          {/* 语言作业 */}
-          <section className="space-y-6">
-            <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-sm">🗣️</span>
-              语言作业 ({langUrgent.length + langOtherPending.length} 项待完成 · {langPast.length} 已完成)
-            </h2>
-            {langUrgent.length + langOtherPending.length === 0 ? (
-              <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的语言作业。</p>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {langUrgent.map((a) => renderAssignCard(a, true))}
-                {langOtherPending.map((a) => renderAssignCard(a, false))}
-              </div>
-            )}
-
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-slate-500">📋 语言作业 · 往期表现 ({langPast.length})</h3>
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-500">📋 语言作业 · 往期表现 ({langPast.length})</h3>
               {langPast.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">还没有已提交的语言作业。</p>
               ) : (
