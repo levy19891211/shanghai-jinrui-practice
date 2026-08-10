@@ -227,8 +227,7 @@ export default function PersonalSpacePage() {
   const otherPending = useMemo(() => pendingSorted.filter((a) => !urgentAssigns.includes(a)), [pendingSorted, urgentAssigns]);
 
   // 试卷分区(笔试/语言),让"我的作业"页按板块清晰展示
-  const subjectUrgent = useMemo(() => urgentAssigns.filter((a) => !a.isLanguage), [urgentAssigns]);
-  const langUrgent = useMemo(() => urgentAssigns.filter((a) => a.isLanguage), [urgentAssigns]);
+  // 注意:紧急区(urgentAssigns)已单独成区展示,此处待完成区只放非紧急(otherPending)避免重复
   const subjectOtherPending = useMemo(() => otherPending.filter((a) => !a.isLanguage), [otherPending]);
   const langOtherPending = useMemo(() => otherPending.filter((a) => a.isLanguage), [otherPending]);
   const subjectPast = useMemo(() => pastAssigns.filter((a) => !a.isLanguage), [pastAssigns]);
@@ -386,13 +385,12 @@ export default function PersonalSpacePage() {
             <div className="space-y-4">
               <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-sm">📐</span>
-                笔试作业 ({subjectUrgent.length + subjectOtherPending.length} 项待完成)
+                笔试作业 ({subjectOtherPending.length} 项待完成)
               </h2>
-              {subjectUrgent.length + subjectOtherPending.length === 0 ? (
+              {subjectOtherPending.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的笔试作业,去练习区放松一下吧~</p>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {subjectUrgent.map((a) => renderAssignCard(a, true))}
                   {subjectOtherPending.map((a) => renderAssignCard(a, false))}
                 </div>
               )}
@@ -401,13 +399,12 @@ export default function PersonalSpacePage() {
             <div className="space-y-4">
               <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-sm">🗣️</span>
-                语言作业 ({langUrgent.length + langOtherPending.length} 项待完成)
+                语言作业 ({langOtherPending.length} 项待完成)
               </h2>
-              {langUrgent.length + langOtherPending.length === 0 ? (
+              {langOtherPending.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的语言作业。</p>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {langUrgent.map((a) => renderAssignCard(a, true))}
                   {langOtherPending.map((a) => renderAssignCard(a, false))}
                 </div>
               )}
