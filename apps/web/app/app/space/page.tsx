@@ -55,8 +55,8 @@ export default function PersonalSpacePage() {
   const router = useRouter();
   const user = getUser();
   const [tab, setTab] = useState<Tab>("assignments");
-  // 界面切换:笔试成长 / 语言成长
-  const [mode, setMode] = useState<"subject" | "language">("subject");
+  // 学情分析子模块切换:笔试成长 / 语言成长(同级并列)
+  const [analysisTab, setAnalysisTab] = useState<"subject" | "language">("subject");
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [subjectSessions, setSubjectSessions] = useState<SessionSummary[]>([]);
@@ -348,39 +348,20 @@ export default function PersonalSpacePage() {
         <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
       </div>
 
-      {/* 笔试 / 语言 独立界面切换 */}
-      <div className="inline-flex rounded-2xl bg-slate-100 p-1">
-        <button
-          onClick={() => setMode("subject")}
-          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
-            mode === "subject" ? "bg-white text-indigo-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          📝 笔试成长
-        </button>
-        <button
-          onClick={() => setMode("language")}
-          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
-            mode === "language" ? "bg-white text-amber-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          🗣️ 语言成长
-        </button>
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">个人空间</h1>
+        <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
       </div>
 
-      {mode === "language" ? (
-        <LangGrowthPanel sessions={langSessions} assignments={langAssignments} onStart={(a) => startAssignment(a as unknown as Assignment)} />
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
-            {tabBtn("grades", "📈", "成绩历史", subjectSessions.length)}
-            {tabBtn("analysis", "📊", "学情分析", weakTopics.filter((t) => t.correctRate < 70).length)}
-            {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
-          </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
+        {tabBtn("grades", "📈", "成绩历史", subjectSessions.length)}
+        {tabBtn("analysis", "📊", "学情分析", weakTopics.filter((t) => t.correctRate < 70).length)}
+        {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
+      </div>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-          {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
 
       {!loading && tab === "assignments" && (
         <div className="space-y-6">
@@ -495,7 +476,29 @@ export default function PersonalSpacePage() {
 
       {!loading && tab === "analysis" && (
         <div className="space-y-6">
-          {totalAnswered === 0 && langSessions.length === 0 ? (
+          {/* 学情分析子模块:笔试成长 / 语言成长 同级并列 */}
+          <div className="inline-flex rounded-2xl bg-slate-100 p-1">
+            <button
+              onClick={() => setAnalysisTab("subject")}
+              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+                analysisTab === "subject" ? "bg-white text-indigo-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              📝 笔试成长
+            </button>
+            <button
+              onClick={() => setAnalysisTab("language")}
+              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+                analysisTab === "language" ? "bg-white text-amber-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              🗣️ 语言成长
+            </button>
+          </div>
+
+          {analysisTab === "subject" ? (
+            <>
+          {totalAnswered === 0 ? (
             <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">还没有作答记录,先做几道题,系统会生成你的学情分析报告。</p>
           ) : (
             <>
@@ -727,6 +730,10 @@ export default function PersonalSpacePage() {
 
             </>
           )}
+            </>
+          ) : (
+            <LangGrowthPanel sessions={langSessions} assignments={langAssignments} onStart={(a) => startAssignment(a as unknown as Assignment)} />
+          )}
         </div>
       )}
 
@@ -767,8 +774,6 @@ export default function PersonalSpacePage() {
             </>
           )}
         </div>
-      )}
-    </>
       )}
     </div>
   );
