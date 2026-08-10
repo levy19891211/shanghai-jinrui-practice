@@ -438,12 +438,12 @@ export default function ScratchPad({
             <span className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white" style={{ background: color }} />
           </button>
           {colorOpen && (
-            <div className="absolute right-full top-1/2 z-50 mr-2 w-48 -translate-y-1/2 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_34px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                笔迹颜色
-                <span className="inline-block h-3 w-3 rounded-full border border-slate-200" style={{ background: color }} />
+            <div className="absolute right-full top-1/2 z-50 mr-2 w-36 -translate-y-1/2 rounded-xl border border-slate-200/80 bg-white/95 p-2 shadow-[0_10px_34px_rgba(15,23,42,0.18)] backdrop-blur-md">
+              <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                颜色
+                <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
               </p>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {COLORS.map((c) => {
                   const active = color === c.v;
                   return (
@@ -451,12 +451,12 @@ export default function ScratchPad({
                       key={c.v}
                       onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
                       title={c.label}
-                      className={`flex h-9 w-9 items-center justify-center rounded-full transition-transform ${
-                        active ? "scale-110 ring-2 ring-indigo-500 ring-offset-2" : "hover:scale-105 hover:ring-2 hover:ring-slate-300"
+                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
+                        active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
                       }`}
                       style={{ background: c.v }}
                     >
-                      {active && <span className="text-sm font-bold text-white drop-shadow">✓</span>}
+                      {active && <span className="text-xs font-bold text-white drop-shadow">✓</span>}
                     </button>
                   );
                 })}
