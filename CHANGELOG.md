@@ -1,5 +1,10 @@
 # 版本历史
 
+## V2.4.50 (2026-08-10) — 内嵌面板改用 flex-wrap(iPad grid-cols 不生效)
+
+- V2.4.49 内嵌面板里又用了 `grid grid-cols-4`,触发与早期相同的 iPad Safari grid 渲染坑——色块未按 4 列展开。改为已验证的 **`flex flex-wrap gap-1.5`**;粗细预设也改 `flex gap-1 + flex-1`。
+- 教训:**确认 iPad Safari 不支持 grid-cols-* 时,该设备全部布局用 flex/flex-wrap,不要再用 grid。**
+
 ## V2.4.49 (2026-08-10) — 颜色/粗细改为工具栏内展开(彻底抛弃弹出层)
 
 - 该设备上颜色弹窗(独立层/absolute/Portal/fixed 多种方案)反复异常。这次走最稳方案:**颜色和粗细直接展开在工具栏内部**(纯 flex 流式),彻底没有弹出层。

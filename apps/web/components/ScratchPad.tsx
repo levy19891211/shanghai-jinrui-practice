@@ -462,7 +462,7 @@ export default function ScratchPad({
               颜色
               <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
             </p>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {COLORS.map((c) => {
                 const active = color === c.v;
                 return (
@@ -470,7 +470,7 @@ export default function ScratchPad({
                     key={c.v}
                     onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
                     title={c.label}
-                    className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform ${
                       active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
                     }`}
                     style={{ background: c.v }}
@@ -502,7 +502,7 @@ export default function ScratchPad({
             <div className="mt-2 flex items-center justify-center rounded-lg bg-slate-50 py-2.5">
               <span className="block rounded-full bg-slate-800" style={{ width: 100, height: Math.max(2, size) }} />
             </div>
-            <div className="mt-2 grid grid-cols-3 gap-1">
+            <div className="mt-2 flex gap-1">
               {[
                 { l: "细", v: 2 },
                 { l: "中", v: 5 },
@@ -511,7 +511,7 @@ export default function ScratchPad({
                 <button
                   key={p.l}
                   onClick={() => setSize(p.v)}
-                  className={`rounded-md py-1 text-xs transition-colors ${
+                  className={`flex-1 rounded-md py-1 text-xs transition-colors ${
                     size === p.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
