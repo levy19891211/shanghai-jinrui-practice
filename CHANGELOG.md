@@ -1,5 +1,10 @@
 # 版本历史
 
+## V2.4.47 (2026-08-10) — 弹窗改用 React Portal 挂到 document.body(彻底脱离 toolbar)
+
+- 弹窗改用 `createPortal` 挂到 `document.body` 上,直接用按钮 `getBoundingClientRect()` 计算 viewport 像素位置(fixed+inline left/top),**完全脱离** toolbar 的 backdrop-filter 包含块与 stacking context,iOS Safari 上宽度/位置渲染异常被绕开。
+- 颜色 `width:160`、粗细 `width:192`,换边阈值 240(按钮 r.left<240 则显示在按钮右侧,否则左侧)。
+
 ## V2.4.46 (2026-08-10) — 弹窗宽度用内联 style 写死(绕过 iOS backdrop-filter 渲染坑)
 
 - 上一版颜色弹窗仍窄只显 1 色圈:iPad Safari 上 `backdrop-filter` 创建包含块导致 absolute 子元素 width 被压成内容宽度。
