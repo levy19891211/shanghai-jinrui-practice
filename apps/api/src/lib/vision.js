@@ -168,6 +168,73 @@ export async function extractQuestionsFromPdfPages(pages, { maxPagesPerCall } = 
   return all;
 }
 
+// 从模型输出里尽量稳健地取出单个 JSON 对象
+export function parseJsonObject(text) {
+  let s = String(text || "").trim();
+  s = s.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+// 单题图片识别:一张图一道选择题 → 结构化 JSON
+const SINGLE_QUESTION_PROMPT = `你是一个考试题库录入助手。用户会给一张包含一道选择题的图片(题干+选项,可能还带答案标注)。
+请识别这道题,严格按以下 JSON 对象格式输出(不要 markdown 代码围栏,不要输出任何额外说明,只输出可直接解析的 JSON 对象):
+{
+  "subject": "数学 或 物理 或 化学 或 生物,或 TMUA/ESAT/NSAA 等题源名(不确定时填空字符串)",
+  "topic": "知识点(英文 A Level 术语优先,如 Differentiation / Trigonometry / Sequences and Series / Mechanics)",
+  "difficulty": 1到5的整数(可选,默认3),
+  "type": "SINGLE_CHOICE 或 MULTIPLE_CHOICE 或 TRUE_FALSE",
+  "stem": "题干全文,公式用规范 LaTeX 行内 $...$ 包裹,每个定界符必须成对闭合",
+  "options": ["选项正文","选项正文","选项正文","选项正文"(2到8个,不带字母前缀)],
+  "answer": "正确答案:若图片给出答案则写对应选项字母(A-H)或与选项文本完全一致的文本;若图片没有答案信息则填空字符串,不要猜",
+  "solution": "解析(可选,没有则空字符串)"
+}
+重要规则:
+- 数学符号必须用规范 LaTeX(如 \\log \\sin \\cos \\tan \\frac \\sqrt \\leq \\geq \\times \\cdot \\neq);行内公式用 $...$,独立公式用 $$...$$。
+- options 数组里只放选项正文,**绝对不要包含 A./B./C. 之类的字母前缀**,选项的字母标签由系统自动添加。
+- 单位(mol、g、cm、cm³、s、V、J、K 等)与"2.0 mol"这类数字+单位直接写普通文本,不要用 $...$ 包裹;只有真正的数学表达式才用 $...$。
+- 答案(answer)必须来自图片上明确给出的答案 key 或解析;若图片没有答案信息,answer 填空字符串,严禁自行计算或猜测。
+- 图片中应只有一道题;若明显包含多道题,只取第一道完整题输出。`;
+
+export async function extractQuestionFromImage(imageDataUrl) {
+  if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
+  const content = [
+    { type: "text", text: "请识别下面这张图片中的这道选择题,严格按系统提示要求的 JSON 对象格式输出。" },
+    { type: "image_url", image_url: { url: imageDataUrl } },
+  ];
+  const resp = await fetch(`${baseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.VISION_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: model(),
+      messages: [
+        { role: "system", content: SINGLE_QUESTION_PROMPT },
+        { role: "user", content },
+      ],
+      temperature: 0.1,
+      max_tokens: 4000,
+    }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error(`视觉模型请求失败 ${resp.status}: ${t.slice(0, 300)}`);
+  }
+  const json = await resp.json();
+  const text = json?.choices?.[0]?.message?.content || "";
+  const obj = parseJsonObject(text);
+  if (!obj || typeof obj !== "object") throw new Error("视觉模型未返回有效 JSON");
+  return obj;
+}
+
 // ——— 雅思/语言阅读篇章提取(一篇文章 + 绑定它的若干题目,作为一个整体单元) ———
 // 与学科题库的选择题提取分开:阅读必须把「文章正文」完整取出,题目挂在文章下
 const PASSAGE_PROMPT = `你是一个雅思(IELTS)阅读题库录入助手。用户会给你一份阅读试卷的图片(一页或多页,已按顺序给出),可能附带每页的纯文本。

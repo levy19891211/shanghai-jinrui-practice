@@ -12,6 +12,7 @@ import { normalizeNewlines } from "../lib/text-clean.js";
 import { parseImportFile, mapAnswerToOptionText, alignAnswerToOptions } from "../lib/parse-import-file.js";
 import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
 import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
+import { extractQuestionFromImage } from "../lib/vision.js";
 
 const router = Router();
 const PUBLIC_FIELDS = { id: true, subject: true, sourceType: true, paper: true, topic: true, topicIds: true, difficulty: true, type: true, stem: true, options: true, source: true, status: true, importedAt: true, createdAt: true, updatedAt: true };
@@ -564,6 +565,62 @@ router.post(
       };
     });
     ok(res, { taskId: task.id });
+  })
+);
+
+// POST /api/questions/import-image — 图片识别单题录入(老师/管理员)
+// body: { data: 图片 base64(可带 data: 前缀), subject?: 科目提示, paperTitle?: 套题名 }
+// 视觉模型识别 → 归一化(科目、选项清洗、答案字母→选项文本对齐)→ 返回题目字段,前端核对后保存
+router.post(
+  "/import-image",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { data, subject, paperTitle } = req.body || {};
+    if (!data || typeof data !== "string") return fail(res, 400, "请提供图片 data(base64)");
+    const b64 = String(data).includes(",") ? String(data).split(",")[1] : String(data);
+    const buf = Buffer.from(b64, "base64");
+    if (!buf.length) return fail(res, 400, "图片内容为空");
+    if (buf.length > 6 * 1024 * 1024) return fail(res, 400, "图片过大(上限 6MB)");
+
+    let raw;
+    try {
+      raw = await extractQuestionFromImage(String(data));
+    } catch (e) {
+      if (e.message === "VISION_NOT_CONFIGURED") {
+        return fail(res, 400, "图片识别需要配置视觉模型:请在服务器 apps/api/.env 添加 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL 并重启 API");
+      }
+      return fail(res, 500, "图片识别失败:" + e.message);
+    }
+
+    // 归一化:科目(题源词→sourceType,TMUA/ESAT→数学)、选项清洗、答案对齐(字母→选项文本)
+    const rawSubj = String(raw.subject || "").trim();
+    const isSource = /^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)$/i.test(rawSubj);
+    const sourceType = isSource ? rawSubj.toUpperCase() : null;
+    const normSubject =
+      String(subject || "").trim() ||
+      (isSource ? "数学" : normalizeSubject(rawSubj)) ||
+      "数学";
+    const options = Array.isArray(raw.options)
+      ? raw.options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o))))).filter(Boolean)
+      : [];
+    const result = {
+      subject: normSubject,
+      sourceType,
+      paper: paperTitle || raw.paper || null,
+      topic: String(raw.topic || "").trim(),
+      difficulty: Number(raw.difficulty) || 3,
+      type: String(raw.type || "SINGLE_CHOICE"),
+      stem: normalizeNewlines(cleanUnits(String(raw.stem || ""))).trim(),
+      options,
+      answer: alignAnswerToOptions(raw.answer, options),
+      solution: raw.solution ? normalizeNewlines(String(raw.solution)).trim() : null,
+      status: "PENDING_REVIEW",
+    };
+    if (!result.stem || options.length < 2) {
+      return fail(res, 422, "未能从图片中识别出完整题目(题干或选项不足),请换更清晰的图片重试");
+    }
+    ok(res, result, "识别成功,请核对后保存");
   })
 );
 

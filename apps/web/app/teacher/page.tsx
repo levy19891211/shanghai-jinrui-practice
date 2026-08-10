@@ -122,6 +122,13 @@ export default function TeacherPage() {
   const [pdfFileName, setPdfFileName] = useState("");
   const [pdfAnsFileName, setPdfAnsFileName] = useState("");
   const [pdfUploading, setPdfUploading] = useState(false);
+  // 图片识别录入单题(粘贴题目图片 → 视觉识别 → 核对保存)
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrImage, setOcrImage] = useState<string | null>(null);
+  const [ocrSubject, setOcrSubject] = useState("");
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+  const ocrFileRef = useRef<HTMLInputElement>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewQ, setReviewQ] = useState<Question | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -325,6 +332,95 @@ export default function TeacherPage() {
   }
 
   function openCreate() { setForm({ ...EMPTY, topicIds: [] }); setError(""); setShowForm(true); }
+
+  // —— 图片识别录入单题 ——
+  function openOcr() {
+    setOcrError("");
+    setOcrImage(null);
+    setOcrSubject("");
+    setOcrOpen(true);
+  }
+
+  function readImageFile(f: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("读取图片失败"));
+      r.readAsDataURL(f);
+    });
+  }
+
+  function handleOcrPaste(e: ClipboardEvent<HTMLDivElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        e.preventDefault();
+        const f = it.getAsFile();
+        if (!f) return;
+        readImageFile(f)
+          .then(setOcrImage)
+          .catch(() => setOcrError("读取图片失败"));
+        setOcrError("");
+        break;
+      }
+    }
+  }
+
+  function handleOcrFile(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    readImageFile(f)
+      .then(setOcrImage)
+      .catch(() => setOcrError("读取图片失败"));
+    setOcrError("");
+  }
+
+  async function runOcr() {
+    if (!ocrImage) return;
+    setOcrBusy(true);
+    setOcrError("");
+    try {
+      const extracted = await api.post<{
+        subject?: string;
+        sourceType?: string | null;
+        paper?: string | null;
+        topic?: string;
+        difficulty?: number;
+        type?: string;
+        stem?: string;
+        options?: string[];
+        answer?: string;
+        solution?: string | null;
+      }>("/questions/import-image", { data: ocrImage, subject: ocrSubject || undefined });
+      setOcrOpen(false);
+      setOcrImage(null);
+      // 预填「新建题目」表单,核对后保存入库(默认待审核)
+      openEdit({
+        id: undefined,
+        subject: extracted.subject || ocrSubject || "数学",
+        sourceType: extracted.sourceType || "",
+        paper: extracted.paper || "",
+        topic: extracted.topic || "",
+        topicIds: [],
+        difficulty: extracted.difficulty || 3,
+        type: extracted.type || "SINGLE_CHOICE",
+        stem: extracted.stem || "",
+        options: extracted.options || [],
+        answer: extracted.answer || "",
+        solution: extracted.solution || "",
+        status: "PENDING_REVIEW",
+      } as unknown as Question);
+      setMessage("已识别题目,请核对后点「保存」入库");
+      setTimeout(() => setMessage(""), 3500);
+    } catch (e) {
+      setOcrError(e instanceof Error ? e.message : "识别失败");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
   function openEdit(q: Question) {
     // 防御:options 可能来自详情/列表接口(api 客户端会解析成数组),再兜底一层防字符串
     const opts = Array.isArray(q.options)
@@ -673,6 +769,9 @@ export default function TeacherPage() {
             className="h-9 rounded-lg border border-indigo-300 px-4 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
           >
             批量导入
+          </button>
+          <button onClick={openOcr} className="h-9 rounded-lg border border-emerald-300 px-4 text-sm font-medium text-emerald-600 hover:bg-emerald-50" title="粘贴题目图片,自动识别成题后核对保存">
+            📷 图片识别
           </button>
           <button onClick={openCreate} className="h-9 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">
             + 新建题目
@@ -1115,6 +1214,73 @@ Answer: B
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 图片识别录入单题(与「新建题目」独立的第二种录入方式) */}
+      {ocrOpen && (
+        <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => !ocrBusy && setOcrOpen(false)}>
+          <div className="mt-8 w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800">📷 图片识别录入题目</h2>
+              <button onClick={() => !ocrBusy && setOcrOpen(false)} className="text-slate-400 hover:text-slate-600" aria-label="关闭">✕</button>
+            </div>
+
+            {/* 详细提示词 */}
+            <div className="mt-3 rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white px-4 py-3 text-xs leading-relaxed text-indigo-900">
+              <p className="text-sm font-semibold text-indigo-800">使用方法</p>
+              <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+                <li>复制一张<b>只含一道选择题</b>的图片(题干 + 选项),截图越清晰识别越准;</li>
+                <li>在下方区域 <b>Ctrl/Cmd + V 粘贴</b>,或点击选择图片文件;</li>
+                <li>可先选<b>科目</b>辅助识别(不选则自动判断);</li>
+                <li>点「开始识别」→ 自动识别出题干/选项/答案,随后会打开<b>题目编辑窗</b>;</li>
+                <li>在编辑窗中核对并点「保存」,题目即进入题库(默认待审核,可再改状态)。</li>
+              </ol>
+              <p className="mt-1.5 text-indigo-700/80">提示:每张图只放一道题;选项字母建议保留原文;公式尽量用截图;若图片未含答案,识别后请手动补充答案。</p>
+            </div>
+
+            {/* 粘贴 / 上传区 */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => ocrFileRef.current?.click()}
+              onPaste={handleOcrPaste}
+              className="mt-4 flex h-48 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-indigo-200 bg-slate-50 text-center transition hover:bg-indigo-50/50"
+            >
+              {ocrImage ? (
+                <img src={ocrImage} alt="待识别题目" className="max-h-[170px] max-w-full rounded-lg object-contain" />
+              ) : (
+                <>
+                  <span className="text-4xl">🖼️</span>
+                  <p className="mt-2 text-sm font-medium text-slate-500">在此处粘贴题目图片(<b>Ctrl/Cmd + V</b>)</p>
+                  <p className="text-xs text-slate-400">或点击选择图片文件</p>
+                </>
+              )}
+            </div>
+            <input ref={ocrFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleOcrFile} />
+
+            <div className="mt-3 flex items-center gap-3">
+              <select value={ocrSubject} onChange={(e) => setOcrSubject(e.target.value)} className={`${input} ui-select w-44`}>
+                <option value="">科目:自动识别</option>
+                <option value="数学">数学</option>
+                <option value="物理">物理</option>
+                <option value="化学">化学</option>
+                <option value="生物">生物</option>
+              </select>
+              <button
+                onClick={runOcr}
+                disabled={ocrBusy || !ocrImage}
+                className="ml-auto rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {ocrBusy ? "识别中,请稍候…" : "开始识别"}
+              </button>
+            </div>
+
+            {ocrBusy && (
+              <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-600">正在调用视觉模型识别题目,约需几秒到几十秒…</p>
+            )}
+            {ocrError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{ocrError}</p>}
           </div>
         </div>
       )}
