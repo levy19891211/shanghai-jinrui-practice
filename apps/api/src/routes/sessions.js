@@ -193,7 +193,6 @@ router.post(
       if (missing.length > 0) {
         await prisma.answerRecord.createMany({
           data: missing.map((questionId) => ({ sessionId: session.id, questionId })),
-          skipDuplicates: true,
         });
       }
     }
