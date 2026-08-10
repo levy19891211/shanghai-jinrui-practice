@@ -143,8 +143,10 @@ export function unifyFileMeta(raws, filename) {
     if (t && !SOURCE_TYPE_NAMES.includes(t)) groupSubjectVotes.push(t);
   }
 
-  // 3) 统一 sourceType:文件名题源信号 → 文件内题源多数派
-  const sourceType = fnSourceType || modeOf(sourceTypeVotes) || "";
+  // 3) 统一 sourceType:文件名题源信号 → 解析出的卷名题源信号 → 文件内逐题题源多数派
+  //    注意:逐题 subject 由视觉模型逐题判断,同卷偶尔误判(如把 NSAA 数学卷判成 TMUA),
+  //    故卷名信号优先级高于逐题投票,避免被误投票覆盖。
+  const sourceType = fnSourceType || sourceTypeFromFilename(paper) || modeOf(sourceTypeVotes) || "";
 
   // 4) 统一 subject:paper 组内学科多数派 → 文件内学科多数派 → TMUA 兜底"数学"
   let subject = modeOf(groupSubjectVotes) || modeOf(allSubjectVotes) || "";
