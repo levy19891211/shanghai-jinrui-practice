@@ -1,7 +1,7 @@
 "use client";
 // 批注书写层(完全透明叠在题目上方直接手写,不遮题、不保存、不参与判分)。
 // 交互:拖动=书写;轻点=穿透点击(可正常选答案/切题)。工具栏右侧竖排、可拖动、颜色/粗细更清晰。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
@@ -86,7 +86,7 @@ const IconSize = ({ width }: { width: number }) => (
   </svg>
 );
 
-export default function ScratchPad({
+function ScratchPadInner({
   open,
   onClose,
   onInteractivityChange,
@@ -118,8 +118,6 @@ export default function ScratchPad({
 
   useEffect(() => {
     strokesRef.current = strokes;
-    // 状态变化(撤销/清空/落笔)后立即重绘画布
-    redrawRef.current();
   }, [strokes]);
 
   const redraw = useCallback(() => {
@@ -129,23 +127,27 @@ export default function ScratchPad({
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const s of strokesRef.current) {
-      if (s.points.length < 2) continue;
+      if (!s || !Array.isArray(s.points) || s.points.length < 2) continue;
       const isEraser = s.tool === "eraser";
       // 橡皮:destination-out 真正擦除画布像素(仅擦手写笔迹,不影响底层题目)
-      ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
-      ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
-      ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      ctx.moveTo(s.points[0].x, s.points[0].y);
-      for (let i = 1; i < s.points.length - 1; i++) {
-        const mid = { x: (s.points[i].x + s.points[i + 1].x) / 2, y: (s.points[i].y + s.points[i + 1].y) / 2 };
-        ctx.quadraticCurveTo(s.points[i].x, s.points[i].y, mid.x, mid.y);
+      try {
+        ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
+        ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
+        ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(s.points[0].x, s.points[0].y);
+        for (let i = 1; i < s.points.length - 1; i++) {
+          const mid = { x: (s.points[i].x + s.points[i + 1].x) / 2, y: (s.points[i].y + s.points[i + 1].y) / 2 };
+          ctx.quadraticCurveTo(s.points[i].x, s.points[i].y, mid.x, mid.y);
+        }
+        const last = s.points[s.points.length - 1];
+        ctx.lineTo(last.x, last.y);
+        ctx.stroke();
+      } catch {
+        /* 单笔失败不影响整体 */
       }
-      const last = s.points[s.points.length - 1];
-      ctx.lineTo(last.x, last.y);
-      ctx.stroke();
     }
     ctx.globalCompositeOperation = "source-over";
   }, []);
@@ -167,7 +169,11 @@ export default function ScratchPad({
       canvas.style.height = `${window.innerHeight}px`;
       const ctx = canvas.getContext("2d");
       if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      redrawRef.current();
+      try {
+        redrawRef.current();
+      } catch {
+        /* ignore */
+      }
     };
     resize();
     window.addEventListener("resize", resize);
@@ -237,17 +243,22 @@ export default function ScratchPad({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const isEraser = s.tool === "eraser";
-    // 橡皮:destination-out 真擦除(只擦手写,不盖题目)
-    ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
-    ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
-    ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-    ctx.globalCompositeOperation = "source-over";
+    try {
+      // 橡皮:destination-out 真擦除(只擦手写,不盖题目)
+      ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
+      ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
+      ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    } catch {
+      /* ignore */
+    } finally {
+      ctx.globalCompositeOperation = "source-over";
+    }
   };
 
   /* 按下:记录起点,不立即画。移动超过阈值才开始书写;否则轻点=穿透点击 */
@@ -270,31 +281,41 @@ export default function ScratchPad({
     if (browse) return;
     const start = tapStartRef.current;
     if (!start) return;
-    const p = pos(e);
-    const drawTool: "pen" | "eraser" = tool === "eraser" ? "eraser" : "pen";
-    if (!drawingRef.current) {
-      // 未超过阈值:轻点移动,不书写
-      if (Math.hypot(p.x - start.x, p.y - start.y) < DRAW_THRESHOLD) return;
-      // 超过阈值:开始一笔(从起点画起)
-      drawingRef.current = true;
-      currentRef.current = { tool: drawTool, color, size, points: [{ x: start.x, y: start.y }] };
-      lastRef.current = { x: start.x, y: start.y };
-      return;
+    try {
+      const p = pos(e);
+      const drawTool: "pen" | "eraser" = tool === "eraser" ? "eraser" : "pen";
+      if (!drawingRef.current) {
+        // 未超过阈值:轻点移动,不书写
+        if (Math.hypot(p.x - start.x, p.y - start.y) < DRAW_THRESHOLD) return;
+        // 超过阈值:开始一笔(从起点画起)
+        drawingRef.current = true;
+        currentRef.current = { tool: drawTool, color, size, points: [{ x: start.x, y: start.y }] };
+        lastRef.current = { x: start.x, y: start.y };
+        return;
+      }
+      const prev = lastRef.current;
+      if (prev && currentRef.current) drawSegment(prev, p, currentRef.current);
+      currentRef.current = currentRef.current
+        ? { ...currentRef.current, points: [...currentRef.current.points, p] }
+        : { tool: drawTool, color, size, points: [p] };
+      lastRef.current = p;
+    } catch {
+      /* ignore */
     }
-    const prev = lastRef.current;
-    if (prev && currentRef.current) drawSegment(prev, p, currentRef.current);
-    currentRef.current = currentRef.current
-      ? { ...currentRef.current, points: [...currentRef.current.points, p] }
-      : { tool: drawTool, color, size, points: [p] };
-    lastRef.current = p;
   };
 
-  /* 抬起:若画过则落笔;否则把点击转发给下层(选答案/切题仍可用) */
+  /* 抬起:若画过则落笔(笔迹已实时画好,无需重绘);否则把点击转发给下层(选答案/切题仍可用) */
   const endStroke = () => {
-    if (drawingRef.current && currentRef.current && currentRef.current.points.length >= 2) {
-      setStrokes((prev) => [...prev, currentRef.current!]);
-    } else if (!drawingRef.current && tapStartRef.current) {
-      forwardClick(tapStartRef.current.cx, tapStartRef.current.cy);
+    try {
+      if (drawingRef.current && currentRef.current && currentRef.current.points.length >= 2) {
+        const next = [...strokesRef.current, currentRef.current];
+        strokesRef.current = next;
+        setStrokes(next);
+      } else if (!drawingRef.current && tapStartRef.current) {
+        forwardClick(tapStartRef.current.cx, tapStartRef.current.cy);
+      }
+    } catch {
+      /* ignore */
     }
     tapStartRef.current = null;
     drawingRef.current = false;
@@ -313,19 +334,33 @@ export default function ScratchPad({
   const forwardClick = (x: number, y: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const prev = canvas.style.pointerEvents;
-    canvas.style.pointerEvents = "none";
-    const el = document.elementFromPoint(x, y);
-    canvas.style.pointerEvents = prev;
-    if (el && el !== canvas) {
-      el.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y })
-      );
+    try {
+      const prev = canvas.style.pointerEvents;
+      canvas.style.pointerEvents = "none";
+      const el = document.elementFromPoint(x, y);
+      canvas.style.pointerEvents = prev;
+      if (el && el !== canvas) {
+        el.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y })
+        );
+      }
+    } catch {
+      /* ignore */
     }
   };
 
-  const undo = () => setStrokes((prev) => prev.slice(0, -1));
-  const clear = () => setStrokes([]);
+  /* 提交笔画变更(撤销/清空):同步更新 ref → 重绘 → 再通知 React */
+  const commitStrokes = (next: Stroke[]) => {
+    strokesRef.current = next;
+    setStrokes(next);
+    try {
+      redrawRef.current();
+    } catch {
+      /* ignore */
+    }
+  };
+  const undo = () => commitStrokes(strokesRef.current.slice(0, -1));
+  const clear = () => commitStrokes([]);
 
   /* ---------- 工具栏拖动 ---------- */
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -532,4 +567,47 @@ export default function ScratchPad({
       </p>
     </>
   ) : null;
+}
+
+/* 错误边界:书写板内部异常只降级书写板,不崩整个做题页 */
+class ScratchBoundary extends Component<{ children: ReactNode }, { err: boolean; k: number }> {
+  state = { err: false, k: 0 };
+  static getDerivedStateFromError() {
+    return { err: true };
+  }
+  componentDidCatch(err: unknown) {
+    console.error("[ScratchPad] crashed:", err);
+  }
+  reset = () => this.setState((s) => ({ err: false, k: s.k + 1 }));
+  render() {
+    if (this.state.err) {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30">
+          <div className="rounded-2xl bg-white p-5 text-center shadow-2xl">
+            <p className="text-sm font-medium text-slate-700">书写板遇到问题，已自动恢复</p>
+            <p className="mt-1 text-xs text-slate-400">可重新打开书写板继续批注，不影响作答</p>
+            <button
+              onClick={this.reset}
+              className="mt-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
+            >
+              重新打开书写板
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return <div key={this.state.k}>{this.props.children}</div>;
+  }
+}
+
+export default function ScratchPad(props: {
+  open: boolean;
+  onClose: () => void;
+  onInteractivityChange?: (interactive: boolean) => void;
+}) {
+  return (
+    <ScratchBoundary>
+      <ScratchPadInner {...props} />
+    </ScratchBoundary>
+  );
 }
