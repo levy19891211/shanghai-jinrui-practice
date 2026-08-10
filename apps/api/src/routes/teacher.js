@@ -119,13 +119,13 @@ router.delete(
   })
 );
 
-// ——— 作业/考试分发 ———
-// GET /api/teacher/assignments — 作业列表(含每份作业的完成统计)
+// ——— 作业分发 ———
+// GET /api/teacher/assignments — 作业列表(含每份作业的完成统计);?mode=PRACTICE 只列作业
 router.get(
   "/assignments",
   asyncHandler(async (req, res) => {
     const list = await prisma.assignment.findMany({
-      where: { teacherId: req.user.id },
+      where: { teacherId: req.user.id, ...(req.query.mode ? { mode: String(req.query.mode) } : {}) },
       include: {
         paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
         languagePaper: { select: { id: true, title: true, examType: true, skill: true } },
@@ -175,7 +175,11 @@ router.post(
     const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT" } });
     if (students.length !== studentIds.length) return fail(res, 400, "存在无效的学生");
 
-    const aMode = mode === "EXAM" ? "EXAM" : languagePaper?.mode === "EXAM" || (paperId && (await prisma.paper.findUnique({ where: { id: paperId } }))?.mode === "EXAM") ? "EXAM" : "PRACTICE";
+    // 显式 mode 优先(学生管理「作业分发」固定传 PRACTICE);未传时按卷子模式推断
+    const aMode =
+      mode === "EXAM" ? "EXAM" :
+      mode === "PRACTICE" ? "PRACTICE" :
+      languagePaper?.mode === "EXAM" || (paperId && (await prisma.paper.findUnique({ where: { id: paperId } }))?.mode === "EXAM") ? "EXAM" : "PRACTICE";
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
 

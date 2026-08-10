@@ -98,7 +98,8 @@ export default function TeacherStudentsPage() {
 
   const loadAssignments = useCallback(async () => {
     try {
-      const d = await api.get<{ list: AssignmentRow[] }>("/teacher/assignments");
+      // 学生管理仅展示作业(练习);考试请到「考试管理」
+      const d = await api.get<{ list: AssignmentRow[] }>("/teacher/assignments?mode=PRACTICE");
       setAssignList(d.list);
     } catch (e) {
       setAssignErr(e instanceof Error ? e.message : "作业加载失败");
@@ -153,7 +154,7 @@ export default function TeacherStudentsPage() {
         paperId: assignForm.paperId,
         title: assignForm.title,
         note: assignForm.note,
-        mode: assignForm.mode,
+        mode: "PRACTICE", // 学生管理仅布置作业(练习);考试请到「考试管理」
         dueAt: assignForm.dueAt || undefined,
         studentIds: Array.from(selectedStudents),
       });
@@ -210,7 +211,7 @@ export default function TeacherStudentsPage() {
             onClick={() => setTab("assign")}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "assign" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
-            作业/考试分发
+            作业分发
           </button>
         </div>
       </div>
@@ -326,18 +327,15 @@ export default function TeacherStudentsPage() {
         <div className="space-y-6">
           {/* 新建作业 */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-medium text-slate-700">布置作业/考试</h2>
-            <p className="mt-1 text-xs text-slate-400">选择试卷库中的卷子,分发给指定学生,可设置截止时间(DDL)。</p>
+            <h2 className="text-sm font-medium text-slate-700">布置作业</h2>
+            <p className="mt-1 text-xs text-slate-400">选择试卷库中的卷子,作为平时练习分发给学生,可设置截止时间(DDL)。考试安排请到「考试管理」。</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
                 <label className="mb-1 block text-sm text-slate-600">试卷(必选)</label>
                 <select
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
                   value={assignForm.paperId}
-                  onChange={(e) => {
-                    const p = papers.find((x) => x.id === e.target.value);
-                    setAssignForm((f) => ({ ...f, paperId: e.target.value, mode: p?.mode === "EXAM" ? "EXAM" : f.mode }));
-                  }}
+                  onChange={(e) => setAssignForm((f) => ({ ...f, paperId: e.target.value }))}
                 >
                   <option value="">请选择试卷</option>
                   {papers.map((p) => (
