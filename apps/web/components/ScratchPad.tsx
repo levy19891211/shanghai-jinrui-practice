@@ -118,6 +118,8 @@ export default function ScratchPad({
 
   useEffect(() => {
     strokesRef.current = strokes;
+    // 状态变化(撤销/清空/落笔)后立即重绘画布
+    redrawRef.current();
   }, [strokes]);
 
   const redraw = useCallback(() => {
@@ -128,8 +130,11 @@ export default function ScratchPad({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const s of strokesRef.current) {
       if (s.points.length < 2) continue;
-      ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.9)" : s.color;
-      ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
+      const isEraser = s.tool === "eraser";
+      // 橡皮:destination-out 真正擦除画布像素(仅擦手写笔迹,不影响底层题目)
+      ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
+      ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
+      ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.beginPath();
@@ -142,6 +147,7 @@ export default function ScratchPad({
       ctx.lineTo(last.x, last.y);
       ctx.stroke();
     }
+    ctx.globalCompositeOperation = "source-over";
   }, []);
   const redrawRef = useRef(redraw);
   useEffect(() => {
@@ -230,14 +236,18 @@ export default function ScratchPad({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.9)" : s.color;
-    ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
+    const isEraser = s.tool === "eraser";
+    // 橡皮:destination-out 真擦除(只擦手写,不盖题目)
+    ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
+    ctx.strokeStyle = isEraser ? "rgba(0,0,0,1)" : s.color;
+    ctx.lineWidth = isEraser ? s.size * 2.5 : s.size;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
+    ctx.globalCompositeOperation = "source-over";
   };
 
   /* 按下:记录起点,不立即画。移动超过阈值才开始书写;否则轻点=穿透点击 */
