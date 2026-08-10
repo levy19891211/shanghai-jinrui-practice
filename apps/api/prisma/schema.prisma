@@ -115,6 +115,7 @@ model Paper {
   origin      String   @default("MANUAL")
   kind        String   @default("CUSTOM") // 套题类型:OFFICIAL 官方原版套题(如 PDF 导入的 TMUA/ESAT 真题) | CUSTOM 组卷套题(手动组卷或自编导入)
   sourceKey   String?  @unique
+  createdBy   String? // 学生自建卷(origin=STUDENT)的创建者;老师组卷/自动成卷为空
   status      String   @default("READY")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt

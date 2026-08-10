@@ -113,7 +113,8 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const isTeacher = ["TEACHER", "ADMIN"].includes(req.user.role);
-    const where = isTeacher ? {} : { status: "READY" };
+    // 共享卷库不含学生自建卷(origin=STUDENT),学生自建卷只在「我的试卷」(/papers/mine)里出现
+    const where = isTeacher ? { origin: { not: "STUDENT" } } : { status: "READY", origin: { not: "STUDENT" } };
     if (isTeacher && req.query.status) where.status = String(req.query.status);
     if (isTeacher && req.query.origin) where.origin = String(req.query.origin);
     // 按学科筛选(老师可用;学生端默认只看已开放卷,不受此影响)
@@ -191,6 +192,105 @@ router.get(
       });
     }
     ok(res, { subjects, subject: subject || null, total, topics, difficulties, combos });
+  })
+);
+
+// ——— 学生自建卷(我的试卷,origin=STUDENT,仅创建者可见) ———
+// GET /api/papers/mine — 我的试卷列表
+router.get(
+  "/mine",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const list = await prisma.paper.findMany({
+      where: { origin: "STUDENT", createdBy: req.user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    ok(res, {
+      list: list.map((p) => ({
+        id: p.id,
+        title: p.title,
+        subject: p.subject,
+        mode: p.mode,
+        durationMin: p.durationMin,
+        questionCount: parseIds(p).length,
+        source: p.source,
+        createdAt: p.createdAt,
+      })),
+    });
+  })
+);
+
+// POST /api/papers/student — 学生自建卷(随机组卷 / 错题组卷),仅创建者可见
+router.post(
+  "/student",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { title, mode, durationMin, source, subject, knowledgePointId, difficulty, count } = req.body || {};
+    const aMode = mode === "EXAM" ? "EXAM" : "PRACTICE";
+    const sourceKind = source === "wrongbook" ? "wrongbook" : "random";
+
+    let picked = [];
+    if (sourceKind === "wrongbook") {
+      // 从学生错题本中选已发布题目
+      const wb = await prisma.wrongBook.findMany({
+        where: { studentId: req.user.id },
+        include: { question: { select: { id: true, subject: true, status: true } } },
+      });
+      let list = wb.map((w) => w.question).filter((q) => q.status === "PUBLISHED");
+      if (subject) list = list.filter((q) => q.subject === subject);
+      if (list.length === 0) return fail(res, 400, "错题本中暂无可组卷的已发布题目");
+      const n = Number(count);
+      picked = (n && n > 0 ? list.sort(() => Math.random() - 0.5).slice(0, n) : list).map((q) => q.id);
+    } else {
+      // 随机组卷:已发布题目 + 筛选
+      const where = { status: "PUBLISHED" };
+      if (subject) where.subject = subject;
+      if (knowledgePointId) where.topicIds = { contains: String(knowledgePointId) };
+      if (difficulty) where.difficulty = Number(difficulty);
+      const all = await prisma.question.findMany({ where, select: { id: true } });
+      if (all.length === 0) return fail(res, 400, "当前条件下没有可组卷的已发布题目,请调整筛选条件");
+      const n = Math.min(Math.max(Number(count) || 10, 1), 50);
+      picked = all.sort(() => Math.random() - 0.5).slice(0, n).map((q) => q.id);
+    }
+    if (picked.length < 2) return fail(res, 400, "组卷题目不足(至少 2 道)");
+    if (aMode === "EXAM" && (!durationMin || Number(durationMin) <= 0)) return fail(res, 400, "模拟考模式必须填写时长(分钟)");
+
+    // 推断学科:优先用户选择,否则取多数
+    const qs = await prisma.question.findMany({ where: { id: { in: picked } }, select: { subject: true } });
+    const bySubj = new Map();
+    for (const q of qs) bySubj.set(q.subject, (bySubj.get(q.subject) || 0) + 1);
+    const subj = subject || [...bySubj.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+    const paper = await prisma.paper.create({
+      data: {
+        title: String(title || "").trim() || `${sourceKind === "wrongbook" ? "错题组卷" : "随机组卷"} ${new Date().toLocaleString("zh-CN", { hour12: false })}`,
+        subject: subj,
+        sourceType: null,
+        mode: aMode,
+        durationMin: aMode === "EXAM" ? Math.round(Number(durationMin)) : null,
+        questionIds: JSON.stringify(picked),
+        source: sourceKind === "wrongbook" ? "我的错题" : "学生自建·随机",
+        origin: "STUDENT",
+        kind: "CUSTOM",
+        status: "READY",
+        createdBy: req.user.id,
+      },
+    });
+    ok(res, { id: paper.id }, `已生成「${paper.title}」(${picked.length} 题),保存在「我的试卷」`);
+  })
+);
+
+// DELETE /api/papers/mine/:id — 删除自己的试卷(仅限本人,且无作答记录)
+router.delete(
+  "/mine/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const paper = await prisma.paper.findUnique({ where: { id: req.params.id } });
+    if (!paper || paper.origin !== "STUDENT" || paper.createdBy !== req.user.id) return fail(res, 404, "试卷不存在");
+    const used = await prisma.session.count({ where: { paperId: paper.id } });
+    if (used > 0) return fail(res, 400, "该试卷已有作答记录,不能删除");
+    await prisma.paper.delete({ where: { id: paper.id } });
+    ok(res, null, "试卷已删除");
   })
 );
 
@@ -305,6 +405,10 @@ router.get(
     const paper = await prisma.paper.findUnique({ where: { id: req.params.id } });
     if (!paper) return fail(res, 404, "试卷不存在");
     const isTeacher = ["TEACHER", "ADMIN"].includes(req.user.role);
+    // 学生自建卷仅创建者本人可见
+    if (paper.origin === "STUDENT" && paper.createdBy !== req.user.id) {
+      return fail(res, 403, "这不是您的试卷");
+    }
     if (!isTeacher && paper.status !== "READY") {
       return fail(res, 403, "该试卷尚未全部通过审核,暂不可作答");
     }

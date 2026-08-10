@@ -9,6 +9,17 @@ import {
 import { api, getUser } from "@/lib/api";
 import type { CreateSessionData, SessionSummary, StatsData } from "@/lib/types";
 
+interface MyPaper {
+  id: string;
+  title: string;
+  subject: string;
+  mode: string;
+  durationMin: number | null;
+  questionCount: number;
+  source: string | null;
+  createdAt: string;
+}
+
 export default function StudentHome() {
   const router = useRouter();
   const user = getUser();
@@ -25,6 +36,23 @@ export default function StudentHome() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // 我的试卷(学生自建,仅自己可见)
+  const [myPapers, setMyPapers] = useState<MyPaper[]>([]);
+  const [myMsg, setMyMsg] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [composeErr, setComposeErr] = useState("");
+  const [compose, setCompose] = useState({
+    title: "",
+    mode: "PRACTICE" as "PRACTICE" | "EXAM",
+    source: "random" as "random" | "wrongbook",
+    subject: "",
+    knowledgePointId: "",
+    difficulty: "",
+    count: "10",
+    durationMin: 40,
+  });
+
   useEffect(() => {
     api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
       setSessions(d.list.slice(0, 5));
@@ -34,6 +62,8 @@ export default function StudentHome() {
     api.get<{ list: { id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
     // 知识点库(供知识点下拉与掌握度"针对练习")
     api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
+    // 我的试卷
+    api.get<{ list: MyPaper[] }>("/papers/mine").then((d) => setMyPapers(d.list || [])).catch(() => {});
   }, []);
 
   async function start() {
@@ -95,6 +125,55 @@ export default function StudentHome() {
       setError(err instanceof Error ? err.message : "开卷失败");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ——— 我的试卷:组卷 / 删除 ———
+  function openCompose() {
+    setComposeErr("");
+    setComposeOpen(true);
+  }
+
+  async function createMyPaper() {
+    setComposeErr("");
+    if (compose.mode === "EXAM" && (!compose.durationMin || compose.durationMin <= 0)) {
+      setComposeErr("模拟考模式请填写时长(分钟)");
+      return;
+    }
+    setComposeBusy(true);
+    try {
+      await api.post("/papers/student", {
+        title: compose.title,
+        mode: compose.mode,
+        source: compose.source,
+        subject: compose.subject || undefined,
+        knowledgePointId: compose.knowledgePointId || undefined,
+        difficulty: compose.difficulty || undefined,
+        count: compose.count === "" ? undefined : Number(compose.count),
+        ...(compose.mode === "EXAM" ? { durationMin: compose.durationMin } : {}),
+      });
+      setComposeOpen(false);
+      setCompose({ title: "", mode: "PRACTICE", source: "random", subject: "", knowledgePointId: "", difficulty: "", count: "10", durationMin: 40 });
+      setMyMsg("组卷成功,已保存到「我的试卷」");
+      setTimeout(() => setMyMsg(""), 4000);
+      const d = await api.get<{ list: MyPaper[] }>("/papers/mine");
+      setMyPapers(d.list || []);
+    } catch (e) {
+      setComposeErr(e instanceof Error ? e.message : "组卷失败");
+    } finally {
+      setComposeBusy(false);
+    }
+  }
+
+  async function deleteMyPaper(id: string) {
+    if (!window.confirm("确认删除这张自己的试卷?")) return;
+    try {
+      await api.del(`/papers/mine/${id}`);
+      setMyPapers((prev) => prev.filter((p) => p.id !== id));
+      setMyMsg("试卷已删除");
+      setTimeout(() => setMyMsg(""), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
     }
   }
 
@@ -233,6 +312,46 @@ export default function StudentHome() {
         </div>
         {form.mode === "EXAM" && <p className="mt-3 text-xs text-slate-400">模拟考模式下,时间到将自动交卷,超时后无法继续作答。</p>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      </div>
+
+      {/* 我的试卷:学生自建,仅自己可见 */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-slate-700">我的试卷(仅自己可见)</h2>
+          <button onClick={openCompose} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            + 组卷
+          </button>
+        </div>
+        {myMsg && <p className="mt-2 text-sm text-emerald-600">{myMsg}</p>}
+        {myPapers.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">还没有自己的试卷。点「+ 组卷」可随机组卷或从错题本组卷。</p>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {myPapers.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {p.questionCount} 题 · {p.mode === "EXAM" ? `模拟考${p.durationMin ? `(限时 ${p.durationMin} 分钟)` : ""}` : "练习"}
+                    {p.subject ? ` · ${p.subject}` : ""} · {new Date(p.createdAt).toLocaleString("zh-CN", { hour12: false })}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => startPaper(p)}
+                    disabled={loading}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    开始
+                  </button>
+                  <button onClick={() => deleteMyPaper(p.id)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50">
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 试卷库:与教师端试卷管理一致的筛选(学科/套题类型) + 排序,点击直接开卷 */}
@@ -404,6 +523,152 @@ export default function StudentHome() {
           </table>
         )}
       </div>
+
+      {/* 组卷弹窗(随机组卷 / 错题组卷) */}
+      {composeOpen && (
+        <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => !composeBusy && setComposeOpen(false)}>
+          <div className="mt-10 w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800">学生组卷</h2>
+              <button onClick={() => !composeBusy && setComposeOpen(false)} className="text-slate-400 hover:text-slate-600" aria-label="关闭">✕</button>
+            </div>
+
+            {/* 组卷方式 */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCompose({ ...compose, source: "random" })}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  compose.source === "random" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                随机组卷
+              </button>
+              <button
+                type="button"
+                onClick={() => setCompose({ ...compose, source: "wrongbook" })}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  compose.source === "wrongbook" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                错题组卷
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block text-sm text-slate-600">试卷名称(留空自动命名)</label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500"
+                  value={compose.title}
+                  onChange={(e) => setCompose({ ...compose, title: e.target.value })}
+                  placeholder={`如:${compose.source === "wrongbook" ? "我的错题二刷" : "随机模拟一卷"}`}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">模式</label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                  value={compose.mode}
+                  onChange={(e) => setCompose({ ...compose, mode: e.target.value as "PRACTICE" | "EXAM" })}
+                >
+                  <option value="PRACTICE">练习(不限时)</option>
+                  <option value="EXAM">模拟考(限时)</option>
+                </select>
+              </div>
+              {compose.mode === "EXAM" && (
+                <div>
+                  <label className="mb-1 block text-sm text-slate-600">时长(分钟)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500"
+                    value={compose.durationMin || ""}
+                    onChange={(e) => setCompose({ ...compose, durationMin: e.target.value === "" ? 0 : Number(e.target.value) })}
+                    placeholder="自定义时长"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">科目</label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                  value={compose.subject}
+                  onChange={(e) => setCompose({ ...compose, subject: e.target.value, knowledgePointId: "" })}
+                >
+                  <option value="">全部科目</option>
+                  <option value="数学">数学</option>
+                  <option value="物理">物理</option>
+                  <option value="化学">化学</option>
+                  <option value="生物">生物</option>
+                </select>
+              </div>
+              {compose.source === "random" && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm text-slate-600">知识点</label>
+                    <select
+                      className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                      value={compose.knowledgePointId}
+                      onChange={(e) => setCompose({ ...compose, knowledgePointId: e.target.value })}
+                    >
+                      <option value="">全部知识点</option>
+                      {(() => {
+                        const pool = compose.subject === "TMUA" ? ["数学"] : compose.subject === "ESAT" ? ["数学", "物理"] : compose.subject ? [compose.subject] : null;
+                        const list = pool ? allKps.filter((k) => pool.includes(k.subject)) : allKps;
+                        return list.map((kp) => (
+                          <option key={kp.id} value={kp.id}>{pool ? kp.name : `[${kp.subject}] ${kp.name}`}</option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm text-slate-600">难度</label>
+                    <select
+                      className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                      value={compose.difficulty}
+                      onChange={(e) => setCompose({ ...compose, difficulty: e.target.value })}
+                    >
+                      <option value="">全部难度</option>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>难度 {n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">题量</label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                  value={compose.count}
+                  onChange={(e) => setCompose({ ...compose, count: e.target.value })}
+                >
+                  <option value="5">5 题</option>
+                  <option value="10">10 题</option>
+                  <option value="15">15 题</option>
+                  <option value="20">20 题</option>
+                  {compose.source === "wrongbook" && <option value="">全部错题</option>}
+                </select>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-400">
+              {compose.source === "wrongbook" ? "从你的错题本(已发布题目)中组卷,用于二刷巩固。" : "从题库已发布题目中按条件随机抽取。"}
+              组卷结果仅你自己可见,保存在「我的试卷」。
+            </p>
+            {composeErr && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{composeErr}</p>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setComposeOpen(false)} disabled={composeBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                取消
+              </button>
+              <button onClick={createMyPaper} disabled={composeBusy} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                {composeBusy ? "组卷中..." : "生成试卷"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

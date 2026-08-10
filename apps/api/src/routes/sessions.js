@@ -26,6 +26,13 @@ async function resolveQuestionIds(body) {
   if (body.paperId) {
     const paper = await prisma.paper.findUnique({ where: { id: body.paperId } });
     if (!paper) throw Object.assign(new Error("试卷不存在"), { code: 404 });
+    // 学生自建卷仅创建者本人可作答;普通卷需「可作答」状态
+    if (paper.origin === "STUDENT" && paper.createdBy !== body._userId) {
+      throw Object.assign(new Error("这不是您的试卷"), { code: 403 });
+    }
+    if (paper.origin !== "STUDENT" && paper.status !== "READY") {
+      throw Object.assign(new Error("该试卷暂不可作答"), { code: 400 });
+    }
     return JSON.parse(paper.questionIds || "[]");
   }
   if (Array.isArray(body.questionIds) && body.questionIds.length > 0) {
