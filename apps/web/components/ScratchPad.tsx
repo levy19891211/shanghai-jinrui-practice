@@ -1,8 +1,7 @@
 "use client";
 // 批注书写层(完全透明叠在题目上方直接手写,不遮题、不保存、不参与判分)。
 // 交互:拖动=书写;轻点=穿透点击(可正常选答案/切题)。工具栏右侧竖排、可拖动、颜色/粗细更清晰。
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
@@ -35,7 +34,7 @@ const SIZE_MAX = 14;
 const DRAW_THRESHOLD = 5; // 拖动超过该距离才开始书写,否则视为轻点(穿透点击)
 
 const TB_W = 58;
-const TB_H = 400;
+const TB_H = 300;
 
 /* ---------- SVG 线性图标 ---------- */
 function Svg({ children, title }: { children: ReactNode; title?: string }) {
@@ -123,11 +122,6 @@ export default function ScratchPad({
   const [tpos, setTpos] = useState<{ x: number; y: number } | null>(null);
   const initedRef = useRef(false);
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
-  // 颜色/粗细按钮锚点 + 弹窗位置(用 Portal 挂到 document.body,彻底脱离 toolbar 包含块)
-  const colorBtnRef = useRef<HTMLButtonElement>(null);
-  const sizeBtnRef = useRef<HTMLButtonElement>(null);
-  const [colorPos, setColorPos] = useState<{ left: number; top: number } | null>(null);
-  const [sizePos, setSizePos] = useState<{ left: number; top: number } | null>(null);
 
   const browse = tool === "browse";
 
@@ -203,33 +197,6 @@ export default function ScratchPad({
       setStrokes([]);
     }
   }, [open]);
-
-  // 弹窗位置:打开时根据按钮 getBoundingClientRect 计算(viewport 像素),Portal 用
-  useLayoutEffect(() => {
-    if (!colorOpen) { setColorPos(null); return; }
-    const btn = colorBtnRef.current;
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    const flip = r.left < 240;
-    const PW = 160;
-    setColorPos({
-      left: Math.max(8, flip ? r.right + 8 : r.left - PW - 8),
-      top: r.top,
-    });
-  }, [colorOpen]);
-
-  useLayoutEffect(() => {
-    if (!sizeOpen) { setSizePos(null); return; }
-    const btn = sizeBtnRef.current;
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    const flip = r.left < 240;
-    const PW = 192;
-    setSizePos({
-      left: Math.max(8, flip ? r.right + 8 : r.left - PW - 8),
-      top: r.top,
-    });
-  }, [sizeOpen]);
 
   // iPad/触屏防拖动:书写期间锁定文档 overscroll,避免拉动页面/回弹
   useEffect(() => {
@@ -407,6 +374,11 @@ export default function ScratchPad({
 
   const divider = <div className="my-0.5 h-px w-7 bg-slate-200" />;
 
+  // 工具栏展开(颜色/粗细面板)时加宽并左移,避免右侧出屏
+  const tbExpanded = colorOpen || sizeOpen;
+  const tbWidth = tbExpanded ? (sizeOpen ? 204 : 174) : 58;
+  const tbLeft = tpos ? Math.max(8, Math.min(tpos.x, window.innerWidth - tbWidth - 8)) : 8;
+
   return open ? (
     <>
       {/* 完全透明的批注层:只捕获书写,不遮题目 */}
@@ -428,12 +400,13 @@ export default function ScratchPad({
         />
       </div>
 
-      {/* 工具栏:固定定位、可拖动,默认右侧垂直居中 */}
+      {/* 工具栏:固定定位、可拖动,默认右侧垂直居中;展开颜色/粗细时自动加宽并左移 */}
       <div
         className="pointer-events-auto fixed z-50 flex flex-col items-center gap-0.5 rounded-2xl border border-slate-200/70 bg-white/90 p-1.5 shadow-[0_10px_34px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-md"
         style={{
-          left: tpos?.x ?? 8,
+          left: tbLeft,
           top: tpos?.y ?? 80,
+          width: tbWidth,
           touchAction: "none",
           userSelect: "none",
           WebkitUserSelect: "none",
@@ -458,34 +431,96 @@ export default function ScratchPad({
         {toolBtn("eraser", "橡皮(拖动擦除,轻点可点题)", <IconEraser />)}
         {divider}
 
-        {/* 颜色:弹出小窗口选色(Portal) */}
-        <div className="relative">
-          <button
-            ref={colorBtnRef}
-            onClick={() => { setColorOpen((o) => !o); setSizeOpen(false); }}
-            title="笔迹颜色"
-            className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
-              colorOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            }`}
-          >
-            <IconColor />
-            <span className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white" style={{ background: color }} />
-          </button>
-        </div>
+        {/* 颜色:展开在工具栏内 */}
+        <button
+          onClick={() => { setColorOpen((o) => !o); setSizeOpen(false); }}
+          title="笔迹颜色"
+          className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+            colorOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          }`}
+        >
+          <IconColor />
+          <span className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white" style={{ background: color }} />
+        </button>
 
-        {/* 粗细:弹出拖动条(Portal) */}
-        <div className="relative">
-          <button
-            ref={sizeBtnRef}
-            onClick={() => { setSizeOpen((o) => !o); setColorOpen(false); }}
-            title="笔尖粗细"
-            className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
-              sizeOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            }`}
-          >
-            <IconSize width={size} />
-          </button>
-        </div>
+        {/* 粗细:展开在工具栏内 */}
+        <button
+          onClick={() => { setSizeOpen((o) => !o); setColorOpen(false); }}
+          title="笔尖粗细"
+          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+            sizeOpen ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          }`}
+        >
+          <IconSize width={size} />
+        </button>
+        {divider}
+
+        {/* 展开的颜色/粗细内嵌面板(纯 flex 流式,无弹出层) */}
+        {colorOpen && (
+          <div className="my-1 w-[150px] rounded-xl border border-slate-200 bg-white p-2">
+            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-500">
+              颜色
+              <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
+            </p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {COLORS.map((c) => {
+                const active = color === c.v;
+                return (
+                  <button
+                    key={c.v}
+                    onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
+                    title={c.label}
+                    className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform ${
+                      active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
+                    }`}
+                    style={{ background: c.v }}
+                  >
+                    {active && <span className="text-xs font-bold text-white drop-shadow">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {sizeOpen && (
+          <div className="my-1 w-[180px] rounded-2xl border border-slate-200 bg-white p-3">
+            <p className="flex items-center justify-between text-xs font-medium text-slate-600">
+              笔尖粗细
+              <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-600">{Math.round(size * 10) / 10}px</span>
+            </p>
+            <input
+              type="range"
+              min={SIZE_MIN}
+              max={SIZE_MAX}
+              step={0.5}
+              value={size}
+              onChange={(e) => setSize(Number(e.target.value))}
+              className="mt-2.5 w-full accent-indigo-600"
+              title="拖动调整笔尖粗细"
+            />
+            <div className="mt-2 flex items-center justify-center rounded-lg bg-slate-50 py-2.5">
+              <span className="block rounded-full bg-slate-800" style={{ width: 100, height: Math.max(2, size) }} />
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-1">
+              {[
+                { l: "细", v: 2 },
+                { l: "中", v: 5 },
+                { l: "粗", v: 10 },
+              ].map((p) => (
+                <button
+                  key={p.l}
+                  onClick={() => setSize(p.v)}
+                  className={`rounded-md py-1 text-xs transition-colors ${
+                    size === p.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {p.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {divider}
 
         {actionBtn("撤销上一步", <IconUndo />, strokes.length === 0, undo)}
@@ -499,81 +534,6 @@ export default function ScratchPad({
           <IconClose />
         </button>
       </div>
-
-      {/* 颜色/粗细弹窗:Portal 挂到 document.body,完全脱离 toolbar 的 backdrop-filter 包含块 */}
-      {colorOpen && colorPos && createPortal(
-        <div
-          className="fixed z-[60] rounded-xl border border-slate-200/80 bg-white p-2 shadow-[0_10px_34px_rgba(15,23,42,0.18)]"
-          style={{ left: colorPos.left, top: colorPos.top, width: 160 }}
-        >
-          <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-500">
-            颜色
-            <span className="inline-block h-2.5 w-2.5 rounded-full border border-slate-200" style={{ background: color }} />
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {COLORS.map((c) => {
-              const active = color === c.v;
-              return (
-                <button
-                  key={c.v}
-                  onClick={() => { setColor(c.v); setTool("pen"); setColorOpen(false); }}
-                  title={c.label}
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform ${
-                    active ? "scale-110 ring-2 ring-indigo-500 ring-offset-1" : "hover:scale-105 hover:ring-1 hover:ring-slate-300"
-                  }`}
-                  style={{ background: c.v }}
-                >
-                  {active && <span className="text-xs font-bold text-white drop-shadow">✓</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {sizeOpen && sizePos && createPortal(
-        <div
-          className="fixed z-[60] rounded-2xl border border-slate-200/80 bg-white p-3 shadow-[0_10px_34px_rgba(15,23,42,0.18)]"
-          style={{ left: sizePos.left, top: sizePos.top, width: 192 }}
-        >
-          <p className="flex items-center justify-between text-xs font-medium text-slate-600">
-            笔尖粗细
-            <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-600">{Math.round(size * 10) / 10}px</span>
-          </p>
-          <input
-            type="range"
-            min={SIZE_MIN}
-            max={SIZE_MAX}
-            step={0.5}
-            value={size}
-            onChange={(e) => setSize(Number(e.target.value))}
-            className="mt-2.5 w-full accent-indigo-600"
-            title="拖动调整笔尖粗细"
-          />
-          <div className="mt-2 flex items-center justify-center rounded-lg bg-slate-50 py-2.5">
-            <span className="block rounded-full bg-slate-800" style={{ width: 100, height: Math.max(2, size) }} />
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-1">
-            {[
-              { l: "细", v: 2 },
-              { l: "中", v: 5 },
-              { l: "粗", v: 10 },
-            ].map((p) => (
-              <button
-                key={p.l}
-                onClick={() => setSize(p.v)}
-                className={`rounded-md py-1 text-xs transition-colors ${
-                  size === p.v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {p.l}
-              </button>
-            ))}
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* 弹窗遮罩:点外部关闭选色/粗细弹窗(工具栏在其上层,不受影响) */}
       {(colorOpen || sizeOpen) && (
