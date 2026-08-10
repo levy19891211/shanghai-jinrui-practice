@@ -1,8 +1,10 @@
 "use client";
-// 手写书写板(类似 Notability 的草稿纸):全屏 Canvas 手写,支持画笔/橡皮/颜色/粗细/撤销/清空。
-// 只作为草稿,不参与判分;strokes 按 persistKey 存 sessionStorage(可跨切题/刷新保留)。
+// 批注书写层(叠在题目上方直接手写):半透明纸面,不参与判分,不保存。
+// 工具栏竖排在屏幕右侧;「👆 浏览」模式下事件穿透,可正常答题/切题,不干扰做题界面的其他功能。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+
+type Tool = "browse" | "pen" | "eraser";
 
 interface Stroke {
   tool: "pen" | "eraser";
@@ -18,18 +20,19 @@ const SIZES = [
   { label: "粗", v: 9 },
 ];
 
-export default function ScratchPad({ open, onClose, persistKey }: { open: boolean; onClose: () => void; persistKey?: string }) {
+export default function ScratchPad({
+  open,
+  onClose,
+  onInteractivityChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  // 浏览模式下 true(事件穿透,可答题/切题);书写/橡皮下 false
+  onInteractivityChange?: (interactive: boolean) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [strokes, setStrokes] = useState<Stroke[]>(() => {
-    if (!persistKey) return [];
-    try {
-      const v = sessionStorage.getItem(`scratch-${persistKey}`);
-      return v ? (JSON.parse(v) as Stroke[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState(COLORS[0]);
   const [sizeIdx, setSizeIdx] = useState(1);
   const drawingRef = useRef(false);
@@ -37,6 +40,12 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
   const lastRef = useRef<{ x: number; y: number } | null>(null);
 
   const size = SIZES[sizeIdx].v;
+  const browse = tool === "browse";
+
+  // 浏览模式 ↔ 交互性同步给父级(用于键盘切题等)
+  useEffect(() => {
+    onInteractivityChange?.(browse);
+  }, [browse, onInteractivityChange]);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -46,7 +55,7 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const s of strokes) {
       if (s.points.length < 2) continue;
-      ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.95)" : s.color;
+      ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.85)" : s.color;
       ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -62,7 +71,7 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
     }
   }, [strokes]);
 
-  // 画布尺寸自适应(按 devicePixelRatio 保持清晰);打开时初始化
+  // 画布尺寸自适应(DPR 高清);打开时初始化
   useEffect(() => {
     if (!open) return;
     const canvas = canvasRef.current;
@@ -82,15 +91,14 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
     return () => window.removeEventListener("resize", resize);
   }, [open, redraw]);
 
-  // 持久化草稿
+  // 打开时重置为画笔,收起时清空草稿(不保存)
   useEffect(() => {
-    if (!persistKey) return;
-    try {
-      sessionStorage.setItem(`scratch-${persistKey}`, JSON.stringify(strokes));
-    } catch {
-      /* ignore */
+    if (open) {
+      setTool("pen");
+    } else {
+      setStrokes([]);
     }
-  }, [strokes, persistKey]);
+  }, [open]);
 
   const pos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -100,7 +108,7 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
   const drawSegment = (from: { x: number; y: number }, to: { x: number; y: number }, s: Stroke) => {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-    ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.95)" : s.color;
+    ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.85)" : s.color;
     ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -111,11 +119,11 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
   };
 
   const onDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (browse) return;
     e.preventDefault();
     drawingRef.current = true;
     const p = pos(e);
-    const s: Stroke = { tool, color, size, points: [p] };
-    currentRef.current = s;
+    currentRef.current = { tool, color, size, points: [p] };
     lastRef.current = p;
     canvasRef.current?.setPointerCapture(e.pointerId);
   };
@@ -141,61 +149,89 @@ export default function ScratchPad({ open, onClose, persistKey }: { open: boolea
   const undo = () => setStrokes((prev) => prev.slice(0, -1));
   const clear = () => setStrokes([]);
 
-  const btn =
-    "flex h-9 items-center justify-center rounded-lg px-2.5 text-sm text-white/90 transition hover:bg-white/15 disabled:opacity-40";
+  const toolBtn = (t: Tool, label: string, title: string, activeClass: string) => (
+    <button
+      onClick={() => setTool(t)}
+      className={`flex h-10 w-10 items-center justify-center rounded-xl text-lg transition ${tool === t ? activeClass : "text-white/80 hover:bg-white/15"}`}
+      title={title}
+    >
+      {label}
+    </button>
+  );
+
+  const divider = <span className="my-1 h-px w-6 bg-white/20" />;
 
   return open ? (
-    <div className="fixed inset-0 z-50" style={{ background: "rgba(255,255,255,0.90)" }}>
-      {/* 工具栏 */}
-      <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-2xl bg-slate-800/95 px-3 py-2 shadow-2xl ring-1 ring-white/10">
-        <button className={`${btn} ${tool === "pen" ? "bg-white/25" : ""}`} onClick={() => setTool("pen")} title="画笔">
-          ✏️
-        </button>
-        <button className={`${btn} ${tool === "eraser" ? "bg-white/25" : ""}`} onClick={() => setTool("eraser")} title="橡皮">
-          🧽
-        </button>
-        <span className="mx-1 h-5 w-px bg-white/20" />
-        {COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => { setColor(c); setTool("pen"); }}
-            className={`flex h-7 w-7 items-center justify-center rounded-full transition ${color === c && tool === "pen" ? "ring-2 ring-white" : "hover:ring-2 hover:ring-white/50"}`}
-            style={{ background: c }}
-            title={c === COLORS[0] ? "黑色" : c === COLORS[1] ? "蓝色" : c === COLORS[2] ? "红色" : "绿色"}
-          />
-        ))}
-        <span className="mx-1 h-5 w-px bg-white/20" />
-        {SIZES.map((s, i) => (
-          <button
-            key={s.label}
-            onClick={() => setSizeIdx(i)}
-            className={`h-8 rounded-lg px-2 text-xs ${sizeIdx === i ? "bg-white/25 text-white" : "text-white/60 hover:text-white"}`}
-            title={`笔触:${s.label}`}
-          >
-            {s.label}
-          </button>
-        ))}
-        <span className="mx-1 h-5 w-px bg-white/20" />
-        <button className={btn} onClick={undo} disabled={strokes.length === 0} title="撤销上一步">↩️</button>
-        <button className={btn} onClick={clear} disabled={strokes.length === 0} title="清空全部">🗑️</button>
-        <span className="mx-1 h-5 w-px bg-white/20" />
-        <button className={`${btn} text-amber-300 hover:bg-white/15`} onClick={onClose} title="收起书写板(查看题目,草稿保留)">
-          ✕ 收起
-        </button>
-      </div>
-
-      {/* 画布 */}
+    // 半透明纸面叠在题目上方;浏览模式下整层 pointer-events:none,点击穿透不影响答题
+    <div
+      className="fixed inset-0 z-50"
+      style={{ background: "rgba(255,255,255,0.5)", pointerEvents: browse ? "none" : "auto" }}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 touch-none"
+        style={{ pointerEvents: browse ? "none" : "auto" }}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
       />
 
-      <p className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/80 px-4 py-1.5 text-xs text-white/85">
-        在纸上书写草稿(不参与判分) · 「✕ 收起」查看题目,再次点「✍️ 书写」可继续
+      {/* 工具栏:右侧竖排 */}
+      <div className="pointer-events-auto absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-1 rounded-2xl bg-slate-800/95 px-2 py-2.5 shadow-2xl ring-1 ring-white/10">
+        {toolBtn("browse", "👆", "浏览/答题模式:可点击题目作答与切题", "bg-white/25")}
+        {toolBtn("pen", "✏️", "画笔", "bg-white/25")}
+        {toolBtn("eraser", "🧽", "橡皮", "bg-white/25")}
+        {divider}
+        {COLORS.map((c) => (
+          <button
+            key={c}
+            onClick={() => { setColor(c); setTool("pen"); }}
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition ${color === c && tool === "pen" ? "ring-2 ring-white" : "hover:ring-2 hover:ring-white/60"}`}
+            style={{ background: c }}
+            title={c === COLORS[0] ? "黑色" : c === COLORS[1] ? "蓝色" : c === COLORS[2] ? "红色" : "绿色"}
+          />
+        ))}
+        {divider}
+        {SIZES.map((s, i) => (
+          <button
+            key={s.label}
+            onClick={() => setSizeIdx(i)}
+            className={`h-8 w-9 rounded-lg text-xs ${sizeIdx === i ? "bg-white/25 text-white" : "text-white/60 hover:text-white"}`}
+            title={`笔触:${s.label}`}
+          >
+            {s.label}
+          </button>
+        ))}
+        {divider}
+        <button
+          onClick={undo}
+          disabled={strokes.length === 0}
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-lg text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+          title="撤销上一步"
+        >
+          ↩️
+        </button>
+        <button
+          onClick={clear}
+          disabled={strokes.length === 0}
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-lg text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+          title="清空全部批注"
+        >
+          🗑️
+        </button>
+        {divider}
+        <button
+          onClick={onClose}
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-lg text-amber-300 transition hover:bg-white/15"
+          title="收起批注(恢复完全答题)"
+        >
+          ✕
+        </button>
+      </div>
+
+      <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/70 px-4 py-1.5 text-xs text-white/85">
+        批注不参与判分 · 点「👆」可正常答题/切题,「✕」收起
       </p>
     </div>
   ) : null;
