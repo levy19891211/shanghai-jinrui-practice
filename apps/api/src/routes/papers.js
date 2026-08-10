@@ -196,7 +196,7 @@ router.get(
 );
 
 // ——— 学生自建卷(我的试卷,origin=STUDENT,仅创建者可见) ———
-// GET /api/papers/mine — 我的试卷列表
+// GET /api/papers/mine — 我的试卷列表(自建卷 + 从试卷库收藏的副本)
 router.get(
   "/mine",
   requireAuth,
@@ -206,17 +206,60 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
     ok(res, {
-      list: list.map((p) => ({
-        id: p.id,
-        title: p.title,
-        subject: p.subject,
-        mode: p.mode,
-        durationMin: p.durationMin,
-        questionCount: parseIds(p).length,
-        source: p.source,
-        createdAt: p.createdAt,
-      })),
+      list: list.map((p) => {
+        // 收藏副本:sourceKey 形如 collect:<原卷id>:<学生id>
+        let collectedFrom = null;
+        if (p.sourceKey && p.sourceKey.startsWith("collect:")) {
+          const parts = p.sourceKey.split(":");
+          collectedFrom = parts[1] || null;
+        }
+        return {
+          id: p.id,
+          title: p.title,
+          subject: p.subject,
+          mode: p.mode,
+          durationMin: p.durationMin,
+          questionCount: parseIds(p).length,
+          source: p.source,
+          createdAt: p.createdAt,
+          collectedFrom,
+        };
+      }),
     });
+  })
+);
+
+// POST /api/papers/mine/collect — 把试卷库中的套卷收藏到「我的试卷」
+// 生成一份个人副本(origin=STUDENT,sourceKey 唯一键),同一套卷每个学生只能收藏一次
+router.post(
+  "/mine/collect",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { paperId } = req.body || {};
+    if (!paperId) return fail(res, 400, "缺少试卷参数");
+    const paper = await prisma.paper.findUnique({ where: { id: paperId } });
+    if (!paper || paper.origin === "STUDENT") return fail(res, 404, "试卷不存在");
+    if (paper.status !== "READY") return fail(res, 400, "该试卷尚未「可作答」,暂不能收藏");
+    const key = `collect:${paper.id}:${req.user.id}`;
+    const existed = await prisma.paper.findFirst({ where: { sourceKey: key } });
+    if (existed) return fail(res, 400, "该套卷已在你的「我的试卷」中");
+    const copy = await prisma.paper.create({
+      data: {
+        title: paper.title,
+        subject: paper.subject,
+        sourceType: paper.sourceType,
+        mode: paper.mode,
+        durationMin: paper.durationMin,
+        questionIds: paper.questionIds,
+        source: "收藏自试卷库",
+        origin: "STUDENT",
+        kind: paper.kind === "OFFICIAL" ? "OFFICIAL" : "CUSTOM",
+        status: "READY",
+        createdBy: req.user.id,
+        sourceKey: key,
+      },
+    });
+    ok(res, { id: copy.id }, `已将「${paper.title}」加入「我的试卷」`);
   })
 );
 

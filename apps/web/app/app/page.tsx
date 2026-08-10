@@ -18,6 +18,7 @@ interface MyPaper {
   questionCount: number;
   source: string | null;
   createdAt: string;
+  collectedFrom: string | null; // 收藏副本指向的试卷库原卷 id;自建卷为 null
 }
 
 export default function StudentHome() {
@@ -184,6 +185,20 @@ export default function StudentHome() {
     }
   }
 
+  // 收藏试卷库中的套卷到「我的试卷」
+  async function collectPaper(paperId: string) {
+    setError("");
+    try {
+      await api.post("/papers/mine/collect", { paperId });
+      setMyMsg("已加入「我的试卷」");
+      setTimeout(() => setMyMsg(""), 4000);
+      const d = await api.get<{ list: MyPaper[] }>("/papers/mine");
+      setMyPapers(d.list || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "收藏失败");
+    }
+  }
+
   // 试卷库:筛选(学科/套题类型) + 排序(最新/名称自然序),与教师端一致
   const libPapers = useMemo(() => {
     let arr = papers.filter((p) => {
@@ -217,6 +232,9 @@ export default function StudentHome() {
   const radarData = (stats?.byTopic ?? [])
     .filter((t) => typeof t.correctRate === "number")
     .map((t) => ({ topic: t.topic, rate: t.correctRate }));
+
+  // 已收藏到「我的试卷」的试卷库原卷 id
+  const collectedIds = new Set(myPapers.filter((p) => p.collectedFrom).map((p) => p.collectedFrom as string));
 
   return (
     <div className="space-y-6">
@@ -337,7 +355,10 @@ export default function StudentHome() {
             {myPapers.map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
+                    {p.collectedFrom && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">收藏</span>}
+                  </div>
                   <p className="mt-1 text-xs text-slate-500">
                     {p.questionCount} 题 · {p.mode === "EXAM" ? `模拟考${p.durationMin ? `(限时 ${p.durationMin} 分钟)` : ""}` : "练习"}
                     {p.subject ? ` · ${p.subject}` : ""} · {new Date(p.createdAt).toLocaleString("zh-CN", { hour12: false })}
@@ -404,31 +425,47 @@ export default function StudentHome() {
           <p className="mt-4 text-sm text-slate-400">该分类下暂无试卷。</p>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {libPapers.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => startPaper(p)}
-                disabled={loading}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-60"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
-                    {p.kind === "OFFICIAL" ? (
-                      <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[11px] font-medium text-teal-600">原版</span>
-                    ) : (
-                      <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">组卷</span>
-                    )}
+            {libPapers.map((p) => {
+              const collected = collectedIds.has(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-300 hover:bg-indigo-50/40"
+                >
+                  <button
+                    onClick={() => startPaper(p)}
+                    disabled={loading}
+                    className="min-w-0 flex-1 text-left disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
+                      {p.kind === "OFFICIAL" ? (
+                        <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[11px] font-medium text-teal-600">原版</span>
+                      ) : (
+                        <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">组卷</span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {p.questionCount} 题 · {p.mode === "EXAM" ? "模拟考" : "练习"}
+                      {p.sourceType ? ` · ${p.sourceType}` : ""}
+                      {p.subject ? ` · ${p.subject}` : ""}
+                    </p>
+                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-xs font-medium text-indigo-600">{p.mode === "EXAM" ? "开始模考 →" : "开始练习 →"}</span>
+                    <button
+                      onClick={() => collectPaper(p.id)}
+                      disabled={loading || collected}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed ${
+                        collected ? "bg-emerald-50 text-emerald-600" : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {collected ? "✓ 已收藏" : "＋ 加入我的试卷"}
+                    </button>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {p.questionCount} 题 · {p.mode === "EXAM" ? "模拟考" : "练习"}
-                    {p.sourceType ? ` · ${p.sourceType}` : ""}
-                    {p.subject ? ` · ${p.subject}` : ""}
-                  </p>
                 </div>
-                <span className="shrink-0 text-xs font-medium text-indigo-600">{p.mode === "EXAM" ? "开始模考 →" : "开始练习 →"}</span>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
