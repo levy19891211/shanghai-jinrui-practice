@@ -1,5 +1,15 @@
 # 版本历史
 
+## V2.4.27 (2026-08-10) — 修复导入题目丢失题源标签(TMUA/ESAT/NSAA)
+
+- **根因**:`finalizeRow` 透传字段里没有 `sourceType`,导致所有 PDF/Excel/Word 导入的题目在收尾步骤丢掉题源标签(JSON 粘贴导入不走 finalizeRow,所以有标签)。
+- **修复**:
+  - `finalizeRow` 补上 `sourceType` 透传;
+  - Excel 字段别名增加「题源 / sourceType」;
+  - `importRows` 把 `subject=TMUA` 等题源词自动归到 `sourceType`,科目落为中文(数学)。
+- **存量数据**:`fix_sourcetype.cjs` 按 `paper/source/subject` 文本推导回填——题目 **295 条**(TMUA 276 / NSAA 19)、试卷 **16 张**。
+- 验证:`node --check` 通过;线上题库管理列表的 TMUA/NSAA 标签已恢复。
+
 ## V2.4.26 (2026-08-10) — 题库管理新增「图片识别录入」单题
 
 - 在题库管理「+ 新建题目」旁新增独立的 **「📷 图片识别」** 入口(绿色描边按钮,与手工新建明显区分)。

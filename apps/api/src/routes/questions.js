@@ -251,6 +251,11 @@ async function importRows(req, rows, onProgress) {
         : String(r.options || "").split(/[;；]/).map((s) => s.trim()).filter(Boolean);
       // 学科归一化(视觉模型可能输出 Chemistry/Physics 等英文,映射到中文学科)
       r.subject = normalizeSubject(r.subject);
+      // 题源词(如 Word/Excel 里 Subject: TMUA)归到 sourceType,科目落到中文学科(TMUA/ESAT→数学)
+      if (/^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)$/i.test(String(r.subject || ""))) {
+        if (!r.sourceType) r.sourceType = String(r.subject).toUpperCase();
+        r.subject = "数学";
+      }
       // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
       const stem = cleanUnits(String(r.stem || ""));
       const cleanOpts = options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))));

@@ -11,6 +11,7 @@ import { normalizeNewlines } from "./text-clean.js";
 // 字段中文/英文别名 → 标准字段名
 const FIELD_ALIASES = {
   subject: ["subject", "学科"],
+  sourceType: ["sourceType", "题源"],
   paper: ["paper", "试卷"],
   topic: ["topic", "知识点", "topic知识点"],
   difficulty: ["difficulty", "难度"],
@@ -125,6 +126,9 @@ export function finalizeRow(raw) {
   const answer = mapAnswerToOptionText(raw.answer, options);
   return {
     subject: raw.subject ? normalizeNewlines(String(raw.subject)) : "",
+    // 必须透传 sourceType(TMUA/ESAT/NSAA...):历史 bug——finalizeRow 未带该字段,
+    // 导致所有 PDF/Excel/Word 导入的题目都丢掉题源标签(JSON 粘贴导入不走这里所以没事)
+    sourceType: raw.sourceType ? normalizeNewlines(String(raw.sourceType)) : null,
     paper: raw.paper ? normalizeNewlines(String(raw.paper)) : null,
     topic: raw.topic ? normalizeNewlines(String(raw.topic)) : "",
     difficulty: raw.difficulty != null && raw.difficulty !== "" ? Number(raw.difficulty) || 3 : 3,
