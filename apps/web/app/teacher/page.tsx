@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
+import { fetchSourceTypes, DEFAULT_SOURCE_TYPES } from "@/lib/sourceTypes";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
 
@@ -138,6 +139,10 @@ export default function TeacherPage() {
   const [paperId, setPaperId] = useState("");
   // 知识点库(按表单学科加载,供多选归类)
   const [kps, setKps] = useState<{ id: string; name: string }[]>([]);
+  const [sourceTypes, setSourceTypes] = useState<string[]>([...DEFAULT_SOURCE_TYPES]);
+  useEffect(() => {
+    fetchSourceTypes().then(setSourceTypes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!showForm) return;
@@ -1303,13 +1308,20 @@ Answer: B
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-slate-600">题源(考试类型)</label>
-                <select className={`${input} ui-select`} value={form.sourceType} onChange={(e) => setForm({ ...form, sourceType: e.target.value })}>
-                  <option value="">无</option>
-                  <option value="TMUA">TMUA</option>
-                  <option value="ESAT">ESAT</option>
-                  <option value="NSAA">NSAA</option>
-                </select>
+                <label className="mb-1 block text-sm text-slate-600">题源(考试类型,可输入自定义)</label>
+                <input
+                  className={input}
+                  list="tp-source-types"
+                  value={form.sourceType}
+                  onChange={(e) => setForm({ ...form, sourceType: e.target.value })}
+                  placeholder="TMUA / ESAT / NSAA / MAT / 其他…"
+                />
+                <datalist id="tp-source-types">
+                  <option value="" />
+                  {sourceTypes.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">试卷/部分</label>

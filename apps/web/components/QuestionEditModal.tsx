@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
+import { fetchSourceTypes } from "@/lib/sourceTypes";
 import type { Question } from "@/lib/types";
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-indigo-500";
@@ -52,6 +53,10 @@ export default function QuestionEditModal({
     status: q?.status || "PENDING_REVIEW",
   }));
   const [kps, setKps] = useState<{ id: string; name: string; subject: string }[]>([]);
+  const [sourceTypes, setSourceTypes] = useState<string[]>([]);
+  useEffect(() => {
+    fetchSourceTypes().then(setSourceTypes).catch(() => {});
+  }, []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -178,13 +183,20 @@ export default function QuestionEditModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-600">题源(考试类型)</label>
-            <select className={`${input} ui-select`} value={form.sourceType} onChange={(e) => setForm({ ...form, sourceType: e.target.value })}>
-              <option value="">无</option>
-              <option value="TMUA">TMUA</option>
-              <option value="ESAT">ESAT</option>
-              <option value="NSAA">NSAA</option>
-            </select>
+            <label className="mb-1 block text-sm text-slate-600">题源(考试类型,可输入自定义)</label>
+            <input
+              className={input}
+              list="qem-source-types"
+              value={form.sourceType}
+              onChange={(e) => setForm({ ...form, sourceType: e.target.value })}
+              placeholder="TMUA / ESAT / NSAA / MAT / 其他…"
+            />
+            <datalist id="qem-source-types">
+              <option value="" />
+              {sourceTypes.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-600">试卷/部分</label>

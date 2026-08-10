@@ -634,6 +634,18 @@ router.post(
 );
 
 // GET /api/questions/import-task/:taskId — 轮询导入任务进度(任务式导入用)
+// 返回题库中所有已出现的题源(去重),供前端下拉提示;缺失时返回空数组
+router.get(
+  "/source-types",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const rows = await prisma.question.groupBy({ by: ["sourceType"], where: { sourceType: { not: null } } });
+    const list = rows.map((r) => r.sourceType).filter(Boolean).sort();
+    ok(res, { list });
+  })
+);
+
 router.get(
   "/import-task/:taskId",
   requireAuth,

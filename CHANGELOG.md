@@ -1,5 +1,9 @@
 # 版本历史
 
+## V2.4.66 (2026-08-11) — 题库编辑题源支持自定义输入
+- 题库编辑(题目弹窗 QuestionEditModal 与老师题库页内联编辑)的「题源(考试类型)」由固定下拉改为可输入输入框 + datalist 提示,老师可自由输入任意题源(如以前缺失的 MAT / 新题源)。
+- 新增后端接口 GET /api/questions/source-types 返回题库中已存在的题源(去重),前端 datalist 合并预设(TMUA/ESAT/NSAA/MAT/BMAT/STEP/PAT/ENGAA)自动补全,历史导入题源也会出现在候选里。
+
 ## V2.4.65 (2026-08-10) — 修复 MAT 选项正文首字母 A/C 被视觉模型误删
 - 根因:vision.js prompt 要求 options 去掉选项标号前缀,但模型过度清洗,把题干中图形编号 A/B/C/D 也当标号删了;导致选项 A/C 首字母丢失,answer 也随之错误。
 - 修复:细化 SYSTEM_PROMPT,明确只去掉 "A."/"A)"/"A " 标准标号,不要删除正文本身开头的单个字母 A/B/C/D;并给出 "A and D..." 示例。
