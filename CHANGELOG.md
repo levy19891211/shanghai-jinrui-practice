@@ -1,5 +1,10 @@
 # 版本历史
 
+## V2.4.65 (2026-08-10) — 修复 MAT 选项正文首字母 A/C 被视觉模型误删
+- 根因:vision.js prompt 要求 options 去掉选项标号前缀,但模型过度清洗,把题干中图形编号 A/B/C/D 也当标号删了;导致选项 A/C 首字母丢失,answer 也随之错误。
+- 修复:细化 SYSTEM_PROMPT,明确只去掉 "A."/"A)"/"A " 标准标号,不要删除正文本身开头的单个字母 A/B/C/D;并给出 "A and D..." 示例。
+- 数据修复:题目 id `cmsnb84ej006cbicc15dn5mie`(MAT curve sketch)options 与 answer 已回填正确值;扫描同卷/同批其他 MAT 题未发现同类问题。
+
 ## V2.4.64 (2026-08-10) — 修复 MAT 批量导入后学科(subject)为空导致试卷不可见
 - 根因:PDF 导入时视觉模型把 MAT 题的 subject 误读成题源词(归到 sourceType),学科 subject 因此为空;`unifyFileMeta` 仅对 TMUA 兜底为"数学",MAT/BMAT/STEP/PAT/ENGAA 无兜底,导致题与试卷 subject 为空。
 - 后果:老师端试卷列表按 subject 过滤,MAT 卷(subject 空)不出现在"数学"分类下,看似"导入失败"。
