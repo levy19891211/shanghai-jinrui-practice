@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
+import ScratchPad from "@/components/ScratchPad";
 import type { GradeResult, QuizQuestion, SessionDetail } from "@/lib/types";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -49,6 +50,8 @@ export default function PracticePage() {
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const submittedRef = useRef(false);
+  // 手写书写板(类似 Notability 草稿纸)
+  const [scratchOpen, setScratchOpen] = useState(false);
 
   const isExam = !!deadline;
 
@@ -140,16 +143,17 @@ export default function PracticePage() {
     return () => clearTimeout(t);
   }, [remaining, detail, result, submit]);
 
-  // 键盘导航:←/→ 切题
+  // 键盘导航:←/→ 切题(书写板打开时禁用,避免误切题)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (scratchOpen) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "ArrowLeft") setCurrent((c) => Math.max(0, c - 1));
       if (e.key === "ArrowRight") setCurrent((c) => Math.min(questions.length - 1, c + 1));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [questions.length]);
+  }, [questions.length, scratchOpen]);
 
   function choose(selected: string) {
     if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
@@ -395,6 +399,16 @@ export default function PracticePage() {
       <p className="mt-3 text-center text-xs text-[#8a8377]">
         支持键盘 ← → 切换题目 · 作答实时保存,刷新不丢失
       </p>
+
+      {/* 手写书写板:浮动入口 + 全屏草稿画布 */}
+      <button
+        onClick={() => setScratchOpen(true)}
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-1.5 rounded-full bg-[#00467F] px-4 py-3 text-sm font-medium text-white shadow-xl ring-1 ring-white/20 transition hover:bg-[#1f6fb2]"
+        title="打开书写板,在草稿纸上书写/演算"
+      >
+        <span className="text-base leading-none">✍️</span> 书写
+      </button>
+      <ScratchPad open={scratchOpen} onClose={() => setScratchOpen(false)} persistKey={String(id)} />
     </div>
   );
 }
