@@ -287,16 +287,26 @@ export default function TeacherPage() {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
 
-  // 从「试卷管理」跳转过来:?edit=<id> → 列表加载后自动打开该题的编辑弹窗
+  // 从「试卷管理」跳转过来:?edit=<id> → 自动打开该题的编辑弹窗
   useEffect(() => {
     if (!list.length) return;
     const id = new URLSearchParams(window.location.search).get("edit");
     if (!id) return;
+    const cleanUrl = () => window.history.replaceState(null, "", window.location.pathname);
     const q = list.find((x) => x.id === id);
     if (q) {
       openEdit(q);
-      window.history.replaceState(null, "", window.location.pathname);
+      cleanUrl();
+      return;
     }
+    // 目标题可能不在当前页(题库分页 pageSize=50 或被筛选),按 id 直接拉取并打开
+    api
+      .get<Question>(`/questions/${id}`)
+      .then((q2) => {
+        openEdit(q2);
+        cleanUrl();
+      })
+      .catch(() => cleanUrl());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.length]);
 
