@@ -51,7 +51,9 @@ export default function StudentHome() {
     difficulty: "",
     count: "10",
     durationMin: 40,
+    topics: [] as string[], // 错题组卷:按知识点多选
   });
+  const [wrongTopics, setWrongTopics] = useState<{ topic: string; count: number }[]>([]);
 
   useEffect(() => {
     api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
@@ -132,6 +134,10 @@ export default function StudentHome() {
   function openCompose() {
     setComposeErr("");
     setComposeOpen(true);
+    // 错题知识点汇总(供「按错题知识点组卷」多选)
+    api.get<{ list: { topic: string; count: number }[] }>("/me/wrongbook/topics")
+      .then((d) => setWrongTopics(d.list || []))
+      .catch(() => setWrongTopics([]));
   }
 
   async function createMyPaper() {
@@ -150,10 +156,11 @@ export default function StudentHome() {
         knowledgePointId: compose.knowledgePointId || undefined,
         difficulty: compose.difficulty || undefined,
         count: compose.count === "" ? undefined : Number(compose.count),
+        topics: compose.source === "wrongbook" ? compose.topics : undefined,
         ...(compose.mode === "EXAM" ? { durationMin: compose.durationMin } : {}),
       });
       setComposeOpen(false);
-      setCompose({ title: "", mode: "PRACTICE", source: "random", subject: "", knowledgePointId: "", difficulty: "", count: "10", durationMin: 40 });
+      setCompose({ title: "", mode: "PRACTICE", source: "random", subject: "", knowledgePointId: "", difficulty: "", count: "10", durationMin: 40, topics: [] });
       setMyMsg("组卷成功,已保存到「我的试卷」");
       setTimeout(() => setMyMsg(""), 4000);
       const d = await api.get<{ list: MyPaper[] }>("/papers/mine");
@@ -652,6 +659,45 @@ export default function StudentHome() {
                 </select>
               </div>
             </div>
+
+            {compose.source === "wrongbook" && (
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-sm text-slate-600">按知识点筛选(可多选,留空 = 全部错题)</label>
+                  {compose.topics.length > 0 && (
+                    <button onClick={() => setCompose({ ...compose, topics: [] })} className="text-xs text-indigo-600 hover:underline">
+                      清空选择({compose.topics.length})
+                    </button>
+                  )}
+                </div>
+                {wrongTopics.length === 0 ? (
+                  <p className="text-xs text-slate-400">错题本中暂无可组卷的已发布题目。</p>
+                ) : (
+                  <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                    {wrongTopics.map((t) => {
+                      const on = compose.topics.includes(t.topic);
+                      return (
+                        <button
+                          type="button"
+                          key={t.topic}
+                          onClick={() =>
+                            setCompose((c) => ({
+                              ...c,
+                              topics: on ? c.topics.filter((x) => x !== t.topic) : [...c.topics, t.topic],
+                            }))
+                          }
+                          className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                            on ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {t.topic}({t.count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <p className="mt-3 text-xs text-slate-400">
               {compose.source === "wrongbook" ? "从你的错题本(已发布题目)中组卷,用于二刷巩固。" : "从题库已发布题目中按条件随机抽取。"}

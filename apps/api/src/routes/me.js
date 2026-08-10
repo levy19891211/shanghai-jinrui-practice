@@ -49,6 +49,29 @@ router.get(
   })
 );
 
+// GET /api/me/wrongbook/topics — 错题本知识点汇总(供「按错题知识点组卷」多选)
+router.get(
+  "/wrongbook/topics",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const wb = await prisma.wrongBook.findMany({
+      where: { studentId: req.user.id },
+      include: { question: { select: { topic: true, status: true } } },
+    });
+    const agg = new Map();
+    for (const w of wb) {
+      if (w.question.status !== "PUBLISHED") continue;
+      const t = String(w.question.topic || "").trim() || "未分类";
+      agg.set(t, (agg.get(t) || 0) + 1);
+    }
+    ok(res, {
+      list: [...agg.entries()]
+        .map(([topic, count]) => ({ topic, count }))
+        .sort((a, b) => b.count - a.count),
+    });
+  })
+);
+
 // POST /api/me/wrongbook/:questionId/master — 标记掌握
 router.post(
   "/wrongbook/:questionId/master",

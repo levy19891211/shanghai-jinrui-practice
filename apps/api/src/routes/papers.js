@@ -225,20 +225,34 @@ router.post(
   "/student",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { title, mode, durationMin, source, subject, knowledgePointId, difficulty, count } = req.body || {};
+    const { title, mode, durationMin, source, subject, knowledgePointId, difficulty, count, topics } = req.body || {};
     const aMode = mode === "EXAM" ? "EXAM" : "PRACTICE";
     const sourceKind = source === "wrongbook" ? "wrongbook" : "random";
 
     let picked = [];
     if (sourceKind === "wrongbook") {
-      // 从学生错题本中选已发布题目
+      // 从学生错题本中选已发布题目(支持按科目 / 知识点多选过滤)
       const wb = await prisma.wrongBook.findMany({
         where: { studentId: req.user.id },
-        include: { question: { select: { id: true, subject: true, status: true } } },
+        include: { question: { select: { id: true, subject: true, status: true, topic: true, topicIds: true } } },
       });
       let list = wb.map((w) => w.question).filter((q) => q.status === "PUBLISHED");
       if (subject) list = list.filter((q) => q.subject === subject);
-      if (list.length === 0) return fail(res, 400, "错题本中暂无可组卷的已发布题目");
+      if (Array.isArray(topics) && topics.length) {
+        const selected = new Set(topics.map((t) => String(t).trim()).filter(Boolean));
+        const kps = await prisma.knowledgePoint.findMany({ select: { id: true, name: true } });
+        const kpNameById = new Map(kps.map((k) => [k.id, k.name]));
+        list = list.filter((q) => {
+          if (selected.has(q.topic)) return true;
+          try {
+            const qIds = JSON.parse(q.topicIds || "[]");
+            return qIds.some((id) => selected.has(kpNameById.get(id)));
+          } catch {
+            return false;
+          }
+        });
+      }
+      if (list.length === 0) return fail(res, 400, "当前筛选条件下错题本中没有可组卷的已发布题目");
       const n = Number(count);
       picked = (n && n > 0 ? list.sort(() => Math.random() - 0.5).slice(0, n) : list).map((q) => q.id);
     } else {
