@@ -9,6 +9,7 @@ import {
 import { api, getUser } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import type { SessionSummary, WrongItem, StatsData, GrowthData } from "@/lib/types";
+import LangGrowthPanel, { type LangAssignment } from "@/components/LangGrowthPanel";
 
 type Assignment = {
   id: string;
@@ -54,10 +55,13 @@ export default function PersonalSpacePage() {
   const router = useRouter();
   const user = getUser();
   const [tab, setTab] = useState<Tab>("assignments");
+  // 界面切换:笔试成长 / 语言成长
+  const [mode, setMode] = useState<"subject" | "language">("subject");
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [subjectSessions, setSubjectSessions] = useState<SessionSummary[]>([]);
   const [langSessions, setLangSessions] = useState<LangSession[]>([]);
+  const [langAssignments, setLangAssignments] = useState<LangAssignment[]>([]);
   const [byTopic, setByTopic] = useState<{ topic: string; attempts: number; correctRate: number }[]>([]);
   const [bySubject, setBySubject] = useState<{ subject: string; attempts: number; correctRate: number }[]>([]);
   const [byMode, setByMode] = useState<{ mode: string; attempts: number; correctRate: number }[]>([]);
@@ -92,6 +96,11 @@ export default function PersonalSpacePage() {
         setAssignments(a.list || []);
         setSubjectSessions(s.list || []);
         setLangSessions(ls.list || []);
+        // 语言作业(标记 isLanguage,走语言会话入口)
+        api
+          .get<{ list: LangAssignment[] }>("/language/my-assignments")
+          .then((d) => setLangAssignments((d.list || []).map((x) => ({ ...x, isLanguage: true }))))
+          .catch(() => {});
         setByTopic(stats.byTopic || []);
         setBySubject(stats.bySubject || []);
         setByMode(stats.byMode || []);
@@ -188,8 +197,9 @@ export default function PersonalSpacePage() {
     }
   }
 
-  const pendingAssigns = assignments.filter((a) => a.status === "PENDING" || a.status === "IN_PROGRESS");
-  const pastAssigns = assignments.filter((a) => a.status === "SUBMITTED" || a.status === "EXPIRED" || (a.dueAt && new Date(a.dueAt).getTime() < Date.now()));
+  // 笔试作业(语言作业已独立到「语言成长」界面)
+  const pendingAssigns = assignments.filter((a) => !a.isLanguage && (a.status === "PENDING" || a.status === "IN_PROGRESS"));
+  const pastAssigns = assignments.filter((a) => !a.isLanguage && (a.status === "SUBMITTED" || a.status === "EXPIRED" || (a.dueAt && new Date(a.dueAt).getTime() < Date.now())));
   const sessById = useMemo(() => {
     const m = new Map<string, SessionSummary>();
     subjectSessions.forEach((s) => m.set(s.id, s));
@@ -356,15 +366,39 @@ export default function PersonalSpacePage() {
         <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
-        {tabBtn("grades", "📈", "成绩历史", subjectSessions.length + langSessions.length)}
-        {tabBtn("analysis", "📊", "学情分析", weakTopics.filter((t) => t.correctRate < 70).length)}
-        {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
+      {/* 笔试 / 语言 独立界面切换 */}
+      <div className="inline-flex rounded-2xl bg-slate-100 p-1">
+        <button
+          onClick={() => setMode("subject")}
+          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+            mode === "subject" ? "bg-white text-indigo-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          📝 笔试成长
+        </button>
+        <button
+          onClick={() => setMode("language")}
+          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+            mode === "language" ? "bg-white text-amber-600 shadow-md ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          🗣️ 语言成长
+        </button>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
+      {mode === "language" ? (
+        <LangGrowthPanel sessions={langSessions} assignments={langAssignments} onStart={(a) => startAssignment(a as unknown as Assignment)} />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
+            {tabBtn("grades", "📈", "成绩历史", subjectSessions.length)}
+            {tabBtn("analysis", "📊", "学情分析", weakTopics.filter((t) => t.correctRate < 70).length)}
+            {tabBtn("wrong", "📒", "错题本", pendingWrong.length)}
+          </div>
+
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
 
       {!loading && tab === "assignments" && (
         <div className="space-y-6">
@@ -452,35 +486,13 @@ export default function PersonalSpacePage() {
             </div>
           )}
 
-          {/* 学科成绩历史 + 语言成绩历史 合并 */}
+          {/* 学科成绩历史(语言成绩已独立到「语言成长」界面) */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-medium text-slate-700">全部成绩记录 ({subjectSessions.length + langSessions.length})</h2>
-            {subjectSessions.length + langSessions.length === 0 ? (
+            <h2 className="text-sm font-medium text-slate-700">笔试成绩记录 ({subjectSessions.length})</h2>
+            {subjectSessions.length === 0 ? (
               <p className="mt-4 text-sm text-slate-400">暂无记录。</p>
             ) : (
               <div className="mt-4 space-y-2">
-                {langSessions.map((s) => (
-                  <div key={`L${s.id}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                    <span className="shrink-0 rounded-md bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">语言</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700">{s.paper?.title || "语言练习"}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{EXAM_LABEL[s.examType] || s.examType} · {SKILL_LABEL[s.skill] || s.skill} · {new Date(s.startedAt).toLocaleString("zh-CN", { hour12: false })}</p>
-                    </div>
-                    <div className="text-right">
-                      {s.band !== null && s.band !== undefined ? (
-                        <span className="text-sm font-bold text-indigo-600">Band {s.band}</span>
-                      ) : s.submittedAt ? (
-                        <span className="text-xs text-amber-600">待教师批改</span>
-                      ) : (
-                        <span className="text-xs text-slate-400">未提交</span>
-                      )}
-                      {s.correctCount !== null && s.total ? <span className="block text-xs text-slate-400">{s.correctCount}/{s.total}</span> : null}
-                    </div>
-                    {s.submittedAt && (
-                      <button onClick={() => router.push(`/app/language/practice/${s.id}`)} className="shrink-0 text-xs text-indigo-600 hover:underline">查看</button>
-                    )}
-                  </div>
-                ))}
                 {subjectSessions.map((s) => (
                   <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                     <span className="shrink-0 rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{s.mode === "EXAM" ? "模考" : "练习"}</span>
@@ -788,6 +800,8 @@ export default function PersonalSpacePage() {
             </>
           )}
         </div>
+      )}
+    </>
       )}
     </div>
   );
