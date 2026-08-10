@@ -147,6 +147,7 @@ model Session {
   assignment   Assignment?   @relation(fields: [assignmentId], references: [id])
   mode         String
   durationMin  Int? // EXAM 模式的限时时长(分钟),超时后不可再作答
+  questionIds  String? // 本次会话全部题目 id(JSON 数组),用于交卷后补齐未答题展示错题
   score        Float?
   total        Int?
   correctCount Int?

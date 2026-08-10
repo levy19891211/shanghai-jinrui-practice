@@ -204,6 +204,8 @@ export default function PracticePage() {
     const correct = detail.correctCount ?? 0;
     const wrong = items.filter((d) => d.selected != null && !d.isCorrect).length;
     const blank = items.filter((d) => d.selected == null).length;
+    // 错题回顾:答错 + 未答
+    const wrongItems = items.filter((d) => !d.isCorrect);
     const pct = detail.total ? Math.round((correct / detail.total) * 100) : 0;
     const grade = gradeOf(pct);
 
@@ -238,6 +240,56 @@ export default function PracticePage() {
               </button>
             </div>
           </div>
+          {/* 错题回顾:答错 + 未答,含答案与解析 */}
+          {wrongItems.length > 0 && (
+            <div className="space-y-4 px-6 pb-2">
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-bold text-[#c62828]">📕 错题回顾</h2>
+                <p className="mt-0.5 text-xs text-[#8a8377]">答错与未答的题目共 {wrongItems.length} 道，含正确答案与解析，便于针对性复习。</p>
+              </div>
+              {wrongItems.map((d, i) => (
+                <div key={d.questionId} className="rounded border border-[#c62828] bg-white p-5 shadow-[0_0_0_3px_rgba(198,40,40,0.10)]">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 min-w-[52px] text-sm font-bold text-[#b8860b]">Q{i + 1}.</span>
+                    <div className="flex-1">
+                      <span className="mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(d.topic) }}>
+                        {d.topic}
+                      </span>
+                      <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold bg-[#fdecea] text-[#c62828]">
+                        {d.selected ? "✗ 答错" : "未作答"}
+                      </span>
+                      <p className="mt-2 text-[15px] leading-relaxed text-[#1a1a1a]">{renderRich(d.stem)}</p>
+                      <div className="mt-3 space-y-1">
+                        {d.options.map((opt, j) => {
+                          const isAns = opt === d.answer;
+                          const isSel = opt === d.selected;
+                          return (
+                            <div key={j} className={`rounded px-3 py-1.5 text-[14px] ${isAns ? "bg-[#e8f5e9] font-medium text-[#1b3a1d]" : isSel ? "bg-[#fdecea] text-[#5a1a17]" : "text-[#5a5346]"}`}>
+                              <span className="mr-1 font-bold text-[#00467F]">{LETTERS[j]}.</span>
+                              {renderRich(opt)}
+                              {isAns && <span className="ml-2 text-xs text-[#2e7d32]">正确答案</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-2 text-sm text-[#5a5346]">
+                        你的答案: <b className={d.selected ? "text-[#c62828]" : "text-[#8a8377]"}>{d.selected || "(未作答)"}</b>
+                        <span className="ml-3 text-[#2e7d32]">正确答案: <b>{d.answer}</b></span>
+                      </p>
+                      {d.solution && (
+                        <div className="mt-3 rounded border border-[#e3d6b0] bg-[#fbf6e9] px-3 py-2.5">
+                          <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#8a6d1f]">
+                            <span>💡</span><span>解析</span>
+                          </div>
+                          <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(d.solution, { smart: false })}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {/* 逐题 */}
           <div className="space-y-4 px-6 pb-8">
             {items.map((d, i) => (

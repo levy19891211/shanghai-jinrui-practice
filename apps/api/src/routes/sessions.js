@@ -105,6 +105,7 @@ router.post(
         assignmentId,
         mode,
         durationMin,
+        questionIds: JSON.stringify(questionIds),
         total: questionIds.length,
       },
     });
@@ -178,12 +179,34 @@ router.post(
     if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
     if (session.submittedAt) return fail(res, 400, "会话已提交");
 
+    // 补齐未答题目记录:交卷后错题回顾需要显示所有题目(含未答)
+    let allIds = null;
+    try {
+      const parsed = session.questionIds ? JSON.parse(session.questionIds) : null;
+      if (Array.isArray(parsed) && parsed.length > 0) allIds = parsed;
+    } catch {
+      /* ignore */
+    }
+    if (allIds) {
+      const existingIds = new Set(session.records.map((r) => r.questionId));
+      const missing = allIds.filter((id) => !existingIds.has(id));
+      if (missing.length > 0) {
+        await prisma.answerRecord.createMany({
+          data: missing.map((questionId) => ({ sessionId: session.id, questionId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+    const recs = allIds
+      ? allIds.map((id) => session.records.find((r) => r.questionId === id) || { questionId: id, selected: null })
+      : session.records;
+
     const questions = await prisma.question.findMany({
-      where: { id: { in: session.records.map((r) => r.questionId) } },
+      where: { id: { in: recs.map((r) => r.questionId) } },
     });
     const qMap = new Map(questions.map((q) => [q.id, q]));
     const result = grade(
-      session.records.map((r) => ({ question: qMap.get(r.questionId), selected: r.selected }))
+      recs.map((r) => ({ question: qMap.get(r.questionId), selected: r.selected }))
     );
 
     // 超时标记(EXAM 模式且已过截止时间)
