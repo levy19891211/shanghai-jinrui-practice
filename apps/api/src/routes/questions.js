@@ -9,7 +9,7 @@ import { cleanUnits } from "../lib/text-normalize.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
-import { parseImportFile, mapAnswerToOptionText } from "../lib/parse-import-file.js";
+import { parseImportFile, mapAnswerToOptionText, alignAnswerToOptions } from "../lib/parse-import-file.js";
 import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
 import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
 
@@ -252,13 +252,16 @@ async function importRows(req, rows, onProgress) {
       r.subject = normalizeSubject(r.subject);
       // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
       const stem = cleanUnits(String(r.stem || ""));
-      const cleanOpts = options.map((o) => cleanUnits(String(o)));
+      const cleanOpts = options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))));
       if ((!r.subject && !r.sourceType) || !r.topic || !stem || cleanOpts.length < 2) {
         throw new Error("字段不完整(需要 subject 或 sourceType、topic、stem、options≥2)");
       }
       r.stem = stem;
       options.length = 0;
       options.push(...cleanOpts);
+      // 答案与选项用同一套清洗并对齐:字母→选项文本、LaTeX/单位差异→选项精确文本、无法对齐置空交审核
+      // 保证 answer === 某个选项文本,判分(a===s 全等)才一致
+      r.answer = alignAnswerToOptions(r.answer, cleanOpts);
       // PDF 导入若图片中无答案 key,允许 answer 为空,教师在审核页补充
       if (!r.answer && r.source !== "PDF 导入") {
         throw new Error("字段不完整:answer 必填");
@@ -285,7 +288,7 @@ async function importRows(req, rows, onProgress) {
           difficulty: Number(r.difficulty) || 3,
           type: r.type || "SINGLE_CHOICE",
           stem: normalizeNewlines(cleanUnits(r.stem)),
-          options: JSON.stringify(options.map((o) => normalizeNewlines(cleanOptionPrefix(cleanUnits(String(o)))))),
+          options: JSON.stringify(options),
           answer: r.answer ? normalizeNewlines(String(r.answer)) : "",
           solution: r.solution ? normalizeNewlines(r.solution) : null,
           source: r.source || "批量导入",
@@ -468,9 +471,12 @@ router.post(
     runImportTask(task.id, async () => {
       // 题目文件解析(视觉模型提取题目)
       updateImportTask(task.id, { progress: 5, message: "正在栅格化 PDF 并识别题目(视觉模型)...这可能需要几十秒" });
-      let rows;
+      let rows = [];
+      let pdfMeta = { corrupt: 0, questionPages: 0 };
       try {
-        rows = await parsePdf(filename, buf);
+        const parsed = await parsePdf(filename, buf);
+        rows = parsed.rows || [];
+        pdfMeta = parsed.meta || pdfMeta;
         // 套题名称优先:覆盖视觉模型/文件名推断的 paper,作为分组键(见 import-pdf.js paperFromFilename)
         if (req.body?.paperTitle) rows = rows.map((r) => ({ ...r, paper: String(req.body.paperTitle).trim() }));
       } catch (e) {
@@ -484,6 +490,7 @@ router.post(
       // 答案文件:提取 {question, answer} 按题号升序;按「题号匹配」(优先 qno)赋值,避免位置错位
       let ansMatched = 0;
       let ansCleared = 0; // 越界字母清空计数
+      let ansExpected = 0; // 答案文件题数(用于漏题交叉校验)
       if (ansBuf) {
         updateImportTask(task.id, { progress: 60, message: "正在识别答案文件..." });
         let answers = [];
@@ -492,6 +499,7 @@ router.post(
         } catch (e) {
           throw new Error("答案文件解析失败:" + e.message);
         }
+        ansExpected = answers.length;
         // 题号(1-based)→ 答案字母 映射
         const ansByQ = new Map();
         for (const a of answers) {
@@ -538,12 +546,21 @@ router.post(
       const ansMsg = ansBuf
         ? `;答案文件匹配 ${ansMatched} 题${ansCleared ? `,${ansCleared} 题答案字母越界已清空待审` : ""}${ansMatched + ansCleared < rows.length ? `(${rows.length - ansMatched - ansCleared} 题未匹配,需审核页补充)` : ""}`
         : ";未提供答案文件,答案留空,需在审核页手动补充";
+      // 漏题/并题预警:把"疑似丢题"直接暴露给教师,避免静默导入不完整题库
+      let lostMsg = "";
+      if (pdfMeta.corrupt) lostMsg += `;${pdfMeta.corrupt} 题选项异常(疑似多题合并)已跳过`;
+      if (pdfMeta.questionPages && pdfMeta.questionPages > rows.length + 2) {
+        lostMsg += `;题目页 ${pdfMeta.questionPages} 页但仅识别 ${rows.length} 题,可能漏题(建议核对原卷后重新导入)`;
+      }
+      if (ansExpected > rows.length) {
+        lostMsg += `;答案文件有 ${ansExpected} 题,但仅识别出 ${rows.length} 题,疑似漏题`;
+      }
       const paperMsg = papers.length
         ? `;识别到 ${papers.length} 套题并自动组卷(${papers.map((p) => `${p.title} ${p.total} 题`).join("、")}),需逐题审核通过后学生才可作答`
         : "";
       return {
-        imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created, answerMatched: ansMatched,
-        message: `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${ansMsg}${paperMsg}`,
+        imported, failed: errors.length, errors: errors.slice(0, 20), papers, parsed: rows.length, created, answerMatched: ansMatched, corrupt: pdfMeta.corrupt,
+        message: `导入完成:成功 ${imported} 条,失败 ${errors.length} 条${ansMsg}${lostMsg}${paperMsg}`,
       };
     });
     ok(res, { taskId: task.id });

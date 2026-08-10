@@ -190,7 +190,7 @@ export async function parsePdf(filename, buffer) {
   // 文件级统一 subject/paper:同一份 PDF 的所有题必须是同一套卷,视觉模型逐题误判
   // (如把物理题判成 ESAT)不应导致拆卷。详见 unifyFileMeta。
   const unified = unifyFileMeta(raws, filename);
-  const rows = unified
+  const parsed = unified
     .map((r) => {
       try {
         return finalizeRow(normalizeRaw(r, filename));
@@ -200,10 +200,25 @@ export async function parsePdf(filename, buffer) {
     })
     .filter(Boolean)
     .filter((r) => r.stem && Array.isArray(r.options) && r.options.length >= 2);
+  // 疑似并题行:视觉模型偶尔会把一页多道题的选项合并进一行(如 NSAA 出现 24 个选项的"假题")。
+  // 也识别"纯字母选项"(所有选项都只剩 A/B/C 字母,选项正文丢失)的失败行。
+  // 这类行无法还原为有效题,直接剔除并在 meta 里计数,避免把合并错乱的假题写进题库。
+  const tooMany = (r) => Array.isArray(r.options) && r.options.length > 8;
+  const letterOnly = (r) => Array.isArray(r.options) && r.options.length >= 2 && r.options.every((o) => /^[A-Ha-h]$/.test(String(o).trim()));
+  const corrupt = parsed.filter((r) => tooMany(r) || letterOnly(r));
+  const rows = parsed.filter((r) => !tooMany(r) && !letterOnly(r));
+  if (corrupt.length) console.warn(`[import-pdf] ${filename}:${corrupt.length} 行选项异常(疑似多题合并或选项提取失败),已跳过`);
   if (!rows.length) {
     throw new Error("视觉模型未从 PDF 解析出有效的选择题(可能是纯文本试卷、或公式无法识别)");
   }
-  return rows;
+  return {
+    rows,
+    meta: {
+      corrupt: corrupt.length,
+      questionPages: questionPageCount,
+      lostCount: Math.max(0, questionPageCount - rows.length),
+    },
+  };
 }
 
 // 解析独立的答案文件(PDF):返回按题号升序的 [{ question, answer }]

@@ -51,6 +51,68 @@ export function mapAnswerToOptionText(answer, options) {
   return a; // 本来就是选项文本
 }
 
+// ——— 答案↔选项对齐(修复"答案与选项对不上"导致的判分失败) ———
+// 宽松归一化:对整串做 LaTeX/单位归一(不限于纯单位 $...$):去掉 $,展开 \mathrm/\text,
+// ^上标/_下标转 Unicode,折叠空白。用于把视觉模型输出的答案与清洗后的选项文本做兜底比对。
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺", ".": "˙" };
+const SUB = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
+const toSup = (s) => String(s).split("").map((c) => SUP[c] || c).join("");
+const toSub = (s) => String(s).split("").map((c) => SUB[c] || c).join("");
+
+export function looseNorm(s) {
+  return String(s || "")
+    .replace(/\$/g, "")
+    .replace(/\\mathrm\{([^{}]*)\}/g, "$1")
+    .replace(/\\text\{([^{}]*)\}/g, "$1")
+    .replace(/\\,/g, " ")
+    .replace(/\\ /g, " ")
+    .replace(/\^\{([^}]*)\}/g, (_a, n) => toSup(n))
+    .replace(/\^([a-zA-Z0-9])/g, (_a, c) => toSup(c))
+    .replace(/_\{([^}]*)\}/g, (_a, n) => toSub(n))
+    .replace(/_([a-zA-Z0-9])/g, (_a, c) => toSub(c))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// 把 answer 对齐为"与某个选项完全一致"的文本:
+//   1) 已是选项文本 → 原样
+//   2) 单选字母(A-H)→ 映射为选项文本(越界返回 "")
+//   3) 多选字母("A, C")→ 逐字母映射,分号拼接
+//   4) 宽松归一后与某选项一致 → 取该选项精确文本(修复 $20\,\mathrm{J}$ vs 20 J、m\,s^{-1} vs m s⁻¹ 等)
+//   5) 去掉字母前缀后再宽松比对(如 "A. 20 J" vs 选项 "20 J")
+//   6) 仍无法对齐 → 返回 ""(交教师审核补充,避免把错误答案写进库)
+export function alignAnswerToOptions(rawAnswer, cleanOpts) {
+  const opts = Array.isArray(cleanOpts) ? cleanOpts : [];
+  const raw = String(rawAnswer ?? "").trim();
+  if (!raw) return "";
+  if (opts.includes(raw)) return raw;
+  if (/^[A-Ha-h]$/.test(raw)) {
+    const idx = raw.toUpperCase().charCodeAt(0) - 65;
+    return opts[idx] ?? "";
+  }
+  if (/^[A-Ha-h](?:\s*[,、]\s*[A-Ha-h])+$/.test(raw)) {
+    const mapped = raw
+      .split(/[,、]+/)
+      .map((t) => opts[t.trim().toUpperCase().charCodeAt(0) - 65])
+      .filter(Boolean);
+    return mapped.length ? mapped.join("; ") : "";
+  }
+  const n = looseNorm(raw);
+  if (n) {
+    const hit = opts.find((o) => looseNorm(o) === n);
+    if (hit) return hit;
+    const stripped = raw.replace(/^[\(\[【（]?[A-Ha-h][\.\s:、)）\]】、]+/, "").trim();
+    if (stripped && stripped !== raw) {
+      const ns = looseNorm(stripped);
+      if (ns) {
+        const hit2 = opts.find((o) => looseNorm(o) === ns);
+        if (hit2) return hit2;
+      }
+    }
+  }
+  return "";
+}
+
 // 统一收尾:拆分选项 + 答案字母映射 + 换行清洗 + 字段归一
 export function finalizeRow(raw) {
   const options = Array.isArray(raw.options)
@@ -245,7 +307,8 @@ export async function parseImportFile(filename, buffer) {
   if (ext === "pdf") {
     // 视觉模型依赖:动态 import 避免在未配置时拖累其它导入路径的加载
     const { parsePdf } = await import("./import-pdf.js");
-    return await parsePdf(filename, buffer);
+    const { rows } = await parsePdf(filename, buffer);
+    return rows;
   }
   throw new Error(`不支持的文件类型: .${ext || "?"} (支持 .xlsx/.xls/.docx/.pdf)`);
 }
