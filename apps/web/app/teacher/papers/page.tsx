@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { renderRich } from "@/lib/rich";
+import { renderRich, plainText } from "@/lib/rich";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { PaperManageDetail, PaperRow, PaperStats, Question } from "@/lib/types";
 
@@ -96,6 +96,9 @@ export default function TeacherPapersPage() {
   const [detailBusy, setDetailBusy] = useState(false);
   const [diffBusy, setDiffBusy] = useState<string | null>(null); // 正在修改难度的题目 id
   const router = useRouter();
+  // 点选选项改答案:待确认目标(题目 + 新答案选项 + 题干 + 原答案)
+  const [ansTarget, setAnsTarget] = useState<{ qid: string; option: string; stem: string; oldAnswer: string } | null>(null);
+  const [ansSaving, setAnsSaving] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
   const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
@@ -259,6 +262,32 @@ export default function TeacherPapersPage() {
       setError(e instanceof Error ? e.message : "修改难度失败");
     } finally {
       setDiffBusy(null);
+    }
+  }
+
+  // 点某个选项 → 弹确认框,确认后把该选项设为这道题的答案
+  function openAnswerConfirm(q: { id: string; stem?: string; answer?: string; options?: string[]; missing?: boolean }, opt: string) {
+    if (q.missing) return;
+    setAnsTarget({ qid: q.id, option: opt, stem: q.stem || "", oldAnswer: String(q.answer || "") });
+  }
+
+  async function confirmAnswerChange() {
+    if (!ansTarget) return;
+    setAnsSaving(true);
+    setError("");
+    try {
+      await api.put(`/questions/${ansTarget.qid}`, { answer: ansTarget.option });
+      setDetail((prev) =>
+        prev
+          ? { ...prev, questions: prev.questions.map((x) => (x.id === ansTarget.qid ? { ...x, answer: ansTarget.option } : x)) }
+          : prev
+      );
+      flash("答案已更新");
+      setAnsTarget(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改答案失败");
+    } finally {
+      setAnsSaving(false);
     }
   }
 
@@ -1005,8 +1034,12 @@ export default function TeacherPapersPage() {
                               return (
                                 <div
                                   key={i}
-                                  className={`flex gap-2 rounded px-2 py-1 text-sm ${
-                                    isAns ? "bg-emerald-50 text-emerald-700" : "text-slate-600"
+                                  onClick={() => openAnswerConfirm(q, opt)}
+                                  title={isAns ? "当前答案 · 点击可改设为其它选项" : "点击把此选项设为答案"}
+                                  className={`flex cursor-pointer gap-2 rounded px-2 py-1 text-sm transition ${
+                                    isAns
+                                      ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                                      : "text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
                                   }`}
                                 >
                                   <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
@@ -1139,6 +1172,56 @@ export default function TeacherPapersPage() {
                   {addSaving ? "添加中..." : `添加 ${addSelected.size} 道`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 点选选项改答案:二次确认弹窗 */}
+      {ansTarget && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => !ansSaving && setAnsTarget(null)}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white px-5 py-4">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-lg">✏️</span>
+              <div>
+                <h3 className="text-base font-bold text-slate-800">修改本题答案</h3>
+                <p className="text-xs text-slate-500">确认后立即生效,判分将按新答案计算</p>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm leading-relaxed text-slate-600">{plainText(ansTarget.stem) || "（题干为空）"}</p>
+              <div className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 ring-1 ring-emerald-200">
+                <span className="mt-0.5 shrink-0 text-emerald-600">✓</span>
+                <div className="min-w-0">
+                  <p className="text-xs text-emerald-600">新答案</p>
+                  <p className="text-sm font-medium text-emerald-800">{renderRich(ansTarget.option)}</p>
+                </div>
+              </div>
+              {ansTarget.oldAnswer && (
+                <p className="mt-2 text-xs text-slate-400">原答案:{renderRich(ansTarget.oldAnswer)}</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <button
+                onClick={() => setAnsTarget(null)}
+                disabled={ansSaving}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmAnswerChange}
+                disabled={ansSaving}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {ansSaving ? "保存中..." : "确认修改"}
+              </button>
             </div>
           </div>
         </div>
