@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import ExamsPanel from "@/components/ExamsPanel";
 
 interface StudentRow {
   id: string;
@@ -68,7 +69,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function TeacherStudentsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"stats" | "assign">("stats");
+  const [tab, setTab] = useState<"stats" | "assign" | "exams">("stats");
 
   // ——— 学情统计 ———
   const [list, setList] = useState<StudentRow[]>([]);
@@ -212,6 +213,12 @@ export default function TeacherStudentsPage() {
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "assign" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             作业分发
+          </button>
+          <button
+            onClick={() => setTab("exams")}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "exams" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            考试管理
           </button>
         </div>
       </div>
@@ -454,6 +461,8 @@ export default function TeacherStudentsPage() {
           </div>
         </div>
       )}
+
+      {tab === "exams" && <ExamsPanel />}
 
       {/* 作业详情弹窗 */}
       {detail && (
