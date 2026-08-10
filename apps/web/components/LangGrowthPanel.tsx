@@ -1,6 +1,6 @@
 "use client";
-// 个人空间 - 语言成长界面:语言学习成长动态记录(轨迹/技能/动态时间线/语言作业)
-import { useMemo } from "react";
+// 个人空间 - 语言成长界面:成长图谱 / 成长教练 / 成就&高光 / 听说读写四板块学情分析 / 语言作业 / 动态记录
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -36,9 +36,12 @@ export type LangAssignment = {
 
 const EXAM_LABEL: Record<string, string> = { IELTS: "雅思", TOEFL: "托福", KET_PET: "剑桥KET/PET", OTHER: "其他语言" };
 const SKILL_LABEL: Record<string, string> = { LISTENING: "听力", READING: "阅读", WRITING: "写作", SPEAKING: "口语", FULL: "全真连考" };
+const SKILL_ICON: Record<string, string> = { LISTENING: "🎧", READING: "📖", WRITING: "✍️", SPEAKING: "🗣️", FULL: "🎯" };
 const SKILL_COLOR: Record<string, string> = {
   LISTENING: "#1f6fb2", READING: "#2e6f40", WRITING: "#b8860b", SPEAKING: "#7a3b8f", FULL: "#a14a3a",
 };
+
+type Milestone = { id: string; title: string; desc: string; date: string; icon: string; highlight: boolean };
 
 export default function LangGrowthPanel({
   sessions,
@@ -50,6 +53,7 @@ export default function LangGrowthPanel({
   onStart: (a: LangAssignment) => void;
 }) {
   const router = useRouter();
+  const [hlOpen, setHlOpen] = useState(true);
 
   // 已提交的语言练习/模考(有成绩)
   const done = useMemo(() => sessions.filter((s) => s.submittedAt), [sessions]);
@@ -107,7 +111,7 @@ export default function LangGrowthPanel({
     [done],
   );
 
-  // 各技能掌握(正确率 / band)
+  // 各技能聚合(正确率 / band)
   const bySkill = useMemo(() => {
     const map = new Map<string, { skill: string; sessions: number; correct: number; total: number; bandSum: number; bandCount: number }>();
     for (const s of done) {
@@ -128,7 +132,112 @@ export default function LangGrowthPanel({
       .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
   }, [done]);
 
-  // 动态记录(时间线,倒序):每次语言练习/模考的成绩
+  // 听说读写(+全真连考)四板块学情分析
+  const skillCards = useMemo(
+    () =>
+      ["LISTENING", "READING", "WRITING", "SPEAKING", "FULL"].map((skill) => {
+        const list = done
+          .filter((s) => s.skill === skill)
+          .slice()
+          .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+        const stat = bySkill.find((b) => b.skill === skill);
+        const trend = list.slice(-8).map((s) => (s.total ? Math.round((s.correctCount! / s.total) * 100) : null));
+        let advice: string;
+        if (!stat || stat.sessions === 0) advice = "还没有练习记录,从一次练习开始积累。";
+        else if (stat.rate == null) advice = "已有练习,等待教师评分后查看正确率。";
+        else if (stat.rate >= 85) advice = "掌握良好,继续保持,可挑战更高目标。";
+        else if (stat.rate >= 70) advice = "表现稳定,建议逐步提高练习难度。";
+        else advice = "正确率偏低,建议专项强化并复盘错题。";
+        if (stat?.avgBand != null && stat.avgBand >= 7) advice = `平均 ${stat.avgBand} Band,已进入高分区间,继续保持。`;
+        else if (stat?.avgBand != null && stat.avgBand < 6) advice = `平均 ${stat.avgBand} Band,建议以 6.0 为近期目标逐项突破。`;
+        return { skill, label: SKILL_LABEL[skill] || skill, icon: SKILL_ICON[skill] || "📘", stat, trend, advice };
+      }),
+    [done, bySkill],
+  );
+
+  // 成长教练:规则生成的鼓励 + 建议
+  const coach = useMemo(() => {
+    if (done.length === 0) return null;
+    const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+    const recent = done.slice().reverse().slice(0, 5).filter((s) => s.total).map((s) => (s.correctCount! / s.total!) * 100);
+    const earlier = done.slice().reverse().slice(5, 10).filter((s) => s.total).map((s) => (s.correctCount! / s.total!) * 100);
+    let encouragement: string;
+    if (recent.length >= 3 && earlier.length >= 3 && avg(recent) > avg(earlier) + 5) {
+      encouragement = `最近 ${recent.length} 次正确率 ${Math.round(avg(recent))}%,状态明显提升,保持这个节奏!`;
+    } else if (overview.avgBand != null && overview.avgBand >= 7) {
+      encouragement = `平均 ${overview.avgBand} 分的表现很棒,已接近目标分数,继续打磨薄弱板块即可。`;
+    } else {
+      encouragement = `已累计 ${overview.count} 次语言练习,平均正确率 ${overview.rate == null ? "—" : overview.rate + "%"}。坚持练习、及时复盘错题,分数一定会稳步上升。`;
+    }
+    const suggestions: string[] = [];
+    for (const s of bySkill) {
+      if (s.rate != null && s.rate < 70) suggestions.push(`${s.label}正确率 ${s.rate}%,建议专项强化,并回看该板块错题。`);
+    }
+    for (const sk of ["LISTENING", "READING", "WRITING", "SPEAKING"]) {
+      const x = bySkill.find((b) => b.skill === sk);
+      if (!x) suggestions.push(`${SKILL_LABEL[sk]}还没有练习记录,建议开始第一次${SKILL_LABEL[sk]}练习。`);
+      else if (x.sessions < 3) suggestions.push(`${x.label}只练习了 ${x.sessions} 次,建议增加频次形成习惯。`);
+    }
+    if (overview.avgBand != null && overview.avgBand < 6) suggestions.push("当前平均 Band 低于 6.0,建议以 6.0 为近期目标,按听说读写逐项突破。");
+    const full = bySkill.find((b) => b.skill === "FULL");
+    if (!full || full.sessions === 0) suggestions.push("建议定期参加全真连考模考,熟悉真实考试节奏。");
+    if (suggestions.length > 4) suggestions.length = 4;
+    return { encouragement, suggestions };
+  }, [done, bySkill, overview]);
+
+  // 成就 & 高光时刻:从每次语言练习/模考中识别里程碑
+  const milestones = useMemo<Milestone[]>(() => {
+    const sorted = done.slice().sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+    const ms: Milestone[] = [];
+    const reachedBand = new Set<number>();
+    const skillFirst = new Set<string>();
+    const skillQualified = new Set<string>();
+    let bestBand: number | null = null;
+    let examFirst = false;
+    let rate80 = false;
+    sorted.forEach((s, i) => {
+      const rate = s.total ? Math.round((s.correctCount! / s.total) * 100) : null;
+      const date = s.startedAt;
+      const skillLabel = SKILL_LABEL[s.skill] || s.skill || "语言";
+      if (i === 0) ms.push({ id: "first", title: "首次语言练习", desc: `完成了第一次${skillLabel}练习,成长从这里开始。`, date, icon: "🎉", highlight: false });
+      if (s.mode === "EXAM" && !examFirst) {
+        examFirst = true;
+        ms.push({ id: "exam1", title: "首次模拟考", desc: `第一次参加语言模拟考(${skillLabel})。`, date, icon: "📝", highlight: false });
+      }
+      if (!skillFirst.has(s.skill)) {
+        skillFirst.add(s.skill);
+        ms.push({ id: `sk_${s.skill}`, title: `开启${skillLabel}`, desc: `第一次进行${skillLabel}练习。`, date, icon: "📚", highlight: false });
+      }
+      if (rate != null && rate >= 80 && !rate80) {
+        rate80 = true;
+        ms.push({ id: "r80", title: "正确率突破 80%", desc: `在${skillLabel}中达到 ${rate}% 的正确率。`, date, icon: "🚀", highlight: true });
+      }
+      if (s.band != null) {
+        for (const t of [6, 6.5, 7, 7.5, 8]) {
+          if (s.band >= t && !reachedBand.has(t)) {
+            reachedBand.add(t);
+            ms.push({ id: `band${t}`, title: `Band ${t} 达成`, desc: `估分达到 ${t},离目标更近一步。`, date, icon: "🏅", highlight: t >= 7 });
+          }
+        }
+        if (bestBand != null && s.band > bestBand) {
+          ms.push({ id: `up_${s.id}`, title: "Band 提升", desc: `Band 从 ${bestBand} 提升到 ${s.band}。`, date, icon: "📈", highlight: false });
+        }
+        bestBand = bestBand == null ? s.band : Math.max(bestBand, s.band);
+      }
+      if (rate != null && rate >= 70 && !skillQualified.has(s.skill)) {
+        skillQualified.add(s.skill);
+        ms.push({ id: `sq_${s.skill}`, title: `${skillLabel}正确率达标`, desc: `${skillLabel}正确率达到 ${rate}%。`, date, icon: "🎯", highlight: false });
+      }
+    });
+    for (const c of [10, 20, 30, 50]) {
+      if (sorted.length >= c) ms.push({ id: `n${c}`, title: `累计 ${c} 次语言练习`, desc: `已累计完成 ${c} 次语言练习。`, date: sorted[c - 1].startedAt, icon: "🏆", highlight: false });
+    }
+    return ms;
+  }, [done]);
+  const highlightMs = milestones.filter((m) => m.highlight);
+  const otherMs = milestones.filter((m) => !m.highlight);
+
+  // 动态记录(时间线,倒序)
   const timeline = useMemo(
     () =>
       done
@@ -190,14 +299,15 @@ export default function LangGrowthPanel({
         ))}
       </div>
 
-      {/* 成长轨迹 */}
+      {/* 成长图谱 */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-700">正确率成长轨迹</h2>
-            <p className="mt-0.5 text-xs text-slate-400">每次语言练习/模考的正确率变化（最近 20 次）</p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-700">成长图谱</h2>
+          <span className="text-xs text-slate-400">
+            {done.length} 次练习 · 峰值 {Math.max(...rateTrend.map((p) => p.rate ?? 0), 0)}%
+          </span>
         </div>
+        <p className="mt-1 text-xs text-slate-400">正确率成长轨迹：每次语言练习/模考的正确率变化（最近 20 次）</p>
         <div className="mt-3 h-56">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={rateTrend} margin={{ top: 8, right: 12, bottom: 0, left: -14 }}>
@@ -242,43 +352,148 @@ export default function LangGrowthPanel({
         )}
       </div>
 
-      {/* 各技能掌握 */}
-      {bySkill.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-700">各技能掌握情况</h2>
-          <p className="mt-0.5 text-xs text-slate-400">按听力 / 阅读 / 写作 / 口语 / 全真连考 聚合</p>
-          <div className="mt-3 h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={bySkill} margin={{ top: 8, right: 12, bottom: 0, left: -14 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(v: number) => [`${v}%`, "正确率"]}
-                  labelFormatter={(l) => `${l}`}
-                />
-                <Bar dataKey="rate" name="正确率" radius={[6, 6, 0, 0]}>
-                  {bySkill.map((e) => (
-                    <Cell key={e.skill} fill={SKILL_COLOR[e.skill] || "#94a3b8"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {bySkill.map((s) => (
-              <div key={s.skill} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: SKILL_COLOR[s.skill] || "#94a3b8" }} />
-                  {s.label}
+      {/* 听说读写四板块学情分析 */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-700">听说读写 · 板块学情分析</h2>
+        <p className="mt-0.5 text-xs text-slate-400">按听力 / 阅读 / 写作 / 口语 / 全真连考 分别分析掌握情况与建议</p>
+
+        {/* 正确率对比 */}
+        <div className="mt-3 h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={bySkill} margin={{ top: 8, right: 12, bottom: 0, left: -14 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(v: number) => [`${v}%`, "正确率"]}
+                labelFormatter={(l) => `${l}`}
+              />
+              <Bar dataKey="rate" name="正确率" radius={[6, 6, 0, 0]}>
+                {bySkill.map((e) => (
+                  <Cell key={e.skill} fill={SKILL_COLOR[e.skill] || "#94a3b8"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 四板块卡片 */}
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {skillCards.map((c) => (
+            <div key={c.skill} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <span className="text-base">{c.icon}</span>
+                  {c.label}
                 </p>
-                <p className="mt-1 text-sm font-bold text-slate-800">{s.rate == null ? "—" : `${s.rate}%`}</p>
-                <p className="text-[11px] text-slate-400">
-                  {s.sessions} 次{s.avgBand != null ? ` · 平均 ${s.avgBand} Band` : ""}
-                </p>
+                {c.stat && c.stat.sessions > 0 ? (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200">{c.stat.sessions} 次</span>
+                ) : (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-300 ring-1 ring-slate-100">未开始</span>
+                )}
               </div>
-            ))}
-          </div>
+
+              <div className="mt-2 flex items-baseline gap-3">
+                <p className={`text-lg font-bold ${c.stat && c.stat.rate != null && c.stat.rate >= 70 ? "text-emerald-600" : "text-slate-800"}`}>
+                  {c.stat && c.stat.rate != null ? `${c.stat.rate}%` : "—"}
+                  {c.stat && c.stat.rate != null && <span className="text-xs font-medium text-slate-400"> 正确率</span>}
+                </p>
+                {c.stat?.avgBand != null && (
+                  <p className="text-sm font-semibold text-amber-600">平均 {c.stat.avgBand} Band</p>
+                )}
+              </div>
+
+              {/* 迷你趋势(最近 8 次) */}
+              <div className="mt-2 flex h-10 items-end gap-1">
+                {c.trend.length === 0 ? (
+                  <span className="text-[11px] text-slate-300">暂无数据</span>
+                ) : (
+                  c.trend.map((r, i) => (
+                    <div key={i} className="flex flex-1 flex-col items-center gap-0.5">
+                      <span className="text-[9px] text-slate-400">{r == null ? "·" : r}</span>
+                      <div
+                        className={`w-full rounded-t ${r == null ? "bg-slate-100" : r >= 70 ? "bg-emerald-400" : r >= 40 ? "bg-amber-400" : "bg-rose-400"}`}
+                        style={{ height: r == null ? 4 : Math.max(6, (r / 100) * 28) }}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">{c.advice}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 成长教练 */}
+      {coach && (
+        <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-5 shadow-sm">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-indigo-700">💡 成长教练</h2>
+          {coach.encouragement && <p className="mt-2 text-sm leading-relaxed text-slate-700">{coach.encouragement}</p>}
+          {coach.suggestions.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {coach.suggestions.map((sg, i) => (
+                <li key={i} className="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm text-slate-700">
+                  <span className="mt-0.5 shrink-0 font-bold text-indigo-500">✓</span>
+                  <span>{sg}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* 成就 & 高光时刻 */}
+      {milestones.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-700">成就 & 高光时刻 ({milestones.length})</h2>
+          <p className="mt-1 text-xs text-slate-400">每一个值得记住的节点,都在这里留痕。</p>
+
+          {highlightMs.length > 0 && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setHlOpen((o) => !o)}
+                className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-left transition hover:bg-amber-100/60"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-amber-700">🌟 高光时刻 ({highlightMs.length})</span>
+                <span className="text-xs text-amber-600">{hlOpen ? "收起 ▲" : "展开 ▼"}</span>
+              </button>
+              {hlOpen && (
+                <div className="mt-3 space-y-3">
+                  {highlightMs.map((m) => (
+                    <div key={m.id} className="relative rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-700">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[11px] text-white">{m.icon}</span>
+                          {m.title}
+                        </p>
+                        <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {otherMs.length > 0 && (
+            <ol className="relative mt-4 space-y-4 border-l-2 border-indigo-100 pl-5">
+              {otherMs.map((m) => (
+                <li key={m.id} className="relative">
+                  <span className="absolute -left-[27px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[11px] text-indigo-600">{m.icon}</span>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">{m.title}</p>
+                      <span className="shrink-0 text-xs text-slate-400">{new Date(m.date).toLocaleDateString("zh-CN")}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">{m.desc}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
 

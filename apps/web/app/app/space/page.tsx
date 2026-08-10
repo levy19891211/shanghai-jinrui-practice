@@ -306,24 +306,6 @@ export default function PersonalSpacePage() {
   const highlightMs = milestones.filter((m) => m.highlight);
   const otherMs = milestones.filter((m) => !m.highlight);
 
-  // 语言学习表现:按技能聚合(前端从已有 langSessions 计算)
-  const langBySkill = useMemo(() => {
-    const map = new Map<string, { skill: string; sessions: number; bandSum: number; bandCount: number; correct: number; total: number }>();
-    langSessions.forEach((s) => {
-      const cur = map.get(s.skill) || { skill: s.skill, sessions: 0, bandSum: 0, bandCount: 0, correct: 0, total: 0 };
-      cur.sessions += 1;
-      if (s.band != null) { cur.bandSum += s.band; cur.bandCount += 1; }
-      if (s.correctCount != null && s.total) { cur.correct += s.correctCount; cur.total += s.total; }
-      map.set(s.skill, cur);
-    });
-    return Array.from(map.values()).map((x) => ({
-      skill: x.skill,
-      sessions: x.sessions,
-      avgBand: x.bandCount ? +(x.bandSum / x.bandCount).toFixed(1) : null,
-      rate: x.total ? Math.round((x.correct / x.total) * 100) : null,
-    }));
-  }, [langSessions]);
-
   // 错题本
   const visibleWrong = subjectTab ? wrongList.filter((w) => (subjectTab === "数学" ? w.subject === "数学" || w.subject === "TMUA" : w.subject === subjectTab)) : wrongList;
   const pendingWrong = visibleWrong.filter((w) => !w.mastered);
@@ -743,21 +725,6 @@ export default function PersonalSpacePage() {
                 </div>
               </div>
 
-              {/* 语言学习表现 */}
-              {langSessions.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h2 className="text-sm font-medium text-slate-700">语言学习表现(按技能)</h2>
-                  <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {langBySkill.map((x) => (
-                      <div key={x.skill} className="rounded-xl bg-slate-50 p-4">
-                        <p className="text-sm font-medium text-slate-800">{SKILL_LABEL[x.skill] || x.skill}</p>
-                        <p className="mt-1 text-xs text-slate-500">{x.sessions} 次练习</p>
-                        <p className="mt-2 text-lg font-bold text-indigo-600">{x.avgBand != null ? `Band ${x.avgBand}` : x.rate != null ? `${x.rate}%` : "—"}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
