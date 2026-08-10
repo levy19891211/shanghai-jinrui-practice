@@ -326,10 +326,21 @@ export default function TeacherPage() {
 
   function openCreate() { setForm({ ...EMPTY, topicIds: [] }); setError(""); setShowForm(true); }
   function openEdit(q: Question) {
+    // 防御:options 可能来自详情/列表接口(api 客户端会解析成数组),再兜底一层防字符串
+    const opts = Array.isArray(q.options)
+      ? q.options
+      : (() => {
+          try {
+            const v = JSON.parse(String(q.options ?? "[]"));
+            return Array.isArray(v) ? v : [];
+          } catch {
+            return [];
+          }
+        })();
     setForm({
       id: q.id, subject: q.subject, sourceType: q.sourceType ?? "", paper: q.paper ?? "", topic: q.topic, topicIds: parseJsonIds(q.topicIds),
       difficulty: q.difficulty,
-      type: q.type, stem: q.stem, optionsText: (q.options || []).join("\n"), answer: q.answer ?? "",
+      type: q.type, stem: q.stem, optionsText: opts.join("\n"), answer: q.answer ?? "",
       solution: q.solution ?? "", status: q.status,
     });
     setError("");
