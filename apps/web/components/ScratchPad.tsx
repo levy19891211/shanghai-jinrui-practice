@@ -1,6 +1,7 @@
 "use client";
 // 批注书写层(完全透明叠在题目上方直接手写,不遮题、不保存、不参与判分)。
-// 工具栏精致竖排在屏幕右侧;「👁 浏览」模式下点击穿透,可正常答题/切题,不影响其他功能。
+// 工具栏:右侧竖排、精致玻璃质感、**可拖动**(默认右侧垂直居中);「👁 浏览」点击穿透,不干扰答题。
+// 健壮性:pointer capture 异常捕获、stroke 引用稳定、resize 不随笔画重建、null 防御。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -25,12 +26,14 @@ const SIZES = [
   { label: "中", v: 5, r: 5 },
   { label: "粗", v: 9, r: 8 },
 ];
+// 工具栏初始尺寸估算(用于右侧居中)
+const TB_W = 58;
+const TB_H = 560;
 
-/* ---------- 精致 SVG 图标 ---------- */
-const I = { w: 18, h: 18 } as const;
+/* ---------- SVG 线性图标 ---------- */
 function Svg({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <svg width={I.w} height={I.h} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label={title}>
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label={title}>
       {children}
     </svg>
   );
@@ -85,19 +88,25 @@ export default function ScratchPad({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const strokesRef = useRef<Stroke[]>([]);
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState(COLORS[0].v);
   const [sizeIdx, setSizeIdx] = useState(1);
   const drawingRef = useRef(false);
   const currentRef = useRef<Stroke | null>(null);
   const lastRef = useRef<{ x: number; y: number } | null>(null);
+  // 工具栏位置(可拖动),null = 尚未初始化
+  const [tpos, setTpos] = useState<{ x: number; y: number } | null>(null);
+  const initedRef = useRef(false);
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
 
   const size = SIZES[sizeIdx].v;
   const browse = tool === "browse";
 
+  // strokes 引用同步,保证 redraw 稳定(不随笔画重建,避免 effect 连锁)
   useEffect(() => {
-    onInteractivityChange?.(browse);
-  }, [browse, onInteractivityChange]);
+    strokesRef.current = strokes;
+  }, [strokes]);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -105,7 +114,7 @@ export default function ScratchPad({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const s of strokes) {
+    for (const s of strokesRef.current) {
       if (s.points.length < 2) continue;
       ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.9)" : s.color;
       ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
@@ -121,41 +130,64 @@ export default function ScratchPad({
       ctx.lineTo(last.x, last.y);
       ctx.stroke();
     }
-  }, [strokes]);
+  }, []);
+  const redrawRef = useRef(redraw);
+  useEffect(() => {
+    redrawRef.current = redraw;
+  });
 
-  // 画布尺寸自适应(DPR 高清);打开时初始化
+  // 画布尺寸自适应(DPR 高清);仅打开/窗口变化时重建,不随笔画触发
   useEffect(() => {
     if (!open) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.width = Math.max(1, Math.floor(window.innerWidth * dpr));
+      canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
       const ctx = canvas.getContext("2d");
       if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      redraw();
+      redrawRef.current();
     };
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [open, redraw]);
+  }, [open]);
 
-  // 打开时重置为画笔,收起时清空(不保存)
+  // 浏览模式 ↔ 交互性同步
   useEffect(() => {
-    if (open) setTool("pen");
-    else setStrokes([]);
+    onInteractivityChange?.(browse);
+  }, [browse, onInteractivityChange]);
+
+  // 打开:重置画笔 + 初始化默认位置(右侧垂直居中);收起:清空草稿(不保存)
+  useEffect(() => {
+    if (open) {
+      setTool("pen");
+      if (!initedRef.current) {
+        initedRef.current = true;
+        setTpos({
+          x: Math.max(8, window.innerWidth - TB_W - 16),
+          y: Math.max(8, (window.innerHeight - TB_H) / 2),
+        });
+      }
+    } else {
+      setStrokes([]);
+    }
   }, [open]);
 
   const pos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: e.clientX, y: e.clientY };
+    const rect = canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const drawSegment = (from: { x: number; y: number }, to: { x: number; y: number }, s: Stroke) => {
-    const ctx = canvasRef.current?.getContext("2d");
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.strokeStyle = s.tool === "eraser" ? "rgba(255,255,255,0.9)" : s.color;
     ctx.lineWidth = s.tool === "eraser" ? s.size * 2.5 : s.size;
@@ -174,7 +206,11 @@ export default function ScratchPad({
     const p = pos(e);
     currentRef.current = { tool, color, size, points: [p] };
     lastRef.current = p;
-    canvasRef.current?.setPointerCapture(e.pointerId);
+    try {
+      canvasRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      /* 忽略:捕获失败不影响绘制 */
+    }
   };
 
   const onMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -186,7 +222,7 @@ export default function ScratchPad({
     lastRef.current = p;
   };
 
-  const onUp = () => {
+  const endStroke = () => {
     if (drawingRef.current && currentRef.current && currentRef.current.points.length >= 2) {
       setStrokes((prev) => [...prev, currentRef.current!]);
     }
@@ -198,7 +234,29 @@ export default function ScratchPad({
   const undo = () => setStrokes((prev) => prev.slice(0, -1));
   const clear = () => setStrokes([]);
 
-  /* ---------- 工具栏按钮样式 ---------- */
+  /* ---------- 工具栏拖动 ---------- */
+  const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: tpos?.x ?? 0, oy: tpos?.y ?? 0 };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+  const onDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.sx;
+    const dy = e.clientY - dragRef.current.sy;
+    setTpos({
+      x: Math.min(Math.max(4, dragRef.current.ox + dx), Math.max(4, window.innerWidth - TB_W)),
+      y: Math.min(Math.max(4, dragRef.current.oy + dy), Math.max(4, window.innerHeight - 44)),
+    });
+  };
+  const endDrag = () => {
+    dragRef.current = null;
+  };
+
+  /* ---------- 按钮样式 ---------- */
   const toolBtn = (t: Tool, title: string, icon: ReactNode) => (
     <button
       onClick={() => setTool(t)}
@@ -225,20 +283,38 @@ export default function ScratchPad({
   const divider = <div className="my-0.5 h-px w-7 bg-slate-200" />;
 
   return open ? (
-    // 完全透明的批注层:只捕获书写,不遮题目
-    <div className="pointer-events-none fixed inset-0 z-50">
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 touch-none"
-        style={{ pointerEvents: browse ? "none" : "auto" }}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
-      />
+    <>
+      {/* 完全透明的批注层:只捕获书写,不遮题目 */}
+      <div className="pointer-events-none fixed inset-0 z-50">
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 touch-none"
+          style={{ pointerEvents: browse ? "none" : "auto" }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={endStroke}
+          onPointerCancel={endStroke}
+        />
+      </div>
 
-      {/* 工具栏:右侧竖排(精致玻璃质感) */}
-      <div className="pointer-events-auto absolute right-4 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-2xl border border-slate-200/70 bg-white/90 p-1.5 shadow-[0_10px_34px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-md">
+      {/* 工具栏:固定定位、可拖动,默认右侧垂直居中 */}
+      <div
+        className="pointer-events-auto fixed z-50 flex flex-col items-center gap-0.5 rounded-2xl border border-slate-200/70 bg-white/90 p-1.5 shadow-[0_10px_34px_rgba(15,23,42,0.16),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-md"
+        style={{ left: tpos?.x ?? 8, top: tpos?.y ?? 80 }}
+      >
+        {/* 拖动把手 */}
+        <div
+          onPointerDown={startDrag}
+          onPointerMove={onDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          className="flex h-6 w-full cursor-grab touch-none items-center justify-center gap-1 active:cursor-grabbing"
+          title="按住拖动工具栏"
+        >
+          <span className="h-1 w-1 rounded-full bg-slate-300" />
+          <span className="h-1 w-1 rounded-full bg-slate-300" />
+          <span className="h-1 w-1 rounded-full bg-slate-300" />
+        </div>
         {toolBtn("browse", "浏览:可正常答题/切题", <IconBrowse />)}
         {toolBtn("pen", "画笔", <IconPen />)}
         {toolBtn("eraser", "橡皮", <IconEraser />)}
@@ -284,9 +360,9 @@ export default function ScratchPad({
         </button>
       </div>
 
-      <p className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/60 px-4 py-1.5 text-xs text-white/90 backdrop-blur-sm">
-        批注不参与判分 · 「👁 浏览」可正常答题/切题 · 「✕」收起
+      <p className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-800/60 px-4 py-1.5 text-xs text-white/90 backdrop-blur-sm">
+        批注不参与判分 · 「👁 浏览」可正常答题/切题 · 工具栏可拖动
       </p>
-    </div>
+    </>
   ) : null;
 }
