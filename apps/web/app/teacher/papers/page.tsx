@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import QuestionEditModal from "@/components/QuestionEditModal";
 import { renderRich, plainText } from "@/lib/rich";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { PaperManageDetail, PaperRow, PaperStats, Question } from "@/lib/types";
@@ -95,7 +95,7 @@ export default function TeacherPapersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
   const [diffBusy, setDiffBusy] = useState<string | null>(null); // 正在修改难度的题目 id
-  const router = useRouter();
+  const [editQ, setEditQ] = useState<Question | null>(null); // 原地编辑弹窗当前题目
   // 点选选项改答案:待确认目标(题目 + 新答案选项 + 题干 + 原答案)
   const [ansTarget, setAnsTarget] = useState<{ qid: string; option: string; stem: string; oldAnswer: string } | null>(null);
   const [ansSaving, setAnsSaving] = useState(false);
@@ -243,9 +243,32 @@ export default function TeacherPapersPage() {
     }
   }
 
-  // 编辑本题:跳到题库管理并自动打开该题的编辑弹窗
-  function openQuestionEdit(qid: string) {
-    router.push(`/teacher?edit=${qid}`);
+  // 编辑本题:原地拉取题目并弹出编辑弹窗(页面不跳转)
+  async function openQuestionEdit(qid: string) {
+    setError("");
+    try {
+      const q = await api.get<Question>(`/questions/${qid}`);
+      setEditQ(q);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "读取题目失败");
+    }
+  }
+
+  // 题目编辑保存后:刷新本地详情
+  function onQuestionSaved(updated: Question) {
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            questions: prev.questions.map((x) =>
+              x.id === updated.id
+                ? { ...x, stem: updated.stem, options: updated.options, answer: updated.answer, difficulty: updated.difficulty, topic: updated.topic, status: updated.status }
+                : x
+            ),
+          }
+        : prev
+    );
+    flash("题目已更新");
   }
 
   // 直接点选修改难度:调题目更新接口,成功后刷新本地详情
@@ -1225,6 +1248,15 @@ export default function TeacherPapersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 编辑本题:原地编辑弹窗 */}
+      {editQ && (
+        <QuestionEditModal
+          q={editQ}
+          onClose={() => setEditQ(null)}
+          onSaved={onQuestionSaved}
+        />
       )}
     </div>
   );
