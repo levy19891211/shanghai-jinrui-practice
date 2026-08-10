@@ -348,11 +348,6 @@ export default function PersonalSpacePage() {
         <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
       </div>
 
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">个人空间</h1>
-        <p className="mt-1 text-sm text-slate-500">{user?.name}，这里汇总了你的作业、成绩、学情与错题。</p>
-      </div>
-
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tabBtn("assignments", "📌", "我的作业", pendingAssigns.length)}
         {tabBtn("grades", "📈", "成绩历史", subjectSessions.length)}
