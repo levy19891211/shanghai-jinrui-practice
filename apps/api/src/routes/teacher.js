@@ -56,11 +56,22 @@ router.get(
     const student = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!student || student.role !== "STUDENT") return fail(res, 404, "学生不存在");
 
-    const sessions = await prisma.session.findMany({
+    const sessionsRaw = await prisma.session.findMany({
       where: { studentId: student.id },
       orderBy: { startedAt: "desc" },
-      select: { id: true, mode: true, score: true, total: true, correctCount: true, startedAt: true, submittedAt: true },
+      select: {
+        id: true, mode: true, score: true, total: true, correctCount: true,
+        startedAt: true, submittedAt: true, assignmentId: true,
+        paper: { select: { title: true, subject: true, sourceType: true, mode: true } },
+      },
     });
+    const sessions = sessionsRaw.map((s) => ({
+      ...s,
+      durationSec: s.submittedAt
+        ? Math.round((new Date(s.submittedAt).getTime() - new Date(s.startedAt).getTime()) / 1000)
+        : null,
+      status: s.submittedAt ? "DONE" : "IN_PROGRESS",
+    }));
 
     const records = await prisma.answerRecord.findMany({
       where: { session: { studentId: student.id }, isCorrect: { not: null } },

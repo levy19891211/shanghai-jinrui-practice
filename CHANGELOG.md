@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.4.71 (2026-08-11) — 教师端学情统计:查看每个学生的做题情况(考试 + 练习)
+- 教师端「教学管理 → 学情统计」点击学生进入详情页,新增"做题情况(考试 + 练习)"表,覆盖需求:来源(试卷名/科目/题源)、类型(模拟考/练习 + 作业/自主标签)、完成时间、完成用时、得分、正确率。
+- 后端 `GET /teacher/students/:id/stats` 的 session 返回扩展:`paper`(title/subject/sourceType/mode)、`assignmentId`(区分作业 vs 自主练习),并新增计算字段 `durationSec`(完成用时 = submittedAt−startedAt)、`status`(DONE/IN_PROGRESS)。
+- 前端补全:完成时间改用 `submittedAt`(原误用 startedAt);完成用时格式化"X分Y秒"(进行中会话显示"进行中");按 mode 提供全部/模拟考/自主练习筛选。
+- 说明:本期聚焦学科(Session)做题情况;语言(雅思等)做题明细暂无教师查学生接口,留待后续补充。
+
 ## V2.4.70 (2026-08-11) — 防线一:数据安全(自动备份 + 恢复演练 + 部署先备份)
 - 新增 `scripts/backup_db.cjs`:每日热备 SQLite(先 `wal_checkpoint(TRUNCATE)` 合并 WAL 再复制主库,在线一致性快照、无需停服);多版本保留 daily(最近7)/ weekly(每周一保留4)/ monthly(每月1号保留3),写入 `/root/backups` 并记 `backup.log`。预留 `BACKUP_RCLONE` 环境变量支持异地同步(配了 rclone 远程即自动上传)。
 - 新增 `scripts/restore_db.sh`:恢复演练,把备份还原到临时库并校验核心表(User/Question/Session/LanguagePaper/FavoriteQuestion/WrongBook)行数,不覆盖生产。
