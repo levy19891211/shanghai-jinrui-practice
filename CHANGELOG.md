@@ -1,5 +1,9 @@
 # 版本历史
 
+## V2.4.67 (2026-08-11) — 修复笔试练习点击卷子报 "Application error" 客户端崩溃
+- 根因:答题页 `app/practice/[id]/page.tsx` 的 `detailItems`(useMemo) 被放在 `if (loading) return` 提前 return 之后,违反 React Hooks 规则。首屏 loading=true 提前返回(少调用一次 hook),useEffect 拿到数据后 loading=false 二次渲染多调用一次 useMemo,触发 "Rendered more hooks than during the previous render" 崩溃。该 useMemo 在 V2.4.61(交卷错题回顾)引入,故每次打开答题页必崩。
+- 修复:将 `detailItems` 的 useMemo 移到所有提前 return 之前,保证每次渲染 hook 调用顺序一致。
+
 ## V2.4.66 (2026-08-11) — 题库编辑题源支持自定义输入
 - 题库编辑(题目弹窗 QuestionEditModal 与老师题库页内联编辑)的「题源(考试类型)」由固定下拉改为可输入输入框 + datalist 提示,老师可自由输入任意题源(如以前缺失的 MAT / 新题源)。
 - 新增后端接口 GET /api/questions/source-types 返回题库中已存在的题源(去重),前端 datalist 合并预设(TMUA/ESAT/NSAA/MAT/BMAT/STEP/PAT/ENGAA)自动补全,历史导入题源也会出现在候选里。

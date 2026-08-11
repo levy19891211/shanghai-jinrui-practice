@@ -192,14 +192,13 @@ export default function PracticePage() {
     }
   }
 
-  if (loading) return <p className="py-10 text-center text-sm text-slate-500">加载中...</p>;
-
   const modeLabel = isExam ? "模拟考" : "练习";
   const answeredCount = Object.keys(answers).length;
   const total = questions.length;
 
-  /* ============ 已提交:成绩总结 + 逐题解析 ============ */
-  // 按 questionId 去重,避免同一题因任何原因重复出现(防御性)
+  // 按 questionId 去重(防御性)。useMemo 必须放在所有提前 return 之前,否则首屏
+  // loading 提前返回会少调用一次 hook,二次渲染触发 "Rendered more hooks than during
+  // the previous render" 客户端崩溃。
   const detailItems = useMemo(() => {
     const raw = detail?.details ?? [];
     const seen = new Set<string>();
@@ -209,6 +208,10 @@ export default function PracticePage() {
       return true;
     });
   }, [detail]);
+
+  if (loading) return <p className="py-10 text-center text-sm text-slate-500">加载中...</p>;
+
+  /* ============ 已提交:成绩总结 + 逐题解析 ============ */
 
   if (detail?.submittedAt) {
     const items = detailItems;
