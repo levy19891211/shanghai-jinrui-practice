@@ -495,7 +495,7 @@ export default function TeacherPage() {
     return new Promise<{ imported: number; failed: number; errors: { row: number; reason: string }[]; answerMatched?: number; message?: string }>((resolve, reject) => {
       if (importTimerRef.current) clearInterval(importTimerRef.current);
       let attempts = 0;
-      const maxAttempts = 240; // 约 4.8 分钟兜底(1200ms * 240)
+      const maxAttempts = 750; // 约 15 分钟兜底(1200ms * 750),PDF/视觉模型大文件导入可能较长
       importTimerRef.current = setInterval(async () => {
         attempts++;
         try {
@@ -509,13 +509,13 @@ export default function TeacherPage() {
             reject(new Error(t.error || "导入失败"));
           } else if (attempts >= maxAttempts) {
             if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
-            reject(new Error("导入超时(超过 5 分钟),请稍后到题库列表确认是否已导入"));
+            reject(new Error("导入超时(超过 15 分钟),请稍后到题库列表确认是否已导入"));
           }
         } catch (e) {
           // 网络/接口瞬时错误:不中断轮询,交给下一次;超过阈值则判定失败
           if (attempts >= maxAttempts) {
             if (importTimerRef.current) { clearInterval(importTimerRef.current); importTimerRef.current = null; }
-            reject(new Error("导入超时(超过 5 分钟),请稍后到题库列表确认是否已导入"));
+            reject(new Error("导入超时(超过 15 分钟),请稍后到题库列表确认是否已导入"));
           }
         }
       }, 1200);

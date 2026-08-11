@@ -55,7 +55,7 @@ export function paperFromFilename(filename) {
   if (!f) return "";
   // 去掉文件名里的"题目N"等分卷序号(用户常把一套真题拆成 题目1/题目2 多文件导入),
   // 避免同一套卷被拆成多套、paper 名带奇怪序号。年份/paper 号提取不受影响。
-  f = f.replace(/题目\s*\d+/gi, " ").replace(/\s+/g, " ").trim();
+  f = f.replace(/题目\s*\d+/gi, " ").replace(/相关真题/gi, " ").replace(/真题/gi, " ").replace(/\s+/g, " ").trim();
   const subj = /SMC/i.test(f) ? "SMC" : /ESAT/i.test(f) ? "ESAT" : /TMUA/i.test(f) ? "TMUA" : "";
   const year = (f.match(/\b(19|20)\d{2}\b/) || [])[0] || "";
   const pNum = (f.match(/paper\s*(\d+)/i) || f.match(/p\s*(\d+)/i) || [])[1] || "";
@@ -188,8 +188,10 @@ function normalizeRaw(r, filename) {
 
 export async function parsePdf(filename, buffer) {
   if (!isVisionConfigured()) throw new Error("VISION_NOT_CONFIGURED");
+  const isSMC = /\bSMC\b/i.test(String(filename || ""));
   const pages = await rasterize(buffer);
-  const raws = await extractQuestionsFromPdfPages(pages);
+  // SMC 等短选项密集卷:一页往往有多道题且选项横向排列,减少每批页数可提高识别精度
+  const raws = await extractQuestionsFromPdfPages(pages, { maxPagesPerCall: isSMC ? 1 : undefined });
   // 丢题预警:TMUA/ESAT 等官方卷一页通常 1-2 题;若题目页数明显多于提取题数,大概率有题没识别到
   // (视觉模型偶发漏题是已知问题,2022 Paper 2 曾丢 Q7-Q10 整整 4 题)。此时打日志并在结果里带 warning。
   const questionPageCount = pages.filter((p) => !/^\s*(BLANK|PAGE)\b/i.test(String(p.text || ""))).length;
@@ -211,10 +213,11 @@ export async function parsePdf(filename, buffer) {
   // 疑似并题行:视觉模型偶尔会把一页多道题的选项合并进一行(如 NSAA 出现 24 个选项的"假题")。
   // 也识别"纯字母选项"(所有选项都只剩 A/B/C 字母,选项正文丢失)的失败行。
   // 这类行无法还原为有效题,直接剔除并在 meta 里计数,避免把合并错乱的假题写进题库。
+  // 例外:SMC 等短选项卷视觉模型偶发只读出字母,宁可保留待审也不全部丢弃,故对 SMC 放宽。
   const tooMany = (r) => Array.isArray(r.options) && r.options.length > 8;
   const letterOnly = (r) => Array.isArray(r.options) && r.options.length >= 2 && r.options.every((o) => /^[A-Ha-h]$/.test(String(o).trim()));
-  const corrupt = parsed.filter((r) => tooMany(r) || letterOnly(r));
-  const rows = parsed.filter((r) => !tooMany(r) && !letterOnly(r));
+  const corrupt = parsed.filter((r) => tooMany(r) || (!isSMC && letterOnly(r)));
+  const rows = parsed.filter((r) => !tooMany(r) && (isSMC || !letterOnly(r)));
   if (corrupt.length) console.warn(`[import-pdf] ${filename}:${corrupt.length} 行选项异常(疑似多题合并或选项提取失败),已跳过`);
   if (!rows.length) {
     throw new Error("视觉模型未从 PDF 解析出有效的选择题(可能是纯文本试卷、或公式无法识别)");
