@@ -1,5 +1,10 @@
 # 版本历史
 
+## V2.4.68 (2026-08-11) — 学生端语言学习按听说读写分类展示
+- 语言学习页 `/app/language` 由「考试类型 + 技能」两个下拉筛选、默认平铺列表,改为以听说读写(听力/阅读/写作/口语)四大分类区块为主导航展示;全真连考(FULL)单独成块。
+- 每个分类区块标题带数量徽标,区块内列出该 skill 的试卷卡片;顶部保留「考试类型」筛选作为辅助过滤。
+- 试卷卡片去掉冗余的 skill 标签(区块已标明),保留考试类型 + 原版/组卷标识。
+
 ## V2.4.67 (2026-08-11) — 修复笔试练习点击卷子报 "Application error" 客户端崩溃
 - 根因:答题页 `app/practice/[id]/page.tsx` 的 `detailItems`(useMemo) 被放在 `if (loading) return` 提前 return 之后,违反 React Hooks 规则。首屏 loading=true 提前返回(少调用一次 hook),useEffect 拿到数据后 loading=false 二次渲染多调用一次 useMemo,触发 "Rendered more hooks than during the previous render" 崩溃。该 useMemo 在 V2.4.61(交卷错题回顾)引入,故每次打开答题页必崩。
 - 修复:将 `detailItems` 的 useMemo 移到所有提前 return 之前,保证每次渲染 hook 调用顺序一致。
