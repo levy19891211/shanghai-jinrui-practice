@@ -61,7 +61,8 @@ async function main() {
   const { PrismaClient } = require("@prisma/client");
   const prisma = new PrismaClient();
   try {
-    await prisma.$executeRawUnsafe("PRAGMA wal_checkpoint(TRUNCATE)");
+    // wal_checkpoint 会返回一行结果,必须用 $queryRawUnsafe
+    await prisma.$queryRawUnsafe("PRAGMA wal_checkpoint(TRUNCATE)");
   } finally {
     await prisma.$disconnect();
   }
