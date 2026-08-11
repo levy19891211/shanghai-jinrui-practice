@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.4.70 (2026-08-11) — 防线一:数据安全(自动备份 + 恢复演练 + 部署先备份)
+- 新增 `scripts/backup_db.cjs`:每日热备 SQLite(先 `wal_checkpoint(TRUNCATE)` 合并 WAL 再复制主库,在线一致性快照、无需停服);多版本保留 daily(最近7)/ weekly(每周一保留4)/ monthly(每月1号保留3),写入 `/root/backups` 并记 `backup.log`。预留 `BACKUP_RCLONE` 环境变量支持异地同步(配了 rclone 远程即自动上传)。
+- 新增 `scripts/restore_db.sh`:恢复演练,把备份还原到临时库并校验核心表(User/Question/Session/LanguagePaper/FavoriteQuestion/WrongBook)行数,不覆盖生产。
+- 新增 `scripts/deploy.sh`:固化部署流程,**部署前先备份数据库**再 pull/build/restart,满足"更新维护中不丢数据"。
+- 服务器注册 crontab 每日 03:17 自动备份。
+- 整站数据(用户/题库/试卷/作答/错题/收藏)现具备每日多版本备份与可演练恢复能力。
+
 ## V2.4.69 (2026-08-11) — 修复语言学习页试卷卡片高度不统一
 - 问题:`grid gap-3 md:grid-cols-2` 默认行高由内容决定,标题行数不同会导致同一行左右两张卡片高度不一致(截图所示)。
 - 修复:grid 加 `auto-rows-fr`,卡片按钮加 `h-full`,使同一行轨道高度取最高卡片,所有卡片填满轨道,边框对齐。
