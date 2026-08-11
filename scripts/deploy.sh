@@ -4,7 +4,7 @@ set -e
 cd /root/shanghai-jinrui-practice
 echo "[deploy] $(date) start"
 echo "[deploy] 1/4 backup DB first"
-( cd apps/api && node ../scripts/backup_db.cjs ) || echo "[deploy][warn] backup failed, continue anyway"
+( cd apps/api && node ../../scripts/backup_db.cjs ) || echo "[deploy][warn] backup failed, continue anyway"
 echo "[deploy] 2/4 git pull"
 git pull origin main
 echo "[deploy] 3/4 build"
