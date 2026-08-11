@@ -42,6 +42,7 @@ function parseJsonIds(s) {
 function knowledgeSubjectsFor(subject) {
   if (subject === "TMUA") return ["数学"];
   if (subject === "ESAT") return ["数学", "物理"];
+  if (subject === "SMC") return ["数学"];
   return [subject];
 }
 
@@ -252,12 +253,12 @@ async function importRows(req, rows, onProgress) {
       // 学科归一化(视觉模型可能输出 Chemistry/Physics 等英文,映射到中文学科)
       r.subject = normalizeSubject(r.subject);
       // 题源词(如 Word/Excel 里 Subject: TMUA)归到 sourceType,科目落到中文学科(TMUA/ESAT→数学)
-      if (/^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)$/i.test(String(r.subject || ""))) {
+      if (/^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA|SMC)$/i.test(String(r.subject || ""))) {
         if (!r.sourceType) r.sourceType = String(r.subject).toUpperCase();
         r.subject = "数学";
       }
       // 兜底:sourceType 为纯数学类题源但视觉模型/原始数据未给学科(如 MAT 被并入题源词后学科为空)
-      if (!r.subject && /^(TMUA|MAT|STEP|BMAT|PAT|ENGAA)$/i.test(String(r.sourceType || ""))) {
+      if (!r.subject && /^(TMUA|MAT|STEP|BMAT|PAT|ENGAA|SMC)$/i.test(String(r.sourceType || ""))) {
         r.subject = "数学";
       }
       // 题干/选项清洗单位 LaTeX(如 mol^{-1} → mol⁻¹,AgNO$_3$ → AgNO₃),避免 KaTeX 渲染报错
@@ -604,7 +605,7 @@ router.post(
 
     // 归一化:科目(题源词→sourceType,TMUA/ESAT→数学)、选项清洗、答案对齐(字母→选项文本)
     const rawSubj = String(raw.subject || "").trim();
-    const isSource = /^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)$/i.test(rawSubj);
+    const isSource = /^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA|SMC)$/i.test(rawSubj);
     const sourceType = isSource ? rawSubj.toUpperCase() : null;
     const normSubject =
       String(subject || "").trim() ||

@@ -338,7 +338,7 @@ router.post(
       answer = options[answer.toUpperCase().charCodeAt(0) - 65] ?? answer;
     }
     const rawSubj = String(raw.subject || "").trim();
-    const isSource = /^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)$/i.test(rawSubj);
+    const isSource = /^(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA|SMC)$/i.test(rawSubj);
     ok(res, {
       subject: isSource ? "数学" : rawSubj,
       sourceType: isSource ? rawSubj.toUpperCase() : null,

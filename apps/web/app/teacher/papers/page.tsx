@@ -18,7 +18,7 @@ interface Facets {
 
 const SUBJECT_OPTIONS = ["数学", "物理", "化学", "生物"];
 // 手动组卷可选的题源(TMUA/ESAT/NSAA...);可多选,不选 = 全部题源
-const SOURCE_TYPE_OPTIONS = ["TMUA", "ESAT", "NSAA"];
+const SOURCE_TYPE_OPTIONS = ["TMUA", "ESAT", "NSAA", "SMC"];
 const DIFF_LABEL: Record<number, string> = { 1: "入门", 2: "基础", 3: "中等", 4: "较难", 5: "困难" };
 
 const PAPER_STATUS_LABEL: Record<string, string> = {
@@ -921,6 +921,7 @@ export default function TeacherPapersPage() {
                             <option value="TMUA">TMUA</option>
                             <option value="ESAT">ESAT</option>
                             <option value="NSAA">NSAA</option>
+                            <option value="SMC">SMC</option>
                           </select>
                           <select
                             value={settingsDraft.mode}

@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.4.72 (2026-08-11) — 支持 SMC 题源导入 + 清理 SMC 脏数据
+
+- **核心修复**:SMC(Senior Maths Challenge)之前不在题源白名单,导致导入后题目 `subject="SMC"`(非法科目)、`sourceType` 全空、卷名带"题目1"——在题库按"SMC 题源"筛选找不到,表现为"导入失败"。
+- import-pdf.js:把 SMC 纳入 `SOURCE_TYPE_NAMES` / `sourceTypeFromFilename` / `MATH_SOURCE_TYPES`;文件名 `SMC_*.pdf` 可识别题源;导入后 `sourceType=SMC`、`subject` 自动兜底"数学"。
+- `paperFromFilename`:剥离"题目N"分卷序号,避免同一套真题被拆成多卷、卷名带奇怪序号。
+- questions.js / me.js:单题图片识别与批量导入的题源归一正则加入 SMC;knowledgeSubjectsFor 加 `SMC→数学`。
+- 前端:题源预设(DEFAULT_SOURCE_TYPES)与教师组卷题源下拉加入 SMC。
+- **数据清理**:删除本次错误导入的 111 条 `subject="SMC"` 脏题及其生成的空卷(清理前已备份)。
+
 ## V2.4.71 (2026-08-11) — 教师端学情统计:查看每个学生的做题情况(考试 + 练习)
 - 教师端「教学管理 → 学情统计」点击学生进入详情页,新增"做题情况(考试 + 练习)"表,覆盖需求:来源(试卷名/科目/题源)、类型(模拟考/练习 + 作业/自主标签)、完成时间、完成用时、得分、正确率。
 - 后端 `GET /teacher/students/:id/stats` 的 session 返回扩展:`paper`(title/subject/sourceType/mode)、`assignmentId`(区分作业 vs 自主练习),并新增计算字段 `durationSec`(完成用时 = submittedAt−startedAt)、`status`(DONE/IN_PROGRESS)。

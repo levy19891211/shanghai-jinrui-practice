@@ -53,7 +53,10 @@ export function paperFromFilename(filename) {
     .replace(/[_\-]+/g, " ")
     .trim();
   if (!f) return "";
-  const subj = /ESAT/i.test(f) ? "ESAT" : /TMUA/i.test(f) ? "TMUA" : "";
+  // 去掉文件名里的"题目N"等分卷序号(用户常把一套真题拆成 题目1/题目2 多文件导入),
+  // 避免同一套卷被拆成多套、paper 名带奇怪序号。年份/paper 号提取不受影响。
+  f = f.replace(/题目\s*\d+/gi, " ").replace(/\s+/g, " ").trim();
+  const subj = /SMC/i.test(f) ? "SMC" : /ESAT/i.test(f) ? "ESAT" : /TMUA/i.test(f) ? "TMUA" : "";
   const year = (f.match(/\b(19|20)\d{2}\b/) || [])[0] || "";
   const pNum = (f.match(/paper\s*(\d+)/i) || f.match(/p\s*(\d+)/i) || [])[1] || "";
   if (subj && year && pNum) return `${subj} ${year} Paper ${pNum}`;
@@ -87,13 +90,13 @@ function normSubject(s) {
 }
 
 // 已知考试题源(会出现在视觉模型的 subject 字段或文件名里)。新增题源时在此扩展。
-const SOURCE_TYPE_NAMES = ["TMUA", "ESAT", "NSAA", "BMAT", "STEP", "MAT", "PAT", "ENGAA"];
+const SOURCE_TYPE_NAMES = ["TMUA", "ESAT", "NSAA", "BMAT", "STEP", "MAT", "PAT", "ENGAA", "SMC"];
 // 科目(知识学科)。视觉模型 subject 属于这些值时记入科目投票,否则若在 SOURCE_TYPE_NAMES 则记入题源投票。
 const SUBJECT_NAMES = ["数学", "物理", "化学", "生物"];
 
 // 从文件名提取题源信号(ESAT/TMUA/NSAA/BMAT/STEP/MAT/PAT/ENGAA),未命中返回 ""
 export function sourceTypeFromFilename(filename) {
-  const m = String(filename || "").match(/\b(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA)\b/i);
+  const m = String(filename || "").match(/\b(TMUA|ESAT|NSAA|BMAT|STEP|MAT|PAT|ENGAA|SMC)\b/i);
   return m ? m[1].toUpperCase() : "";
 }
 
@@ -151,7 +154,7 @@ export function unifyFileMeta(raws, filename) {
   // 4) 统一 subject:paper 组内学科多数派 → 文件内学科多数派 → 纯数学类题源兜底"数学"
   //    视觉模型常把 MAT/TMUA 等题的 subject 误读成题源词(归到 sourceType),导致学科为空;
   //    NSAA/ESAT 含物理/化学,保留逐题学科投票结果,此处只给「纯数学类题源」兜底为"数学"。
-  const MATH_SOURCE_TYPES = ["TMUA", "MAT", "STEP", "BMAT", "PAT", "ENGAA"];
+  const MATH_SOURCE_TYPES = ["TMUA", "MAT", "STEP", "BMAT", "PAT", "ENGAA", "SMC"];
   let subject = modeOf(groupSubjectVotes) || modeOf(allSubjectVotes) || "";
   if (!subject && sourceType && MATH_SOURCE_TYPES.includes(sourceType)) subject = "数学";
 

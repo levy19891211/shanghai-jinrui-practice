@@ -11,6 +11,7 @@ export const DEFAULT_SOURCE_TYPES = [
   "STEP",
   "PAT",
   "ENGAA",
+  "SMC",
 ];
 
 // 从后端拉取题库中已有的题源,合并预设,去重排序
