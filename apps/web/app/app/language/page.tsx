@@ -124,13 +124,13 @@ export default function StudentLanguagePage() {
                     {list.length}
                   </span>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
                   {list.map((p) => (
                     <button
                       key={p.id}
                       onClick={() => start(p.id)}
                       disabled={!!startingId}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-60"
+                      className="flex h-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-60"
                     >
                       <div className="min-w-0">
                         <div className="mb-1 flex flex-wrap items-center gap-1.5">
