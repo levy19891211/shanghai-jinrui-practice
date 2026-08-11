@@ -1,5 +1,8 @@
 # 版本历史
 
+## V2.4.74 (2026-08-11) — 修复 SMC 导入报错：paperFromFilename 常量赋值
+- `import-pdf.js` 修复 `paperFromFilename` 中 `const f` 被重新赋值的运行时报错。
+
 ## V2.4.73 (2026-08-11) — 修复 SMC PDF 导入失败：视觉模型选项识别 + 前端超时
 - `vision.js` 提示词增加 SMC/短选项卷横向选项识别规则,避免只返回 A/B/C/D/E 字母。
 - `import-pdf.js` 对 SMC 单页识别(`maxPagesPerCall=1`)、放宽纯字母选项过滤(保留待审),卷名清洗去掉"相关真题"。

@@ -48,7 +48,7 @@ export async function rasterize(pdfBuf) {
 // 用作题目的 paper 字段,既能让审核列表/试卷名可读,又能避免不同年份同名卷
 // 因 sourceKey(subject::paper::source) 相同而被错误合并。解析不出时回落到视觉模型返回的 paper。
 export function paperFromFilename(filename) {
-  const f = String(filename || "")
+  let f = String(filename || "")
     .replace(/\.[^.]+$/, "")
     .replace(/[_\-]+/g, " ")
     .trim();
