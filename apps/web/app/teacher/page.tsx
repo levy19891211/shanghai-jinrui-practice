@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
@@ -18,6 +18,9 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-600",
   ARCHIVED: "bg-slate-100 text-slate-400",
 };
+
+// 题库列表每页题数(后端 /questions 接口上限 50,故固定 50)
+const PAGE_SIZE = 50;
 
 // 题目配图状态:has = 已内嵌图片;needs = 应配图但缺图(提醒老师手动添加);none = 无需配图
 // IMG_RE:题干/选项/解析中已含 Markdown 图片语法 ![alt](url)
@@ -88,6 +91,8 @@ export default function TeacherPage() {
   const user = getUser();
   const [list, setList] = useState<Question[]>([]);
   const [total, setTotal] = useState(0);
+  // 分页:page 从 1 开始,pageSize 受后端上限 50 约束
+  const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
   // 学科 tab(空 = 全部;含数学/物理/化学/生物)
   const [subjectTab, setSubjectTab] = useState("");
@@ -257,7 +262,7 @@ export default function TeacherPage() {
   const [llmConfigured, setLlmConfigured] = useState<boolean>(false);
 
   const load = useCallback(async () => {
-    const qs = new URLSearchParams({ pageSize: "50" });
+    const qs = new URLSearchParams({ pageSize: String(PAGE_SIZE), page: String(page) });
     if (statusFilter) qs.set("status", statusFilter);
     if (searchQuery) qs.set("q", searchQuery);
     if (paperId) qs.set("paperId", paperId);
@@ -276,7 +281,10 @@ export default function TeacherPage() {
     const d = await api.get<QuestionList>(`/questions?${qs.toString()}`);
     setList(d.list);
     setTotal(d.total);
-  }, [statusFilter, searchQuery, paperId, subjectTab, kpFilter, diffFilter, sortBy]);
+    // 若当前页已超出范围(如删除/审核后题数变少),回退到最后一页,避免整页空白
+    const tp = Math.max(1, Math.ceil(d.total / PAGE_SIZE));
+    if (d.list.length === 0 && page > tp) setPage(tp);
+  }, [statusFilter, searchQuery, paperId, subjectTab, kpFilter, diffFilter, sortBy, page]);
 
   // 加载知识点库(供筛选下拉)
   useEffect(() => {
@@ -298,6 +306,24 @@ export default function TeacherPage() {
   }, []);
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+
+  // 任意筛选 / 搜索 / 排序条件变化时,回到第 1 页,避免停留在已无数据的旧页码
+  useEffect(() => { setPage(1); }, [statusFilter, searchQuery, paperId, subjectTab, kpFilter, diffFilter, sortBy]);
+
+  // 分页派生值:总页数 + 当前页附近的页码窗口(最多显示 5 个,两端用 … 省略)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageNumbers = useMemo(() => {
+    const span = 2;
+    let start = Math.max(1, page - span);
+    let end = Math.min(totalPages, page + span);
+    if (end - start < 4) {
+      if (start === 1) end = Math.min(totalPages, start + 4);
+      else start = Math.max(1, end - 4);
+    }
+    const arr: number[] = [];
+    for (let i = start; i <= end; i++) arr.push(i);
+    return arr;
+  }, [page, totalPages]);
 
   // 从「试卷管理」跳转过来:?edit=<id> → 自动打开该题的编辑弹窗
   useEffect(() => {
@@ -991,6 +1017,72 @@ export default function TeacherPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* 分页控件:后端 /questions 按 page/pageSize 返回,这里做点选翻页 */}
+      {total > PAGE_SIZE && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <span className="text-sm text-slate-500">
+            第 {page} / {totalPages} 页 · 共 {total} 道题
+          </span>
+          <div className="flex flex-wrap items-center gap-1">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              « 首页
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ‹ 上一页
+            </button>
+            {pageNumbers[0] > 1 && (
+              <>
+                <button onClick={() => setPage(1)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 transition hover:bg-slate-50">
+                  1
+                </button>
+                {pageNumbers[0] > 2 && <span className="px-1 text-xs text-slate-400">…</span>}
+              </>
+            )}
+            {pageNumbers.map((n) => (
+              <button
+                key={n}
+                onClick={() => setPage(n)}
+                className={`h-8 w-8 rounded-lg text-xs font-medium transition ${
+                  n === page ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+            {pageNumbers[pageNumbers.length - 1] < totalPages && (
+              <>
+                {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && <span className="px-1 text-xs text-slate-400">…</span>}
+                <button onClick={() => setPage(totalPages)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 transition hover:bg-slate-50">
+                  {totalPages}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              下一页 ›
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              末页 »
+            </button>
+          </div>
         </div>
       )}
 
