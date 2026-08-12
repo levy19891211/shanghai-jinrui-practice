@@ -266,25 +266,65 @@ router.get(
     const isTeacher = ["TEACHER", "ADMIN"].includes(req.user.role);
     if (!isOwner && !isTeacher) return fail(res, 403, "无权限查看");
 
-    const seenQ = new Set();
-    const details = session.records
-      .filter((r) => {
-        if (seenQ.has(r.questionId)) return false;
-        seenQ.add(r.questionId);
-        return true;
-      })
-      .map((r) => ({
-        questionId: r.questionId,
-        selected: r.selected,
-        isCorrect: r.isCorrect,
-        timeSpent: r.timeSpent,
-        options: JSON.parse(r.question.options || "[]"),
-        // 提交后(本人/老师)才可见答案与解析
-        answer: session.submittedAt ? r.question.answer : undefined,
-        solution: session.submittedAt ? r.question.solution : undefined,
-        stem: r.question.stem,
-        topic: r.question.topic,
-      }));
+    let details;
+    let answeredCount = 0;
+    if (session.submittedAt) {
+      // 已提交:仅返回答题记录(含答案与解析),供成绩回顾
+      const seenQ = new Set();
+      details = session.records
+        .filter((r) => {
+          if (seenQ.has(r.questionId)) return false;
+          seenQ.add(r.questionId);
+          return true;
+        })
+        .map((r) => ({
+          questionId: r.questionId,
+          selected: r.selected,
+          isCorrect: r.isCorrect,
+          timeSpent: r.timeSpent,
+          options: JSON.parse(r.question.options || "[]"),
+          answer: r.question.answer,
+          solution: r.question.solution,
+          stem: r.question.stem,
+          topic: r.question.topic,
+        }));
+    } else {
+      // 进行中:返回完整题目列表(从 questionIds 还原顺序),并附上已实时保存的答案,
+      // 这样学生中途退出后再进入本会话即可恢复全部题目与已做作答,不会丢失未答题。
+      let ids = [];
+      try {
+        const parsed = session.questionIds ? JSON.parse(session.questionIds) : null;
+        if (Array.isArray(parsed)) ids = [...new Set(parsed.map(String))];
+      } catch {
+        /* ignore */
+      }
+      const recMap = new Map(session.records.map((r) => [r.questionId, r]));
+      const questions =
+        ids.length > 0
+          ? await prisma.question.findMany({ where: { id: { in: ids } }, select: QUIZ_FIELDS })
+          : [];
+      const qMap = new Map(questions.map((q) => [q.id, q]));
+      details = ids
+        .map((qid) => {
+          const q = qMap.get(qid);
+          if (!q) return null;
+          const rec = recMap.get(qid);
+          const selected = rec?.selected ?? null;
+          if (selected != null) answeredCount += 1;
+          return {
+            questionId: qid,
+            selected,
+            isCorrect: null,
+            timeSpent: rec?.timeSpent ?? null,
+            options: safeParseOptions(q.options),
+            answer: undefined,
+            solution: undefined,
+            stem: q.stem,
+            topic: q.topic,
+          };
+        })
+        .filter(Boolean);
+    }
     ok(res, {
       id: session.id,
       mode: session.mode,
@@ -294,6 +334,7 @@ router.get(
       correctCount: session.correctCount,
       startedAt: session.startedAt,
       submittedAt: session.submittedAt,
+      answeredCount,
       details,
     });
   })

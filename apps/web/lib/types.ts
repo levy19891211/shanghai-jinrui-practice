@@ -91,6 +91,7 @@ export interface SessionDetail {
   correctCount: number | null;
   startedAt: string;
   submittedAt: string | null;
+  answeredCount?: number;
   details: {
     questionId: string;
     selected: string | null;

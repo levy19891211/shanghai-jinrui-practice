@@ -47,6 +47,7 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const submittedRef = useRef(false);
@@ -106,6 +107,20 @@ export default function PracticePage() {
             type: "SINGLE_CHOICE", subject: "", difficulty: 0,
           })));
         }
+        // 从后端恢复已保存的作答(中途退出后再进入本会话可继续):后端 selected 为权威,
+        // 与本地 sessionStorage 缓存合并(本地最新优先),保证答案不丢失。
+        const fromBackend: Record<string, string> = {};
+        (d.details || []).forEach((x) => {
+          if (x.selected != null) fromBackend[x.questionId] = x.selected as string;
+        });
+        if (Object.keys(fromBackend).length) {
+          setAnswers((prev) => {
+            const merged = { ...fromBackend, ...prev };
+            try { sessionStorage.setItem(`answers-${id}`, JSON.stringify(merged)); } catch { /* ignore */ }
+            return merged;
+          });
+          setSavedAt(Date.now());
+        }
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -116,7 +131,9 @@ export default function PracticePage() {
   }, [id]);
 
   const saveAnswer = useCallback((qid: string, selected: string) => {
-    api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: 20 }).catch(() => {});
+    api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: 20 })
+      .then(() => setSavedAt(Date.now()))
+      .catch(() => {});
   }, [id]);
 
   const submit = useCallback(async (auto = false) => {
@@ -162,6 +179,18 @@ export default function PracticePage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [questions.length, scratchOpen, scratchInteractive]);
+
+  // 中途退出保护:答题进行中(未交卷)关闭/刷新页面时提示,避免误丢进度。
+  // 注意答案已在每次作答时实时保存到后端,刷新不会丢;此处仅作提醒。
+  useEffect(() => {
+    if (submittedRef.current || result || detail?.submittedAt) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [result, detail]);
 
   function choose(selected: string) {
     if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
@@ -501,8 +530,11 @@ export default function PracticePage() {
         {error && <p className="px-6 pb-4 text-sm text-[#c62828]">{error}</p>}
       </div>
 
-      <p className="mt-3 text-center text-xs text-[#8a8377]">
-        支持键盘 ← → 切换题目 · 作答实时保存,刷新不丢失
+      <p className="mt-3 flex items-center justify-center gap-2 text-center text-xs text-[#8a8377]">
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f5e9] px-2.5 py-1 font-medium text-[#2e7d32]">
+          ✓ 作答已自动保存{savedAt ? ` · ${new Date(savedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+        </span>
+        <span>支持键盘 ← → 切换题目 · 中途退出可回到本页继续</span>
       </p>
 
       {/* 手写书写板:浮动入口 + 全屏草稿画布 */}
