@@ -266,8 +266,6 @@ export default function StudentHome() {
     let generic: SessionSummary | null = null;
     for (const s of allSessions) {
       if (s.submittedAt) continue;
-      // 已完成题数为 0 的会话(点开即退出、从未作答的空卷)不展示,避免无意义的"继续做题"卡片堆积
-      if ((s.answeredCount ?? 0) === 0) continue;
       if (s.assignmentId) {
         const k = `A:${s.assignmentId}`;
         const cur = byKey.get(k);
