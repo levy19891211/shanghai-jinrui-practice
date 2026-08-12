@@ -155,6 +155,8 @@ model Session {
   assignment   Assignment?   @relation(fields: [assignmentId], references: [id])
   mode         String
   durationMin  Int? // EXAM 模式的限时时长(分钟),超时后不可再作答
+  deadlineAt   DateTime? // EXAM 模式的绝对截止时间(可变):创建时 = startedAt + durationMin;中途退出暂停后续做时会被改写为 now + 剩余秒,使服务端不会误判超时
+  pausedRemaining Int? // EXAM 中途退出暂停时记录的剩余秒数(前端恢复用)
   questionIds  String? // 本次会话全部题目 id(JSON 数组),用于交卷后补齐未答题展示错题
   score        Float?
   total        Int?

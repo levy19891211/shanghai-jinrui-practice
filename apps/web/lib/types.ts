@@ -86,6 +86,8 @@ export interface SessionDetail {
   id: string;
   mode: string;
   durationMin?: number | null;
+  deadlineAt?: string | null;
+  pausedRemaining?: number | null;
   score: number | null;
   total: number | null;
   correctCount: number | null;

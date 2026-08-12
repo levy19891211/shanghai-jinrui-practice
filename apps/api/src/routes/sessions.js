@@ -105,6 +105,8 @@ router.post(
         assignmentId,
         mode,
         durationMin,
+        // EXAM 模式:记录绝对截止时间,中途退出暂停时可改写(见 /pause)
+        deadlineAt: mode === "EXAM" && durationMin ? new Date(Date.now() + durationMin * 60000) : null,
         questionIds: JSON.stringify(questionIds),
         total: questionIds.length,
       },
@@ -137,8 +139,11 @@ function safeParseOptions(value) {
 }
 
 // 计算会话截止时间(EXAM)
+// 优先用持久化的 deadlineAt(已包含中途暂停的补偿);没有则按 startedAt + 时长推算。
 function deadlineOf(session) {
-  if (session.mode !== "EXAM" || !session.durationMin) return null;
+  if (session.mode !== "EXAM") return null;
+  if (session.deadlineAt) return new Date(session.deadlineAt);
+  if (!session.durationMin) return null;
   return new Date(session.startedAt.getTime() + session.durationMin * 60000);
 }
 
@@ -167,6 +172,28 @@ router.post(
       update: { selected: selected ?? null, timeSpent: Number(timeSpent) || null },
     });
     ok(res, null, "已保存");
+  })
+);
+
+// POST /api/sessions/:id/pause — 模拟考中途退出时暂停计时
+// 前端通过 fetch({keepalive:true}) 在页面隐藏/卸载时上报当前剩余秒数;
+// 服务端把 deadlineAt 改写为 now + remaining,使计时暂停(继续做题时从剩余时间起算)。
+router.post(
+  "/:id/pause",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    if (session.submittedAt) return fail(res, 400, "会话已提交");
+    if (session.mode !== "EXAM") return fail(res, 400, "仅模拟考支持暂停计时");
+    let remaining = Number(req.body?.remaining);
+    if (!Number.isFinite(remaining) || remaining < 0) remaining = 0;
+    const deadlineAt = remaining > 0 ? new Date(Date.now() + remaining * 1000) : new Date(Date.now());
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { deadlineAt, pausedRemaining: Math.round(remaining) },
+    });
+    ok(res, null, "已暂停计时");
   })
 );
 
@@ -329,6 +356,8 @@ router.get(
       id: session.id,
       mode: session.mode,
       durationMin: session.durationMin,
+      deadlineAt: session.deadlineAt,
+      pausedRemaining: session.pausedRemaining,
       score: session.score,
       total: session.total,
       correctCount: session.correctCount,

@@ -48,9 +48,12 @@ export default function PracticePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [resumed, setResumed] = useState(false);
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const submittedRef = useRef(false);
+  // 当前剩余秒数(供退出时上报暂停),用 ref 避免闭包取到旧值
+  const remainingRef = useRef<number | null>(null);
   // 手写批注层(半透明叠在题目上方;浏览模式下可正常答题/切题)
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchInteractive, setScratchInteractive] = useState(false);
@@ -96,7 +99,12 @@ export default function PracticePage() {
           setResult({ score: d.score ?? 0, total: d.total ?? 0, correctCount: d.correctCount ?? 0, details: [] });
           return;
         }
-        if (d.durationMin && d.startedAt) {
+        if (d.deadlineAt) {
+          // 考试:优先用服务端持久化的截止时间(含中途暂停补偿),使续做时计时从剩余时间起算
+          const dl = new Date(d.deadlineAt).getTime();
+          setDeadline(dl);
+          setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
+        } else if (d.durationMin && d.startedAt) {
           const dl = new Date(d.startedAt).getTime() + d.durationMin * 60000;
           setDeadline(dl);
           setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
@@ -109,9 +117,14 @@ export default function PracticePage() {
         }
         // 从后端恢复已保存的作答(中途退出后再进入本会话可继续):后端 selected 为权威,
         // 与本地 sessionStorage 缓存合并(本地最新优先),保证答案不丢失。
+        const localKeys = Object.keys(answers);
         const fromBackend: Record<string, string> = {};
+        let recovered = 0;
         (d.details || []).forEach((x) => {
-          if (x.selected != null) fromBackend[x.questionId] = x.selected as string;
+          if (x.selected != null) {
+            fromBackend[x.questionId] = x.selected as string;
+            if (!localKeys.includes(x.questionId)) recovered += 1;
+          }
         });
         if (Object.keys(fromBackend).length) {
           setAnswers((prev) => {
@@ -120,6 +133,7 @@ export default function PracticePage() {
             return merged;
           });
           setSavedAt(Date.now());
+          if (recovered > 0) setResumed(true);
         }
       })
       .catch((e) => setError(e.message))
@@ -159,6 +173,7 @@ export default function PracticePage() {
 
   // 倒计时:归零后自动交卷
   useEffect(() => {
+    remainingRef.current = remaining;
     if (remaining === null || detail || result) return;
     if (remaining <= 0) {
       submit(true);
@@ -167,6 +182,35 @@ export default function PracticePage() {
     const t = setTimeout(() => setRemaining((r) => (r === null ? null : r - 1)), 1000);
     return () => clearTimeout(t);
   }, [remaining, detail, result, submit]);
+
+  // 考试中途退出 → 暂停计时:页面被隐藏(切后台/关标签)或卸载时,用 keepalive 上报剩余秒数,
+  // 服务端将 deadlineAt 改写为 now + 剩余,续做时从剩余时间起算。keepalive 保证请求在页面关闭时仍能发出。
+  useEffect(() => {
+    if (!isExam) return;
+    const pauseNow = () => {
+      if (submittedRef.current || detail?.submittedAt || result) return;
+      const rem = remainingRef.current;
+      if (rem == null || rem <= 0) return;
+      const token = (window.localStorage.getItem("wb_token") || "").trim();
+      try {
+        fetch(`/api/sessions/${id}/pause`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ remaining: rem }),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    };
+    const onVis = () => { if (document.hidden) pauseNow(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", pauseNow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", pauseNow);
+    };
+  }, [isExam, id, detail, result]);
 
   // 键盘导航:←/→ 切题(批注书写时禁用,浏览模式可切)
   useEffect(() => {
@@ -414,6 +458,14 @@ export default function PracticePage() {
             </div>
           </div>
         </div>
+
+        {/* 恢复进度提示:中途退出后再进入本会话时显示,让"自动保存/续做"看得见 */}
+        {resumed && (
+          <div className="flex items-center gap-2 bg-[#e8f5e9] px-6 py-2 text-[13px] text-[#2e7d32]">
+            <span className="font-semibold">↩ 已为你恢复上次作答进度</span>
+            <span className="text-[#3f7a45]">已答 {answeredCount} / {total} 题,可继续作答;考试计时已按剩余时间继续。</span>
+          </div>
+        )}
 
         {/* 进度条 */}
         <div className="flex items-center gap-3 bg-[#f1ead9] px-6 py-2.5 text-[13px] text-[#5a5346]">
