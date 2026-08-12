@@ -266,6 +266,8 @@ export default function StudentHome() {
     let generic: SessionSummary | null = null;
     for (const s of allSessions) {
       if (s.submittedAt) continue;
+      // 只显示至少已完成 1 题的未完成试卷(过滤点开即退出的空卷)
+      if ((s.answeredCount ?? 0) === 0) continue;
       if (s.assignmentId) {
         const k = `A:${s.assignmentId}`;
         const cur = byKey.get(k);
