@@ -9,17 +9,21 @@ const router = Router();
 router.use(requireAuth, requireRole("TEACHER", "ADMIN"));
 
 // GET /api/teacher/students — 学生列表 + 成绩概览(可搜索)
+// ?status=PENDING|APPROVED  按审核状态过滤;缺省默认 APPROVED(已通过,即正常在册学生)
+// 注册审核 tab 传 status=PENDING 拉取待审核学生
 router.get(
   "/students",
   asyncHandler(async (req, res) => {
     const search = req.query.search ? String(req.query.search).trim() : "";
+    const status = req.query.status ? String(req.query.status) : "APPROVED";
     const where = {
       role: "STUDENT",
+      status,
       ...(search ? { OR: [{ name: { contains: search } }, { email: { contains: search } }] } : {}),
     };
     const students = await prisma.user.findMany({
       where,
-      select: { id: true, name: true, email: true, createdAt: true },
+      select: { id: true, name: true, email: true, createdAt: true, status: true, reviewedAt: true, reviewNote: true },
       orderBy: { createdAt: "asc" },
     });
     const list = [];
@@ -38,6 +42,9 @@ router.get(
         name: s.name,
         email: s.email,
         createdAt: s.createdAt,
+        status: s.status,
+        reviewedAt: s.reviewedAt,
+        reviewNote: s.reviewNote,
         sessionCount: sessions.length,
         avgRate: sumTotal ? Math.round((sumScore / sumTotal) * 100) : 0,
         lastSession: last ? { score: last.score, total: last.total, mode: last.mode, submittedAt: last.submittedAt } : null,
@@ -131,6 +138,81 @@ router.delete(
   })
 );
 
+// 级联删除学生及其全部关联数据(供「删除」与「拒绝注册」复用)
+async function deleteStudentCascade(studentId) {
+  const sessions = await prisma.session.findMany({ where: { studentId }, select: { id: true } });
+  const sessionIds = sessions.map((s) => s.id);
+  if (sessionIds.length) {
+    await prisma.answerRecord.deleteMany({ where: { sessionId: { in: sessionIds } } });
+    await prisma.session.deleteMany({ where: { id: { in: sessionIds } } });
+  }
+  const langSessions = await prisma.languageSession.findMany({ where: { studentId }, select: { id: true } });
+  const langSessionIds = langSessions.map((s) => s.id);
+  if (langSessionIds.length) {
+    await prisma.languageAnswerRecord.deleteMany({ where: { sessionId: { in: langSessionIds } } });
+    await prisma.languageSession.deleteMany({ where: { id: { in: langSessionIds } } });
+  }
+  await prisma.assignmentStudent.deleteMany({ where: { studentId } });
+  await prisma.wrongBook.deleteMany({ where: { studentId } });
+  await prisma.languageWrongBook.deleteMany({ where: { studentId } });
+  await prisma.roguelikeRun.deleteMany({ where: { studentId } });
+  await prisma.favorite.deleteMany({ where: { studentId } });
+  await prisma.user.delete({ where: { id: studentId } });
+}
+
+// POST /api/teacher/students/:id/approve — 审核通过(学生账号生效)
+router.post(
+  "/students/:id/approve",
+  asyncHandler(async (req, res) => {
+    const r = await prisma.user.updateMany({
+      where: { id: req.params.id, role: "STUDENT", status: "PENDING" },
+      data: { status: "APPROVED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: null },
+    });
+    if (!r.count) return fail(res, 404, "学生不存在或状态已变更");
+    ok(res, null, "已通过该学生的注册申请");
+  })
+);
+
+// POST /api/teacher/students/:id/reject — 拒绝注册(删除账号,邮箱释放可重新注册)
+router.post(
+  "/students/:id/reject",
+  asyncHandler(async (req, res) => {
+    const student = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!student || student.role !== "STUDENT") return fail(res, 404, "学生不存在");
+    if (student.status !== "PENDING") return fail(res, 400, "仅待审核的学生可被拒绝");
+    if (student.id === req.user.id) return fail(res, 400, "不能拒绝自己");
+    await deleteStudentCascade(student.id);
+    ok(res, null, `已拒绝「${student.name}」的注册申请，账号已删除`);
+  })
+);
+
+// POST /api/teacher/students/batch-approve — 批量通过
+router.post(
+  "/students/batch-approve",
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return fail(res, 400, "请选择要通过的学生");
+    const r = await prisma.user.updateMany({
+      where: { id: { in: ids }, role: "STUDENT", status: "PENDING" },
+      data: { status: "APPROVED", reviewedBy: req.user.id, reviewedAt: new Date(), reviewNote: null },
+    });
+    ok(res, null, `已通过 ${r.count} 名学生`);
+  })
+);
+
+// POST /api/teacher/students/batch-reject — 批量拒绝(删除账号)
+router.post(
+  "/students/batch-reject",
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return fail(res, 400, "请选择要拒绝的学生");
+    const r = await prisma.user.deleteMany({
+      where: { id: { in: ids }, role: "STUDENT", status: "PENDING" },
+    });
+    ok(res, null, `已拒绝并删除 ${r.count} 名学生账号`);
+  })
+);
+
 // ——— 作业分发 ———
 // GET /api/teacher/assignments — 作业列表(含每份作业的完成统计);?mode=PRACTICE 只列作业
 router.get(
@@ -183,9 +265,9 @@ router.post(
       paperTitle = languagePaper.title;
     }
 
-    // 校验学生存在且都是 STUDENT
-    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT" } });
-    if (students.length !== studentIds.length) return fail(res, 400, "存在无效的学生");
+    // 校验学生存在、都是 STUDENT 且已通过审核(待审核学生不能接收作业/考试)
+    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT", status: "APPROVED" } });
+    if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
 
     // 显式 mode 优先(学生管理「作业分发」固定传 PRACTICE);未传时按卷子模式推断
     const aMode =
@@ -258,8 +340,9 @@ router.get(
 router.get(
   "/stats/overview",
   asyncHandler(async (req, res) => {
-    const [students, sessions, records] = await Promise.all([
-      prisma.user.count({ where: { role: "STUDENT" } }),
+    const [students, pendingCount, sessions, records] = await Promise.all([
+      prisma.user.count({ where: { role: "STUDENT", status: "APPROVED" } }),
+      prisma.user.count({ where: { role: "STUDENT", status: "PENDING" } }),
       prisma.session.count({ where: { submittedAt: { not: null } } }),
       prisma.answerRecord.findMany({
         where: { isCorrect: { not: null } },
@@ -276,6 +359,7 @@ router.get(
     }
     ok(res, {
       students,
+      pendingCount,
       sessions,
       totalAnswered: records.length,
       byTopic: [...agg.values()]

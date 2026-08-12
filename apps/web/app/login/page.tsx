@@ -11,19 +11,31 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ email: "", password: "", name: "" });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
     try {
-      const data = mode === "login"
-        ? await api.post<AuthData>("/auth/login", { email: form.email, password: form.password })
-        : await api.post<AuthData>("/auth/register", { email: form.email, password: form.password, name: form.name });
-      setToken(data.token);
-      setUser(data.user);
-      router.push(data.user.role === "STUDENT" ? "/app" : "/teacher");
+      if (mode === "register") {
+        // 注册不直接登录:等待教师审核通过后方可登录
+        const data = await api.post<{ user: AuthData["user"] }>("/auth/register", {
+          email: form.email,
+          password: form.password,
+          name: form.name,
+        });
+        setSuccess(`注册申请已提交！账号「${data.user.email}」正在等待教师审核，通过后即可登录。`);
+        setMode("login");
+        setForm({ email: form.email, password: "", name: "" });
+      } else {
+        const data = await api.post<AuthData>("/auth/login", { email: form.email, password: form.password });
+        setToken(data.token);
+        setUser(data.user);
+        router.push(data.user.role === "STUDENT" ? "/app" : "/teacher");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败");
     } finally {
@@ -69,15 +81,16 @@ export default function LoginPage() {
             <input className={input} type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="至少 6 位" minLength={6} required />
           </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {success && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
           <button
             type="submit"
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
           >
-            {loading ? "请稍候..." : mode === "login" ? "登录" : "注册并登录"}
+            {loading ? "请稍候..." : mode === "login" ? "登录" : "提交注册申请"}
           </button>
           {mode === "register" && (
-            <p className="text-center text-xs text-slate-400">公开注册仅创建学生账号;老师账号请由管理员开通</p>
+            <p className="text-center text-xs text-slate-400">公开注册仅创建学生账号，需教师审核通过后才能登录;老师账号请由管理员开通</p>
           )}
         </form>
       </div>

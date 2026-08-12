@@ -20,6 +20,8 @@ async function seedUsers() {
         email: u.email,
         name: u.name,
         role: u.role,
+        // 种子学生直接设为已通过,避免被账号审核拦截
+        ...(u.role === "STUDENT" ? { status: "APPROVED" } : {}),
         passwordHash: await bcrypt.hash(u.password, 10),
       },
     });

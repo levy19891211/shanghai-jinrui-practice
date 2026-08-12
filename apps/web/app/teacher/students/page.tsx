@@ -69,7 +69,8 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function TeacherStudentsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"stats" | "assign" | "exams">("stats");
+  const [tab, setTab] = useState<"stats" | "assign" | "exams" | "review">("stats");
+  const [pendingCount, setPendingCount] = useState(0);
 
   // ——— 学情统计 ———
   const [list, setList] = useState<StudentRow[]>([]);
@@ -87,6 +88,22 @@ export default function TeacherStudentsPage() {
   const [assignMsg, setAssignMsg] = useState("");
   const [assignErr, setAssignErr] = useState("");
   const [detail, setDetail] = useState<AssignmentDetail | null>(null);
+
+  // ——— 注册审核 ———(待教师审核的学生)
+  interface ReviewRow {
+    id: string;
+    name: string;
+    email: string;
+    createdAt: string;
+    status: string;
+    reviewedAt: string | null;
+    reviewNote: string | null;
+  }
+  const [reviewList, setReviewList] = useState<ReviewRow[]>([]);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [selectedReview, setSelectedReview] = useState<Set<string>>(new Set());
+  const [reviewMsg, setReviewMsg] = useState("");
+  const [reviewErr, setReviewErr] = useState("");
 
   async function load(kw = search) {
     try {
@@ -109,12 +126,27 @@ export default function TeacherStudentsPage() {
 
   useEffect(() => {
     load();
-    api.get<Overview>("/teacher/stats/overview").then(setOverview).catch(() => {});
+    api.get<Overview & { pendingCount: number }>("/teacher/stats/overview").then((d) => { setOverview(d); setPendingCount(d.pendingCount || 0); }).catch(() => {});
     loadAssignments();
     // 学生与试卷库(供作业分发)
     api.get<{ list: { id: string; name: string; email: string }[] }>("/teacher/students").then((d) => setStudents(d.list)).catch(() => {});
     api.get<{ list: PaperOption[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
   }, [loadAssignments]);
+
+  // 注册审核:拉取待审核(PENDING)学生
+  const loadReview = useCallback(async (kw = reviewSearch) => {
+    try {
+      const d = await api.get<{ list: ReviewRow[] }>(`/teacher/students?status=PENDING${kw ? `&search=${encodeURIComponent(kw)}` : ""}`);
+      setReviewList(d.list);
+      setPendingCount(d.list.length);
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : "加载待审核列表失败");
+    }
+  }, [reviewSearch]);
+
+  useEffect(() => {
+    if (tab === "review") loadReview();
+  }, [tab, loadReview]);
 
   const weak = (overview?.byTopic ?? []).slice(0, 5);
 
@@ -190,6 +222,69 @@ export default function TeacherStudentsPage() {
     }
   }
 
+  // ——— 注册审核操作 ———
+  async function approveOne(id: string) {
+    setReviewErr("");
+    try {
+      await api.post(`/teacher/students/${id}/approve`);
+      setReviewMsg("已通过该学生的注册申请");
+      await loadReview();
+      api.get<Overview & { pendingCount: number }>("/teacher/stats/overview").then((d) => setPendingCount(d.pendingCount || 0)).catch(() => {});
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+  async function rejectOne(s: ReviewRow) {
+    if (!window.confirm(`确认拒绝「${s.name}」的注册申请?该账号将被删除,邮箱释放后可重新注册。`)) return;
+    setReviewErr("");
+    try {
+      await api.post(`/teacher/students/${s.id}/reject`);
+      setReviewMsg(`已拒绝并删除「${s.name}」的账号`);
+      await loadReview();
+      api.get<Overview & { pendingCount: number }>("/teacher/stats/overview").then((d) => setPendingCount(d.pendingCount || 0)).catch(() => {});
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+  async function batchApprove() {
+    if (selectedReview.size === 0) { setReviewErr("请先勾选要通过的学生"); return; }
+    setReviewErr("");
+    try {
+      await api.post("/teacher/students/batch-approve", { ids: Array.from(selectedReview) });
+      setReviewMsg(`已通过 ${selectedReview.size} 名学生`);
+      setSelectedReview(new Set());
+      await loadReview();
+      api.get<Overview & { pendingCount: number }>("/teacher/stats/overview").then((d) => setPendingCount(d.pendingCount || 0)).catch(() => {});
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+  async function batchReject() {
+    if (selectedReview.size === 0) { setReviewErr("请先勾选要拒绝的学生"); return; }
+    if (!window.confirm(`确认拒绝并删除选中的 ${selectedReview.size} 名学生账号?`)) return;
+    setReviewErr("");
+    try {
+      await api.post("/teacher/students/batch-reject", { ids: Array.from(selectedReview) });
+      setReviewMsg(`已拒绝并删除 ${selectedReview.size} 名学生账号`);
+      setSelectedReview(new Set());
+      await loadReview();
+      api.get<Overview & { pendingCount: number }>("/teacher/stats/overview").then((d) => setPendingCount(d.pendingCount || 0)).catch(() => {});
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+  function toggleReview(id: string) {
+    setSelectedReview((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllReview() {
+    setSelectedReview((prev) => (prev.size === reviewList.length ? new Set() : new Set(reviewList.map((s) => s.id))));
+  }
+
   // 学生选择:可搜索过滤
   const filteredStudents = useMemo(() => {
     const kw = search.trim().toLowerCase();
@@ -219,6 +314,17 @@ export default function TeacherStudentsPage() {
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "exams" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             考试管理
+          </button>
+          <button
+            onClick={() => setTab("review")}
+            className={`relative rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "review" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            注册审核
+            {pendingCount > 0 && (
+              <span className={`ml-1 rounded-full px-1.5 text-xs ${tab === "review" ? "bg-white/25 text-white" : "bg-red-500 text-white"}`}>
+                {pendingCount}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -457,6 +563,100 @@ export default function TeacherStudentsPage() {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "review" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium text-slate-700">待审核注册申请</h2>
+                <p className="mt-1 text-xs text-slate-400">学生注册后默认进入待审核状态,需教师通过后账号才生效、可登录使用系统。</p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && loadReview()}
+                  placeholder="按姓名/邮箱搜索"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                />
+                <button onClick={() => loadReview()} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
+                  搜索
+                </button>
+              </div>
+            </div>
+
+            {reviewMsg && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{reviewMsg}</p>}
+            {reviewErr && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{reviewErr}</p>}
+
+            {reviewList.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">暂无待审核的注册申请。</p>
+            ) : (
+              <>
+                <div className="mt-4 flex items-center gap-2">
+                  <button onClick={toggleAllReview} className="text-xs text-indigo-600 hover:underline">
+                    {selectedReview.size === reviewList.length ? "取消全选" : "全选"}
+                  </button>
+                  <span className="text-xs text-slate-400">已选 {selectedReview.size} 人</span>
+                  <div className="ml-auto flex gap-2">
+                    <button
+                      onClick={batchApprove}
+                      disabled={selectedReview.size === 0}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      批量通过
+                    </button>
+                    <button
+                      onClick={batchReject}
+                      disabled={selectedReview.size === 0}
+                      className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      批量拒绝
+                    </button>
+                  </div>
+                </div>
+                <table className="mt-3 w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-slate-400">
+                      <th className="pb-2 font-normal w-8"></th>
+                      <th className="pb-2 font-normal">学生</th>
+                      <th className="pb-2 font-normal">邮箱</th>
+                      <th className="pb-2 font-normal">注册时间</th>
+                      <th className="pb-2 font-normal text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reviewList.map((s) => (
+                      <tr key={s.id} className="border-b border-slate-50">
+                        <td className="py-2.5">
+                          <input type="checkbox" checked={selectedReview.has(s.id)} onChange={() => toggleReview(s.id)} className="accent-indigo-600" />
+                        </td>
+                        <td className="py-2.5 font-medium">{s.name}</td>
+                        <td className="py-2.5 text-slate-500">{s.email}</td>
+                        <td className="py-2.5 text-slate-500">{s.createdAt ? new Date(s.createdAt).toLocaleString("zh-CN", { hour12: false }) : "—"}</td>
+                        <td className="py-2.5 text-right">
+                          <button
+                            onClick={() => approveOne(s.id)}
+                            className="mr-2 rounded bg-emerald-600 px-2.5 py-0.5 text-xs text-white hover:bg-emerald-700"
+                          >
+                            通过
+                          </button>
+                          <button
+                            onClick={() => rejectOne(s)}
+                            className="rounded border border-red-200 px-2.5 py-0.5 text-xs text-red-500 hover:bg-red-50"
+                          >
+                            拒绝
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             )}
           </div>
         </div>

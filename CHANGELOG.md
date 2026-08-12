@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.4.76 (2026-08-12) — 学生注册账号审核流程
+- User 模型新增 `status`(PENDING/APPROVED/REJECTED)、`reviewNote`、`reviewedBy`、`reviewedAt` 字段。
+- 注册不再直接签发 token:账号进入 PENDING 待审核,需教师审核通过(`APPROVED`)后才能登录使用系统;登录与 `requireAuth` 中间件均对未通过审核的 STUDENT 拦截。
+- 教师端「教学管理」新增「注册审核」Tab:展示待审核学生,支持单条/批量「通过」「拒绝」(拒绝=删除账号,邮箱释放可重注册),并显示待审数量角标。
+- `GET /teacher/students` 支持 `?status=` 过滤(默认 APPROVED);作业分发/考试分发仅可向已通过审核的学生布置。
+- 存量学生账号通过一次性脚本刷为 APPROVED,演示账号直接置 APPROVED。
+
 ## V2.4.75 (2026-08-12) — 题库管理页支持点选翻页
 - 教师端「题库管理」(`/teacher`) 接入后端 `/questions` 分页(每页 50 题)。
 - 列表下方新增分页控件:首页/上一页/页码窗口(±2,两端 … 省略)/下一页/末页;切换筛选、搜索、排序或学科 Tab 时自动回到第 1 页。

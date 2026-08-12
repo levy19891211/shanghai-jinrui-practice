@@ -5,6 +5,8 @@ export interface User {
   email: string;
   name: string;
   role: "STUDENT" | "TEACHER" | "ADMIN";
+  /** 账号审核状态:PENDING 待审核 | APPROVED 已通过 | REJECTED 已拒绝 */
+  status?: "PENDING" | "APPROVED" | "REJECTED";
   targetUniversity?: string | null;
 }
 

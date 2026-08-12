@@ -17,6 +17,10 @@ export async function requireAuth(req, res, next) {
     const payload = jwt.verify(token, SECRET);
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) return fail(res, 401, "用户不存在");
+    // 学生账号未通过审核时,即使持有效 token 也禁止访问任何业务接口
+    if (user.role === "STUDENT" && user.status !== "APPROVED") {
+      return fail(res, 403, user.status === "PENDING" ? "账号待教师审核，暂无法使用" : "账号未通过审核，无法使用");
+    }
     req.user = user;
     next();
   } catch {

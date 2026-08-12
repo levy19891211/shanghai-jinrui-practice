@@ -12,6 +12,10 @@ datasource db {
 }
 
 // role 合法值:STUDENT | TEACHER | ADMIN
+// 学生账号审核状态 status 合法值:PENDING | APPROVED | REJECTED
+//   PENDING   待教师审核(注册后默认,不能登录/使用系统)
+//   APPROVED  已通过审核(可正常使用)
+//   REJECTED  已拒绝(账号已删除,邮箱释放可重新注册)
 // subject 合法值:数学 | 物理 | 化学 | 生物(科目,知识学科)
 // sourceType 合法值:TMUA | ESAT | NSAA | 其他考试题源(题源/试卷类型,与 subject 区分;可扩展)
 // type 合法值:SINGLE_CHOICE | MULTIPLE_CHOICE | NUMERIC
@@ -29,6 +33,10 @@ model User {
   passwordHash     String
   name             String
   role             String    @default("STUDENT")
+  status           String    @default("PENDING") // 账号审核状态:PENDING | APPROVED | REJECTED
+  reviewNote       String?   // 审核意见(拒绝原因等)
+  reviewedBy       String?   // 审核人 id
+  reviewedAt       DateTime? // 审核时间
   targetUniversity String?
   createdAt        DateTime  @default(now())
   sessions         Session[]

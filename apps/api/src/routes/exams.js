@@ -185,8 +185,8 @@ router.post(
     const paper = await prisma.paper.findUnique({ where: { id: paperId } });
     if (!paper) return fail(res, 404, "试卷不存在");
     if (paper.status !== "READY") return fail(res, 400, "该试卷尚未「可作答」:卷内还有题目未通过审核。请先在试卷管理里把题目审核发布。");
-    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT" } });
-    if (students.length !== studentIds.length) return fail(res, 400, "存在无效的学生");
+    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT", status: "APPROVED" } });
+    if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
     const assignment = await prisma.assignment.create({
