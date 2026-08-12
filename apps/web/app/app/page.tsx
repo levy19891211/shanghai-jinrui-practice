@@ -290,9 +290,9 @@ export default function StudentHome() {
     }
     const list = Array.from(byKey.values());
     if (generic) list.push(generic);
-    return list
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-      .slice(0, 5);
+    return list.sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    );
   }, [allSessions]);
 
   return (
