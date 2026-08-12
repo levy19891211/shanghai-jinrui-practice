@@ -17,6 +17,7 @@ router.get(
       where,
       select: {
         id: true, mode: true, score: true, total: true, correctCount: true, startedAt: true, submittedAt: true,
+        paperId: true, assignmentId: true,
         paper: { select: { title: true } },
         assignment: { select: { title: true } },
       },
