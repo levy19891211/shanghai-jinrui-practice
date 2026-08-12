@@ -286,16 +286,22 @@ router.delete(
     const session = await prisma.session.findUnique({ where: { id: req.params.id } });
     if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
     if (session.submittedAt) return fail(res, 400, "已交卷的练习不能删除");
-    // 若该会话由作业/考试分发产生,删除后回退作业目标状态,允许学生重新作答
-    if (session.assignmentId) {
-      await prisma.assignmentStudent.updateMany({
-        where: { assignmentId: session.assignmentId, studentId: req.user.id },
-        data: { status: "PENDING", sessionId: null, submittedAt: null },
+    try {
+      // 事务保证顺序:先回退作业目标(若有),再清理作答记录,最后删会话
+      await prisma.$transaction(async (tx) => {
+        if (session.assignmentId) {
+          await tx.assignmentStudent.updateMany({
+            where: { assignmentId: session.assignmentId, studentId: req.user.id },
+            data: { status: "PENDING", sessionId: null, submittedAt: null },
+          });
+        }
+        await tx.answerRecord.deleteMany({ where: { sessionId: session.id } });
+        await tx.session.delete({ where: { id: session.id } });
       });
+      ok(res, null, "已删除");
+    } catch (e) {
+      return fail(res, 400, "删除失败：" + (e?.message || "数据冲突"));
     }
-    await prisma.answerRecord.deleteMany({ where: { sessionId: session.id } });
-    await prisma.session.delete({ where: { id: session.id } });
-    ok(res, null, "已删除");
   })
 );
 

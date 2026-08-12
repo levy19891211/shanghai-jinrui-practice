@@ -60,11 +60,13 @@ export default function StudentHome() {
   const [favCount, setFavCount] = useState(0);
   const [myQCount, setMyQCount] = useState(0);
 
-  useEffect(() => {
-    api.get<{ list: SessionSummary[] }>("/me/sessions").then((d) => {
-      setSessions(d.list.slice(0, 5));
-      setAllSessions(d.list);
-    }).catch(() => {});
+  // 拉取首页全部数据(删除做题进度后重新调用,保证与后端一致)
+  async function loadData() {
+    try {
+      const sess = await api.get<{ list: SessionSummary[] }>("/me/sessions");
+      setSessions(sess.list.slice(0, 5));
+      setAllSessions(sess.list);
+    } catch { /* ignore */ }
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
     api.get<{ list: { id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
     // 知识点库(供知识点下拉与掌握度"针对练习")
@@ -74,6 +76,10 @@ export default function StudentHome() {
     // 题目收藏 / 我的原创题 计数
     api.get<{ list: unknown[] }>("/me/favorites").then((d) => setFavCount(d.list?.length || 0)).catch(() => {});
     api.get<{ list: unknown[] }>("/me/questions").then((d) => setMyQCount(d.list?.length || 0)).catch(() => {});
+  }
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   async function start() {
@@ -104,14 +110,14 @@ export default function StudentHome() {
   }
 
   // 删除进行中的做题进度(本人未交卷会话)
+  const [confirmingDel, setConfirmingDel] = useState<string | null>(null);
   async function removeSession(id: string) {
-    if (!window.confirm("确定删除该进行中的做题进度?删除后不可恢复。")) return;
+    setConfirmingDel(null);
     try {
       await api.del(`/sessions/${id}`);
-      setAllSessions((list) => list.filter((s) => s.id !== id));
-      setSessions((list) => list.filter((s) => s.id !== id));
+      await loadData(); // 重新拉取,保证与后端一致(含作业回退)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "删除失败");
+      window.alert(`删除失败：${e instanceof Error ? e.message : "请稍后重试"}`);
     }
   }
 
@@ -399,13 +405,30 @@ export default function StudentHome() {
                       >
                         继续做题 →
                       </button>
-                      <button
-                        onClick={() => removeSession(s.id)}
-                        title="删除该进度"
-                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
-                      >
-                        删除
-                      </button>
+                      {confirmingDel === s.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => removeSession(s.id)}
+                            className="rounded-lg bg-rose-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600"
+                          >
+                            确认删除?
+                          </button>
+                          <button
+                            onClick={() => setConfirmingDel(null)}
+                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmingDel(s.id)}
+                          title="删除该进度"
+                          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
+                        >
+                          删除
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
