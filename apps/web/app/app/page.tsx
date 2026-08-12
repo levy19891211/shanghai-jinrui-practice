@@ -110,9 +110,7 @@ export default function StudentHome() {
   }
 
   // 删除进行中的做题进度(本人未交卷会话)
-  const [confirmingDel, setConfirmingDel] = useState<string | null>(null);
   async function removeSession(id: string) {
-    setConfirmingDel(null);
     try {
       await api.del(`/sessions/${id}`);
       await loadData(); // 重新拉取,保证与后端一致(含作业回退)
@@ -405,30 +403,13 @@ export default function StudentHome() {
                       >
                         继续做题 →
                       </button>
-                      {confirmingDel === s.id ? (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => removeSession(s.id)}
-                            className="rounded-lg bg-rose-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600"
-                          >
-                            确认删除?
-                          </button>
-                          <button
-                            onClick={() => setConfirmingDel(null)}
-                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50"
-                          >
-                            取消
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmingDel(s.id)}
-                          title="删除该进度"
-                          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
-                        >
-                          删除
-                        </button>
-                      )}
+                      <button
+                        onClick={() => removeSession(s.id)}
+                        title="删除该进度(不可恢复)"
+                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
                 );
