@@ -98,6 +98,33 @@ router.post(
       if (!durationMin || durationMin <= 0) return fail(res, 400, "模拟考必须指定时长(分钟)");
     }
 
+    // 复用同卷/同作业的"进行中"会话,避免反复开卷堆积大量未交卷记录
+    // (学生再次点开同一份卷子时,直接续做上次的进度,而不是新建一条)
+    const reuseWhere = { studentId: req.user.id, submittedAt: null };
+    if (assignmentId) {
+      reuseWhere.assignmentId = assignmentId;
+    } else if (req.body?.paperId) {
+      reuseWhere.paperId = req.body.paperId;
+      reuseWhere.assignmentId = null;
+    } else {
+      reuseWhere.paperId = null;
+      reuseWhere.assignmentId = null;
+    }
+    let existing = await prisma.session.findFirst({ where: reuseWhere, orderBy: { startedAt: "desc" } });
+    // 作业已过期则不复用(交由下方正常创建逻辑返回 400)
+    if (existing && assignmentId) {
+      const t = await prisma.assignmentStudent.findUnique({
+        where: { assignmentId_studentId: { assignmentId, studentId: req.user.id } },
+        include: { assignment: true },
+      });
+      if (t?.assignment?.dueAt && new Date() > new Date(t.assignment.dueAt)) existing = null;
+    }
+    if (existing) {
+      const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
+      const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
+      return ok(res, { sessionId: existing.id, mode: existing.mode, durationMin: existing.durationMin, questions, resumed: true }, "已恢复上次进度");
+    }
+
     const session = await prisma.session.create({
       data: {
         studentId: req.user.id,

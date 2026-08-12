@@ -41,6 +41,8 @@ router.get(
       correctCount: s.correctCount,
       startedAt: s.startedAt,
       submittedAt: s.submittedAt,
+      paperId: s.paperId ?? null,
+      assignmentId: s.assignmentId ?? null,
       paperTitle: s.paper?.title ?? null,
       assignmentTitle: s.assignment?.title ?? null,
       answeredCount: answeredMap[s.id] ?? 0,

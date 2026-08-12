@@ -82,6 +82,8 @@ export interface SessionSummary {
   submittedAt: string | null;
   paperTitle?: string | null;
   assignmentTitle?: string | null;
+  paperId?: string | null;
+  assignmentId?: string | null;
   answeredCount?: number;
 }
 

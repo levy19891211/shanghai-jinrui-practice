@@ -259,6 +259,40 @@ export default function StudentHome() {
   // 已收藏到「我的试卷」的试卷库原卷 id
   const collectedIds = new Set(myPapers.filter((p) => p.collectedFrom).map((p) => p.collectedFrom as string));
 
+  // 「继续做题」列表:按试卷/作业去重(同一份卷子只保留最新一条会话),
+  // 避免反复开卷累积出"无穷无尽"的卡片;无试卷的随机练习合并成一个入口。
+  const inProgress = useMemo(() => {
+    const byKey = new Map<string, SessionSummary>();
+    let generic: SessionSummary | null = null;
+    for (const s of allSessions) {
+      if (s.submittedAt) continue;
+      if (s.assignmentId) {
+        const k = `A:${s.assignmentId}`;
+        const cur = byKey.get(k);
+        if (!cur || new Date(s.startedAt).getTime() > new Date(cur.startedAt).getTime()) byKey.set(k, s);
+      } else if (s.paperId) {
+        const k = `P:${s.paperId}`;
+        const cur = byKey.get(k);
+        if (!cur || new Date(s.startedAt).getTime() > new Date(cur.startedAt).getTime()) byKey.set(k, s);
+      } else {
+        // 随机练习(无试卷/作业):保留"已答题最多 / 最新"的一条
+        if (
+          !generic ||
+          (s.answeredCount ?? 0) > (generic.answeredCount ?? 0) ||
+          ((s.answeredCount ?? 0) === (generic.answeredCount ?? 0) &&
+            new Date(s.startedAt).getTime() > new Date(generic.startedAt).getTime())
+        ) {
+          generic = s;
+        }
+      }
+    }
+    const list = Array.from(byKey.values());
+    if (generic) list.push(generic);
+    return list
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+      .slice(0, 5);
+  }, [allSessions]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -363,7 +397,7 @@ export default function StudentHome() {
       </div>
 
       {/* 进行中的练习/考试:可继续做题(中途退出的进度已保存) */}
-      {allSessions.filter((s) => !s.submittedAt).length > 0 && (
+      {inProgress.length > 0 && (
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -372,9 +406,7 @@ export default function StudentHome() {
             <span className="text-xs text-indigo-400">中途退出已自动保存进度</span>
           </div>
           <div className="mt-3 space-y-2.5">
-            {allSessions
-              .filter((s) => !s.submittedAt)
-              .slice(0, 5)
+            {inProgress
               .map((s) => {
                 const name = s.assignmentTitle || s.paperTitle || (s.mode === "EXAM" ? "模拟考" : "练习");
                 const done = s.answeredCount ?? 0;
