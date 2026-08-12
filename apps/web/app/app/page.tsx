@@ -103,6 +103,18 @@ export default function StudentHome() {
     }
   }
 
+  // 删除进行中的做题进度(本人未交卷会话)
+  async function removeSession(id: string) {
+    if (!window.confirm("确定删除该进行中的做题进度?删除后不可恢复。")) return;
+    try {
+      await api.del(`/sessions/${id}`);
+      setAllSessions((list) => list.filter((s) => s.id !== id));
+      setSessions((list) => list.filter((s) => s.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
   // 针对某个知识点发起练习(10 题)
   async function practiceTopic(topic: string) {
     const kp = allKps.find((k) => k.name === topic);
@@ -348,33 +360,56 @@ export default function StudentHome() {
 
       {/* 进行中的练习/考试:可继续做题(中途退出的进度已保存) */}
       {allSessions.filter((s) => !s.submittedAt).length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> 进行中 · 可继续做题
+              <span className="inline-block h-2 w-2 rounded-full bg-indigo-500" /> 进行中 · 可继续做题
             </h2>
-            <span className="text-xs text-amber-700">中途退出已自动保存进度</span>
+            <span className="text-xs text-indigo-400">中途退出已自动保存进度</span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-2.5">
             {allSessions
               .filter((s) => !s.submittedAt)
               .slice(0, 5)
-              .map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white px-4 py-2.5">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      {s.mode === "EXAM" ? "模拟考" : "练习"}
-                    </span>
-                    <span className="text-slate-500">开始 {new Date(s.startedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+              .map((s) => {
+                const name = s.assignmentTitle || s.paperTitle || (s.mode === "EXAM" ? "模拟考" : "练习");
+                const done = s.answeredCount ?? 0;
+                const tot = s.total ?? 0;
+                const pct = tot ? Math.round((done / tot) * 100) : 0;
+                return (
+                  <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3 shadow-sm">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                          {s.mode === "EXAM" ? "模拟考" : "练习"}
+                        </span>
+                        <span className="truncate font-medium text-slate-700">{name}</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-indigo-100">
+                          <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500">已完成 {done}/{tot}</span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => router.push(`/app/practice/${s.id}`)}
+                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
+                      >
+                        继续做题 →
+                      </button>
+                      <button
+                        onClick={() => removeSession(s.id)}
+                        title="删除该进度"
+                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => router.push(`/app/practice/${s.id}`)}
-                    className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
-                  >
-                    继续做题 →
-                  </button>
-                </div>
-              ))}
+                );
+              })}
           </div>
         </div>
       )}

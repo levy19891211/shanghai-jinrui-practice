@@ -80,6 +80,9 @@ export interface SessionSummary {
   correctCount: number | null;
   startedAt: string;
   submittedAt: string | null;
+  paperTitle?: string | null;
+  assignmentTitle?: string | null;
+  answeredCount?: number;
 }
 
 export interface SessionDetail {

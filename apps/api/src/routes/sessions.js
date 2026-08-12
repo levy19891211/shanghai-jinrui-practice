@@ -277,6 +277,28 @@ router.post(
   })
 );
 
+// DELETE /api/sessions/:id — 删除本人未交卷的会话(清理进度)
+// 学生端"继续做题"卡片的删除按钮调用;已交卷记录由教师端管理,不允许学生删除。
+router.delete(
+  "/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    if (session.submittedAt) return fail(res, 400, "已交卷的练习不能删除");
+    // 若该会话由作业/考试分发产生,删除后回退作业目标状态,允许学生重新作答
+    if (session.assignmentId) {
+      await prisma.assignmentStudent.updateMany({
+        where: { assignmentId: session.assignmentId, studentId: req.user.id },
+        data: { status: "PENDING", sessionId: null, submittedAt: null },
+      });
+    }
+    await prisma.answerRecord.deleteMany({ where: { sessionId: session.id } });
+    await prisma.session.delete({ where: { id: session.id } });
+    ok(res, null, "已删除");
+  })
+);
+
 // GET /api/sessions/:id — 会话详情(本人或老师)
 router.get(
   "/:id",

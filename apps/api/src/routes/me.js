@@ -17,10 +17,35 @@ router.get(
       where,
       select: {
         id: true, mode: true, score: true, total: true, correctCount: true, startedAt: true, submittedAt: true,
+        paper: { select: { title: true } },
+        assignment: { select: { title: true } },
       },
       orderBy: { startedAt: "desc" },
     });
-    ok(res, { list });
+    // 统计每场会话已作答(已选答案)的题目数,供"继续做题"展示进度
+    const ids = list.map((s) => s.id);
+    const answeredMap = {};
+    if (ids.length) {
+      const groups = await prisma.answerRecord.groupBy({
+        by: ["sessionId"],
+        where: { sessionId: { in: ids }, selected: { not: null } },
+        _count: { _all: true },
+      });
+      groups.forEach((g) => { answeredMap[g.sessionId] = g._count._all; });
+    }
+    const out = list.map((s) => ({
+      id: s.id,
+      mode: s.mode,
+      score: s.score,
+      total: s.total,
+      correctCount: s.correctCount,
+      startedAt: s.startedAt,
+      submittedAt: s.submittedAt,
+      paperTitle: s.paper?.title ?? null,
+      assignmentTitle: s.assignment?.title ?? null,
+      answeredCount: answeredMap[s.id] ?? 0,
+    }));
+    ok(res, { list: out });
   })
 );
 
