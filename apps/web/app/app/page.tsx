@@ -346,6 +346,39 @@ export default function StudentHome() {
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
+      {/* 进行中的练习/考试:可继续做题(中途退出的进度已保存) */}
+      {allSessions.filter((s) => !s.submittedAt).length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> 进行中 · 可继续做题
+            </h2>
+            <span className="text-xs text-amber-700">中途退出已自动保存进度</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {allSessions
+              .filter((s) => !s.submittedAt)
+              .slice(0, 5)
+              .map((s) => (
+                <div key={s.id} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white px-4 py-2.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      {s.mode === "EXAM" ? "模拟考" : "练习"}
+                    </span>
+                    <span className="text-slate-500">开始 {new Date(s.startedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/app/practice/${s.id}`)}
+                    className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                  >
+                    继续做题 →
+                  </button>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* 我的试卷:学生自建,仅自己可见 */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
@@ -562,39 +595,6 @@ export default function StudentHome() {
                 <Tooltip formatter={(v: number) => [`${v}%`, "正确率"]} />
               </RadarChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {/* 进行中的练习/考试:可继续做题(中途退出的进度已保存) */}
-      {allSessions.filter((s) => !s.submittedAt).length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> 进行中 · 可继续做题
-            </h2>
-            <span className="text-xs text-amber-700">中途退出已自动保存进度</span>
-          </div>
-          <div className="mt-3 space-y-2">
-            {allSessions
-              .filter((s) => !s.submittedAt)
-              .slice(0, 5)
-              .map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white px-4 py-2.5">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      {s.mode === "EXAM" ? "模拟考" : "练习"}
-                    </span>
-                    <span className="text-slate-500">开始 {new Date(s.startedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                  </div>
-                  <button
-                    onClick={() => router.push(`/app/practice/${s.id}`)}
-                    className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
-                  >
-                    继续做题 →
-                  </button>
-                </div>
-              ))}
           </div>
         </div>
       )}
