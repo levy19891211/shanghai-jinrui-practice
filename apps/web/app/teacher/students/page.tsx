@@ -42,7 +42,7 @@ interface AssignmentDetail {
   status: string;
   createdAt: string;
   paper: { title: string; mode: string; subject: string; sourceType: string | null } | null;
-  targets: { studentId: string; name: string; email: string; status: string; submittedAt: string | null }[];
+  targets: { studentId: string; name: string; email: string; status: string; submittedAt: string | null; answeredCount?: number; total?: number }[];
 }
 
 interface PaperOption {
@@ -738,6 +738,7 @@ export default function TeacherStudentsPage() {
                 <tr className="border-b border-slate-100 text-left text-slate-400">
                   <th className="pb-2 font-normal">学生</th>
                   <th className="pb-2 font-normal">状态</th>
+                  <th className="pb-2 font-normal">已完成题数</th>
                   <th className="pb-2 font-normal">提交时间</th>
                 </tr>
               </thead>
@@ -752,6 +753,9 @@ export default function TeacherStudentsPage() {
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[t.status] ?? "bg-slate-100 text-slate-500"}`}>
                         {STATUS_LABEL[t.status] ?? t.status}
                       </span>
+                    </td>
+                    <td className="py-2.5 text-slate-600">
+                      {t.total ? `${t.answeredCount ?? 0} / ${t.total}` : "—"}
                     </td>
                     <td className="py-2.5 text-slate-500">
                       {t.submittedAt ? new Date(t.submittedAt).toLocaleString("zh-CN", { hour12: false }) : "—"}

@@ -323,6 +323,23 @@ router.get(
       },
     });
     if (!assignment || assignment.teacherId !== req.user.id) return fail(res, 404, "作业不存在");
+    // 统计每个学生已完成(已作答)的具体题目数量:通过 assignmentStudent.sessionId 关联会话
+    const sessionIds = assignment.targets.map((t) => t.sessionId).filter(Boolean);
+    const answeredMap = {};
+    const totalMap = {};
+    if (sessionIds.length) {
+      const groups = await prisma.answerRecord.groupBy({
+        by: ["sessionId"],
+        where: { sessionId: { in: sessionIds }, selected: { not: null } },
+        _count: { _all: true },
+      });
+      groups.forEach((g) => { answeredMap[g.sessionId] = g._count._all; });
+      const sessRows = await prisma.session.findMany({
+        where: { id: { in: sessionIds } },
+        select: { id: true, total: true },
+      });
+      sessRows.forEach((s) => { totalMap[s.id] = s.total ?? 0; });
+    }
     ok(res, {
       id: assignment.id, title: assignment.title, note: assignment.note, mode: assignment.mode, dueAt: assignment.dueAt,
       status: assignment.status, createdAt: assignment.createdAt,
@@ -331,6 +348,8 @@ router.get(
       targets: assignment.targets.map((t) => ({
         studentId: t.studentId, name: t.student.name, email: t.student.email,
         status: t.status, submittedAt: t.submittedAt,
+        answeredCount: t.sessionId ? (answeredMap[t.sessionId] ?? 0) : 0,
+        total: t.sessionId ? (totalMap[t.sessionId] ?? 0) : 0,
       })),
     });
   })
