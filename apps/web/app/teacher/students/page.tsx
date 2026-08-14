@@ -554,12 +554,12 @@ export default function TeacherStudentsPage() {
                   value={assignSearch}
                   onChange={(e) => setAssignSearch(e.target.value)}
                   placeholder="搜索作业名称 / 试卷"
-                  className="w-48 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                  className="h-8 w-48 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none focus:border-indigo-500"
                 />
                 <select
                   value={assignMode}
                   onChange={(e) => setAssignMode(e.target.value as "" | "PRACTICE" | "EXAM")}
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
+                  className="ui-select h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-600 outline-none focus:border-indigo-500"
                 >
                   <option value="">全部模式</option>
                   <option value="PRACTICE">练习</option>
@@ -568,7 +568,7 @@ export default function TeacherStudentsPage() {
                 <select
                   value={assignSubject}
                   onChange={(e) => setAssignSubject(e.target.value)}
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
+                  className="ui-select h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-600 outline-none focus:border-indigo-500"
                 >
                   <option value="">全部科目</option>
                   {assignSubjects.map((s) => (
