@@ -89,6 +89,11 @@ export default function TeacherStudentsPage() {
   const [assignErr, setAssignErr] = useState("");
   const [detail, setDetail] = useState<AssignmentDetail | null>(null);
 
+  // 已布置作业:筛选与搜索
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assignMode, setAssignMode] = useState<"" | "PRACTICE" | "EXAM">("");
+  const [assignSubject, setAssignSubject] = useState("");
+
   // ——— 注册审核 ———(待教师审核的学生)
   interface ReviewRow {
     id: string;
@@ -291,6 +296,26 @@ export default function TeacherStudentsPage() {
     if (!kw) return students;
     return students.filter((s) => s.name.toLowerCase().includes(kw) || s.email.toLowerCase().includes(kw));
   }, [students, search]);
+
+  // 已布置作业:按模式/科目分类筛选 + 按作业名称/试卷名称搜索
+  const assignSubjects = useMemo(() => {
+    const set = new Set<string>();
+    assignList.forEach((a) => { if (a.paper?.subject) set.add(a.paper.subject); });
+    return Array.from(set).sort();
+  }, [assignList]);
+
+  const filteredAssign = useMemo(() => {
+    const kw = assignSearch.trim().toLowerCase();
+    return assignList.filter((a) => {
+      if (assignMode && a.mode !== assignMode) return false;
+      if (assignSubject && (a.paper?.subject ?? "") !== assignSubject) return false;
+      if (kw) {
+        const hay = `${a.title} ${a.paper?.title ?? ""}`.toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [assignList, assignSearch, assignMode, assignSubject]);
 
   return (
     <div className="space-y-6">
@@ -522,9 +547,40 @@ export default function TeacherStudentsPage() {
 
           {/* 作业列表 */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-medium text-slate-700">已布置的作业</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-medium text-slate-700">已布置的作业</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  placeholder="搜索作业名称 / 试卷"
+                  className="w-48 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                />
+                <select
+                  value={assignMode}
+                  onChange={(e) => setAssignMode(e.target.value as "" | "PRACTICE" | "EXAM")}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
+                >
+                  <option value="">全部模式</option>
+                  <option value="PRACTICE">练习</option>
+                  <option value="EXAM">模考</option>
+                </select>
+                <select
+                  value={assignSubject}
+                  onChange={(e) => setAssignSubject(e.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
+                >
+                  <option value="">全部科目</option>
+                  {assignSubjects.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {assignList.length === 0 ? (
               <p className="mt-4 text-sm text-slate-400">还没有布置过作业。</p>
+            ) : filteredAssign.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">没有符合筛选条件的作业。</p>
             ) : (
               <table className="mt-4 w-full text-sm">
                 <thead>
@@ -538,7 +594,7 @@ export default function TeacherStudentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assignList.map((a) => (
+                  {filteredAssign.map((a) => (
                     <tr key={a.id} className="border-b border-slate-50">
                       <td className="py-2.5 font-medium">{a.title}</td>
                       <td className="py-2.5 text-slate-500">{a.paper?.title ?? "—"}</td>
