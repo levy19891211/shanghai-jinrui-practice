@@ -47,6 +47,8 @@ export default function PracticePage() {
   const [current, setCurrent] = useState(0);
   const [result, setResult] = useState<GradeResult | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  // 答题明细弹窗:点击某行查看该题题干/选项/答案/解析
+  const [openItem, setOpenItem] = useState<SessionDetail["details"][number] | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -277,6 +279,14 @@ export default function PracticePage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [result, detail]);
 
+  // 题目详情弹窗:按 ESC 关闭
+  useEffect(() => {
+    if (!openItem) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenItem(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openItem]);
+
   function choose(selected: string) {
     if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
     if (questions.length === 0) return;
@@ -463,7 +473,12 @@ export default function PracticePage() {
                 </thead>
                 <tbody>
                   {items.map((d, i) => (
-                    <tr key={d.questionId} className="border-b border-[#eee] last:border-0">
+                    <tr
+                      key={d.questionId}
+                      onClick={() => setOpenItem(d)}
+                      className="cursor-pointer border-b border-[#eee] last:border-0 transition-colors hover:bg-[#f5f8fc]"
+                      title="点击查看题目详情"
+                    >
                       <td className="px-3 py-2 font-bold text-[#b8860b]">Q{i + 1}</td>
                       <td className="px-3 py-2">
                         <span className="inline-block rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(d.topic) }}>
@@ -484,6 +499,67 @@ export default function PracticePage() {
               </table>
             </div>
           </div>
+
+          {/* 题目详情弹窗:点击答题明细某行打开 */}
+          {openItem && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+              onClick={() => setOpenItem(null)}
+            >
+              <div
+                className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="sticky top-0 flex items-center justify-between border-b border-[#eee] bg-[#fbf8f1] px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-[#b8860b]">{openItem.topic}</span>
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${openItem.isCorrect ? "bg-[#e8f5e9] text-[#2e7d32]" : openItem.selected ? "bg-[#fdecea] text-[#c62828]" : "bg-[#f0ead8] text-[#5a5346]"}`}>
+                      {openItem.isCorrect ? "✓ 答对" : openItem.selected ? "✗ 答错" : "未作答"}
+                    </span>
+                    {typeof openItem.timeSpent === "number" && openItem.timeSpent > 0 && (
+                      <span className="inline-block rounded-full bg-[#eef2f7] px-2 py-0.5 text-[11px] font-medium text-[#00467F]">用时 {openItem.timeSpent}s</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setOpenItem(null)}
+                    className="rounded-full px-2 py-0.5 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="关闭"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-[15px] leading-relaxed text-[#1a1a1a]">{renderRich(openItem.stem)}</p>
+                  <div className="mt-3 space-y-1">
+                    {openItem.options.map((opt, j) => {
+                      const isAns = opt === openItem.answer;
+                      const isSel = opt === openItem.selected;
+                      return (
+                        <div key={j} className={`rounded px-3 py-1.5 text-[14px] ${isAns ? "bg-[#e8f5e9] font-medium text-[#1b3a1d]" : isSel ? "bg-[#fdecea] text-[#5a1a17]" : "text-[#5a5346]"}`}>
+                          <span className="mr-1 font-bold text-[#00467F]">{LETTERS[j]}.</span>
+                          {renderRich(opt)}
+                          {isAns && <span className="ml-2 text-xs text-[#2e7d32]">正确答案</span>}
+                          {isSel && !isAns && <span className="ml-2 text-xs text-[#c62828]">你的选择</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 text-sm text-[#5a5346]">
+                    你的答案: <b className={openItem.selected ? (openItem.isCorrect ? "text-[#2e7d32]" : "text-[#c62828]") : "text-[#8a8377]"}>{openItem.selected || "(未作答)"}</b>
+                    <span className="ml-3 text-[#2e7d32]">正确答案: <b>{openItem.answer ?? "—"}</b></span>
+                  </p>
+                  {openItem.solution && (
+                    <div className="mt-3 rounded border border-[#e3d6b0] bg-[#fbf6e9] px-3 py-2.5">
+                      <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#8a6d1f]">
+                        <span>💡</span><span>解析</span>
+                      </div>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(openItem.solution, { smart: false })}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
