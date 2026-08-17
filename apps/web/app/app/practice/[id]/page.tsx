@@ -683,8 +683,11 @@ export default function PracticePage() {
                       checked={selected}
                       disabled={expired}
                       onChange={() => choose(opt)}
-                      className="mt-1.5 h-4 w-4 accent-[#00467F]"
+                      className="peer sr-only"
                     />
+                    <span className="mt-1.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#d9d2c2] bg-white transition peer-checked:border-[#00467F] peer-checked:bg-[#00467F] peer-disabled:border-[#d9d2c2]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-white opacity-0 transition peer-checked:opacity-100" />
+                    </span>
                     <span className="font-bold text-[#00467F]">{LETTERS[j]}.</span>
                     <span className="leading-relaxed">{renderRich(opt)}</span>
                   </label>
