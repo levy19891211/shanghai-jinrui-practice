@@ -69,11 +69,12 @@ router.get(
       select: {
         id: true, mode: true, score: true, total: true, correctCount: true,
         startedAt: true, submittedAt: true, assignmentId: true,
-        paper: { select: { title: true, subject: true, sourceType: true, mode: true } },
+        paper: { select: { title: true, subject: true, sourceType: true } },
       },
     });
     const sessions = sessionsRaw.map((s) => ({
       ...s,
+      paper: { ...s.paper, mode: s.mode },
       durationSec: s.submittedAt
         ? Math.round((new Date(s.submittedAt).getTime() - new Date(s.startedAt).getTime()) / 1000)
         : null,

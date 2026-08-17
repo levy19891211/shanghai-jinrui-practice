@@ -174,7 +174,7 @@ router.get(
       include: {
         assignment: {
           include: {
-            paper: { select: { title: true, mode: true, durationMin: true, subject: true, sourceType: true } },
+            paper: { select: { title: true, subject: true, sourceType: true } },
             languagePaper: { select: { title: true, mode: true, durationMin: true, examType: true, skill: true } },
           },
         },
@@ -203,7 +203,7 @@ router.get(
         isLanguage,
         paper: isLanguage
           ? { title: lp?.title, mode: lp?.mode, durationMin: lp?.durationMin, subject: null, sourceType: null, isLanguage: true, examType: lp?.examType, skill: lp?.skill }
-          : { title: pp?.title, mode: pp?.mode, durationMin: pp?.durationMin, subject: pp?.subject, sourceType: pp?.sourceType, isLanguage: false },
+          : { title: pp?.title, mode: a.mode, durationMin: a.durationMin, subject: pp?.subject, sourceType: pp?.sourceType, isLanguage: false },
       };
     });
     ok(res, { list });
