@@ -873,19 +873,19 @@ function PaperStartButton({
   const [mode, setMode] = useState<"PRACTICE" | "EXAM">("PRACTICE");
   const [dur, setDur] = useState<string>("40");
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs">
+    <div className="flex items-center gap-2">
+      <div className="flex h-7 overflow-hidden rounded-lg border border-slate-200 text-xs">
         <button
           type="button"
           onClick={() => setMode("PRACTICE")}
-          className={`px-2.5 py-1 font-medium transition ${mode === "PRACTICE" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+          className={`flex items-center px-2.5 font-medium transition ${mode === "PRACTICE" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
         >
           练习
         </button>
         <button
           type="button"
           onClick={() => setMode("EXAM")}
-          className={`px-2.5 py-1 font-medium transition ${mode === "EXAM" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+          className={`flex items-center px-2.5 font-medium transition ${mode === "EXAM" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
         >
           模考
         </button>
@@ -905,7 +905,7 @@ function PaperStartButton({
         type="button"
         disabled={disabled}
         onClick={() => onStart(paper, mode, mode === "EXAM" ? Number(dur) : undefined)}
-        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+        className="flex h-7 items-center rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
       >
         开始
       </button>
