@@ -47,15 +47,22 @@ export default function KnowledgePage() {
   const [viewKp, setViewKp] = useState<KnowledgePoint | null>(null);
   const [viewList, setViewList] = useState<Question[]>([]);
   const [viewLoading, setViewLoading] = useState(false);
+  // 可添加到题目的知识点(同知识点学科),供逐题打标签选择
+  const [kpOptions, setKpOptions] = useState<KnowledgePoint[]>([]);
 
   async function openView(kp: KnowledgePoint) {
     setViewKp(kp);
     setViewList([]);
+    setKpOptions([]);
     setViewLoading(true);
     setError("");
     try {
-      const d = await api.get<{ list: Question[] }>(`/questions?knowledgePointId=${kp.id}&pageSize=50`);
-      setViewList(d.list || []);
+      const [qd, kd] = await Promise.all([
+        api.get<{ list: Question[] }>(`/questions?knowledgePointId=${kp.id}&pageSize=50`),
+        api.get<{ list: KnowledgePoint[] }>(`/knowledge-points?subject=${encodeURIComponent(kp.subject)}`),
+      ]);
+      setViewList(qd.list || []);
+      setKpOptions(kd.list || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载题目失败");
     } finally {
@@ -119,6 +126,38 @@ export default function KnowledgePage() {
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
+  // 给题目添加知识点标签(按 id 写入 topicIds,后端同步 topic)
+  async function addTag(q: Question, kpId: string) {
+    const cur = q.topicIds || [];
+    if (cur.includes(kpId)) return;
+    const next = [...cur, kpId];
+    const name = kpOptions.find((k) => k.id === kpId)?.name || "";
+    try {
+      await api.put(`/questions/${q.id}`, { topicIds: next });
+      setViewList((prev) => prev.map((x) => (x.id === q.id ? { ...x, topicIds: next, topics: [...(x.topics || []), name] } : x)));
+      load(); // 刷新左侧各知识点关联题目数
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "添加标签失败");
+    }
+  }
+
+  // 移除题目的某个知识点标签
+  async function removeTag(q: Question, kpId: string) {
+    const ids = [...(q.topicIds || [])];
+    const names = [...(q.topics || [])];
+    const idx = ids.indexOf(kpId);
+    if (idx === -1) return;
+    ids.splice(idx, 1);
+    names.splice(idx, 1);
+    try {
+      await api.put(`/questions/${q.id}`, { topicIds: ids });
+      setViewList((prev) => prev.map((x) => (x.id === q.id ? { ...x, topicIds: ids, topics: names } : x)));
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "移除标签失败");
     }
   }
 
@@ -275,6 +314,34 @@ export default function KnowledgePage() {
                           ))}
                         </div>
                       ) : null}
+                    </div>
+                    {/* 知识点标签:可逐题修改 / 添加 */}
+                    <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2">
+                      <span className="text-xs text-slate-400">知识点:</span>
+                      {(q.topicIds || []).map((id, i) => (
+                        <span key={id} className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                          {q.topics?.[i] || "知识点"}
+                          <button
+                            onClick={() => removeTag(q, id)}
+                            title="移除该知识点标签"
+                            className="text-indigo-400 transition hover:text-red-500"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                      {kpOptions.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => { if (e.target.value) addTag(q, e.target.value); }}
+                          className="ml-1 rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-500 outline-none hover:border-indigo-400"
+                        >
+                          <option value="">+ 添加知识点</option>
+                          {kpOptions.filter((k) => !(q.topicIds || []).includes(k.id)).map((k) => (
+                            <option key={k.id} value={k.id}>{k.name}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                 ))}
