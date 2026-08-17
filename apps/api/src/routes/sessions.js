@@ -300,7 +300,12 @@ router.post(
           ]
         : []),
     ]);
-    ok(res, { ...result, timedOut }, "判分完成");
+    // 每题用时与平均用时(基于作答记录里已保存的 timeSpent)
+    const recTimeMap = new Map(session.records.map((r) => [r.questionId, r.timeSpent ?? null]));
+    const timedDetails = result.details.map((d) => ({ ...d, timeSpent: recTimeMap.get(d.questionId) ?? null }));
+    const tsVals = timedDetails.map((d) => d.timeSpent).filter((v) => typeof v === "number" && v > 0);
+    const avgTimeSpent = tsVals.length ? Math.round(tsVals.reduce((a, b) => a + b, 0) / tsVals.length) : null;
+    ok(res, { ...result, details: timedDetails, avgTimeSpent, timedOut }, "判分完成");
   })
 );
 

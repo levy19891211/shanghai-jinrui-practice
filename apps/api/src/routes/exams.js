@@ -28,7 +28,7 @@ async function analyzeExam(assignmentId) {
   const records = sessionIds.length
     ? await prisma.answerRecord.findMany({
         where: { sessionId: { in: sessionIds }, isCorrect: { not: null } },
-        select: { questionId: true, isCorrect: true },
+        select: { questionId: true, isCorrect: true, timeSpent: true },
       })
     : [];
 
@@ -57,9 +57,13 @@ async function analyzeExam(assignmentId) {
   const qById = new Map(questions.map((q) => [q.id, q]));
   const qStats = new Map();
   for (const r of records) {
-    const st = qStats.get(r.questionId) || { attempts: 0, correct: 0 };
+    const st = qStats.get(r.questionId) || { attempts: 0, correct: 0, timeSum: 0, timeCount: 0 };
     st.attempts += 1;
     if (r.isCorrect) st.correct += 1;
+    if (typeof r.timeSpent === "number" && r.timeSpent > 0) {
+      st.timeSum += r.timeSpent;
+      st.timeCount += 1;
+    }
     qStats.set(r.questionId, st);
   }
   const perQuestion = qids.map((id, i) => {
@@ -73,6 +77,7 @@ async function analyzeExam(assignmentId) {
       attempts: st.attempts,
       correct: st.correct,
       correctRate: st.attempts ? Math.round((st.correct / st.attempts) * 100) : null,
+      avgTimeSpent: st.timeCount ? Math.round(st.timeSum / st.timeCount) : null,
     };
   });
 

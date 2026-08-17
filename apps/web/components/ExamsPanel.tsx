@@ -49,7 +49,7 @@ interface Analysis {
     correctRate: number | null;
     startedAt: string | null;
   }[];
-  perQuestion: { questionId: string; index: number; topic: string; difficulty: number | null; attempts: number; correct: number; correctRate: number | null }[];
+  perQuestion: { questionId: string; index: number; topic: string; difficulty: number | null; attempts: number; correct: number; correctRate: number | null; avgTimeSpent: number | null }[];
   overall: { totalStudents: number; submitted: number; pending: number; inProgress: number; avgCorrectRate: number | null; avgScore: number | null };
   suggestions: string[];
 }
@@ -417,6 +417,7 @@ export default function ExamsPanel() {
                         <th className="pb-2 font-normal">作答</th>
                         <th className="pb-2 font-normal">答对</th>
                         <th className="pb-2 font-normal">正确率</th>
+                        <th className="pb-2 font-normal">平均用时</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -430,6 +431,7 @@ export default function ExamsPanel() {
                           <td className={`py-2.5 font-medium ${rateColor(q.correctRate)}`}>
                             {q.correctRate != null ? `${q.correctRate}%` : "—"}
                           </td>
+                          <td className="py-2.5 text-slate-500">{q.avgTimeSpent != null ? `${q.avgTimeSpent}s` : "—"}</td>
                         </tr>
                       ))}
                     </tbody>

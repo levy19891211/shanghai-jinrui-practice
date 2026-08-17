@@ -69,7 +69,8 @@ export interface GradeResult {
   total: number;
   correctCount: number;
   timedOut?: boolean;
-  details: { questionId: string; selected: string | null; isCorrect: boolean }[];
+  avgTimeSpent?: number | null;
+  details: { questionId: string; selected: string | null; isCorrect: boolean; timeSpent?: number | null }[];
 }
 
 export interface SessionSummary {

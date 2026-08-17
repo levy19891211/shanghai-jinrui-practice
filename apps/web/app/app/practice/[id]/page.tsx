@@ -54,6 +54,11 @@ export default function PracticePage() {
   const submittedRef = useRef(false);
   // 当前剩余秒数(供退出时上报暂停),用 ref 避免闭包取到旧值
   const remainingRef = useRef<number | null>(null);
+  // 每题用时计时:enterAtRef=进入当前题的时间,timeMapRef=每题累计停留秒,currentQidRef=当前题 id
+  const enterAtRef = useRef<number>(Date.now());
+  const timeMapRef = useRef<Record<string, number>>({});
+  const currentQidRef = useRef<string | null>(null);
+  const answersRef = useRef<Record<string, string>>({});
   // 手写批注层(半透明叠在题目上方;浏览模式下可正常答题/切题)
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchInteractive, setScratchInteractive] = useState(false);
@@ -144,8 +149,27 @@ export default function PracticePage() {
       .catch(() => {});
   }, [id]);
 
+  // 同步最新答案到 ref(供交卷时读取),避免闭包取到旧值
+  useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  // 每题停留计时:切换到新题时,把上一题的停留秒数累加到 timeMap
+  useEffect(() => {
+    const q = questions[current];
+    if (currentQidRef.current) {
+      const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
+      timeMapRef.current[currentQidRef.current] = (timeMapRef.current[currentQidRef.current] || 0) + dt;
+    }
+    currentQidRef.current = q?.id ?? null;
+    enterAtRef.current = Date.now();
+  }, [current, questions]);
+
   const saveAnswer = useCallback((qid: string, selected: string) => {
-    api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: 20 })
+    // 真实记录该题累计停留时间(秒),随作答一并上报
+    const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
+    const acc = (timeMapRef.current[qid] || 0) + dt;
+    timeMapRef.current[qid] = acc;
+    enterAtRef.current = Date.now();
+    api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: acc })
       .then(() => setSavedAt(Date.now()))
       .catch(() => {});
   }, [id]);
@@ -153,6 +177,20 @@ export default function PracticePage() {
   const submit = useCallback(async (auto = false) => {
     if (submittedRef.current) return;
     if (!auto && !window.confirm("确认交卷?交卷后将无法修改答案。")) return;
+    // 结算当前题停留时间
+    if (currentQidRef.current) {
+      const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
+      timeMapRef.current[currentQidRef.current] = (timeMapRef.current[currentQidRef.current] || 0) + dt;
+      enterAtRef.current = Date.now();
+    }
+    // 上报所有已作答题的最终用时(确保服务端 timeSpent 为真实累计值)
+    await Promise.all(
+      Object.keys(answersRef.current)
+        .filter((qid) => qid in timeMapRef.current)
+        .map((qid) =>
+          api.post(`/sessions/${id}/answer`, { questionId: qid, selected: answersRef.current[qid], timeSpent: timeMapRef.current[qid] }).catch(() => {})
+        )
+    );
     submittedRef.current = true;
     setSaving(true);
     setError("");
@@ -295,6 +333,9 @@ export default function PracticePage() {
     const wrongItems = items.filter((d) => !d.isCorrect);
     const pct = detail.total ? Math.round((correct / detail.total) * 100) : 0;
     const grade = gradeOf(pct);
+    // 每题用时分析:平均用时(仅统计有真实计时的题)
+    const times = items.map((d) => d.timeSpent).filter((v): v is number => typeof v === "number" && v > 0);
+    const avgTime = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
 
     return (
       <div className="mx-auto max-w-3xl">
@@ -320,6 +361,7 @@ export default function PracticePage() {
               <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">答对 <b className="text-[#2e7d32]">{correct}</b></span>
               <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">答错 <b className="text-[#c62828]">{wrong}</b></span>
               <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">未答 <b className="text-[#8a8377]">{blank}</b></span>
+              <span className="rounded border border-[#d9d2c2] bg-white px-3 py-1.5">平均用时 <b className="text-[#00467F]">{avgTime != null ? `${avgTime}s` : "—"}</b></span>
             </div>
             <div className="mt-6 flex justify-center gap-3">
               <button onClick={() => router.push("/app")} className="rounded bg-[#00467F] px-5 py-2 text-sm font-medium text-white hover:bg-[#1f6fb2]">
@@ -390,6 +432,9 @@ export default function PracticePage() {
                     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${d.isCorrect ? "bg-[#e8f5e9] text-[#2e7d32]" : d.selected ? "bg-[#fdecea] text-[#c62828]" : "bg-[#f0ead8] text-[#5a5346]"}`}>
                       {d.isCorrect ? "✓ 答对" : d.selected ? "✗ 答错" : "未作答"}
                     </span>
+                    {typeof d.timeSpent === "number" && d.timeSpent > 0 && (
+                      <span className="ml-2 inline-block rounded-full bg-[#eef2f7] px-2 py-0.5 text-[11px] font-medium text-[#00467F]">用时 {d.timeSpent}s</span>
+                    )}
                     <p className="mt-2 text-[15px] leading-relaxed text-[#1a1a1a]">{renderRich(d.stem)}</p>
                     <div className="mt-3 space-y-1">
                       {d.options.map((opt, j) => {
