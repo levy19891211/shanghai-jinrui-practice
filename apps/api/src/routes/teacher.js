@@ -347,7 +347,7 @@ router.get(
       languagePaper: assignment.languagePaper,
       targets: assignment.targets.map((t) => ({
         studentId: t.studentId, name: t.student.name, email: t.student.email,
-        status: t.status, submittedAt: t.submittedAt,
+        status: t.status, submittedAt: t.submittedAt, lateSubmit: t.lateSubmit,
         answeredCount: t.sessionId ? (answeredMap[t.sessionId] ?? 0) : 0,
         total: t.sessionId ? (totalMap[t.sessionId] ?? 0) : 0,
       })),

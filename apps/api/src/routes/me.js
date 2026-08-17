@@ -199,6 +199,7 @@ router.get(
         status,
         submittedAt: t.submittedAt,
         sessionId: t.sessionId,
+        lateSubmit: t.lateSubmit,
         isLanguage,
         paper: isLanguage
           ? { title: lp?.title, mode: lp?.mode, durationMin: lp?.durationMin, subject: null, sourceType: null, isLanguage: true, examType: lp?.examType, skill: lp?.skill }

@@ -42,7 +42,7 @@ interface AssignmentDetail {
   status: string;
   createdAt: string;
   paper: { title: string; mode: string; subject: string; sourceType: string | null } | null;
-  targets: { studentId: string; name: string; email: string; status: string; submittedAt: string | null; answeredCount?: number; total?: number }[];
+  targets: { studentId: string; name: string; email: string; status: string; submittedAt: string | null; lateSubmit?: boolean; answeredCount?: number; total?: number }[];
 }
 
 interface PaperOption {
@@ -750,8 +750,8 @@ export default function TeacherStudentsPage() {
                       <span className="ml-1 text-xs text-slate-400">{t.email}</span>
                     </td>
                     <td className="py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[t.status] ?? "bg-slate-100 text-slate-500"}`}>
-                        {STATUS_LABEL[t.status] ?? t.status}
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.lateSubmit ? "bg-amber-50 text-amber-600" : STATUS_CLASS[t.status] ?? "bg-slate-100 text-slate-500"}`}>
+                        {t.lateSubmit ? "逾期补交" : STATUS_LABEL[t.status] ?? t.status}
                       </span>
                     </td>
                     <td className="py-2.5 text-slate-600">

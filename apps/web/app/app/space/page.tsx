@@ -18,6 +18,7 @@ type Assignment = {
   mode: string;
   dueAt: string | null;
   status: string;
+  lateSubmit?: boolean;
   submittedAt: string | null;
   sessionId: string | null;
   isLanguage?: boolean;
@@ -151,10 +152,16 @@ export default function PersonalSpacePage() {
   }
   function statusLabel(a: Assignment) {
     const overdue = a.dueAt && new Date(a.dueAt).getTime() < Date.now();
-    if (a.status === "SUBMITTED") return "已提交";
+    if (a.status === "SUBMITTED") return a.lateSubmit ? "逾期补交" : "已提交";
     if (a.status === "IN_PROGRESS") return "进行中";
     if (a.status === "EXPIRED" || overdue) return "已过期";
     return "待完成";
+  }
+  // 往期表现状态(区分「逾期补交」)
+  function pastStatus(a: Assignment) {
+    if (a.status === "SUBMITTED" && a.lateSubmit) return { label: "逾期补交", cls: "bg-amber-50 text-amber-600" };
+    if (a.status === "SUBMITTED") return { label: "已提交", cls: "bg-emerald-50 text-emerald-600" };
+    return { label: statusLabel(a), cls: "bg-red-50 text-red-600" };
   }
 
   // 开作业:学科走 /sessions,语言走 /language/sessions
@@ -198,8 +205,10 @@ export default function PersonalSpacePage() {
   }
 
   // 我的作业:统一所有作业(笔试 + 语言),后续按分区渲染
-  const pendingAssigns = assignments.filter((a) => a.status === "PENDING" || a.status === "IN_PROGRESS");
-  const pastAssigns = assignments.filter((a) => a.status === "SUBMITTED" || a.status === "EXPIRED" || (a.dueAt && new Date(a.dueAt).getTime() < Date.now()));
+  // 待处理 = 未提交(含待完成 / 进行中 / 已过期未交);已过期未交也可补交
+  const pendingAssigns = assignments.filter((a) => a.status !== "SUBMITTED");
+  // 往期表现 = 已提交(含逾期补交)
+  const pastAssigns = assignments.filter((a) => a.status === "SUBMITTED");
   const sessById = useMemo(() => {
     const m = new Map<string, SessionSummary>();
     subjectSessions.forEach((s) => m.set(s.id, s));
@@ -236,21 +245,25 @@ export default function PersonalSpacePage() {
   // 渲染单张作业卡(urgent=true 走红色紧急样式 + 倒计时)
   function renderAssignCard(a: Assignment, urgent: boolean) {
     const overdue = a.dueAt ? new Date(a.dueAt).getTime() <= now : false;
-    const canStart = a.status !== "SUBMITTED" && !(a.status === "EXPIRED" || overdue);
+    // 已过期未交也允许补交(提交后打「逾期补交」标签)
+    const canStart = a.status !== "SUBMITTED";
     const dueStr = a.dueAt ? fmtDueStr(a.dueAt) : "不限时";
     const dueChip = (() => {
       if (!a.dueAt) return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">不限时</span>;
-      if (overdue) return <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">已过期 {dueStr}</span>;
+      if (overdue) return <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">已过期 {dueStr} · 可补交</span>;
       if (urgent) return <span className="rounded-md bg-red-600 px-2 py-0.5 text-xs font-bold text-white">⏰ {countdownText(a.dueAt, now)}</span>;
       return <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">DDL {dueStr}</span>;
     })();
     const cardCls =
       "flex items-center justify-between gap-4 rounded-2xl border p-4 shadow-sm transition " +
-      (urgent && canStart
+      (overdue && canStart
+        ? "cursor-pointer border-amber-300 bg-white hover:border-amber-400 hover:bg-amber-50/50"
+        : urgent && canStart
         ? "cursor-pointer border-red-300 bg-white hover:border-red-400 hover:bg-red-50/50"
         : canStart
         ? "cursor-pointer border-indigo-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
         : "border-slate-200 bg-slate-50");
+    const actionLabel = overdue ? "补交 →" : a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →";
     const inner = (
       <>
         <div className="min-w-0 flex-1">
@@ -270,12 +283,13 @@ export default function PersonalSpacePage() {
             {a.mode === "EXAM" && a.paper?.durationMin ? ` · 限时 ${a.paper.durationMin} 分钟` : ""}
           </p>
           {a.note && <p className="mt-1 truncate text-xs text-slate-400">备注: {a.note}</p>}
+          {overdue && canStart && <p className="mt-1 text-xs text-amber-600">⚠ 已过期,提交后将标记为「逾期补交」</p>}
         </div>
         {busyId === a.id ? (
           <span className="shrink-0 text-sm font-medium text-indigo-400">开卷中...</span>
         ) : canStart ? (
-          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-indigo-600">
-            {a.status === "IN_PROGRESS" ? "继续作答 →" : "开始作答 →"}
+          <span className={`shrink-0 whitespace-nowrap text-sm font-medium ${overdue ? "text-amber-600" : "text-indigo-600"}`}>
+            {actionLabel}
           </span>
         ) : null}
       </>
@@ -383,9 +397,9 @@ export default function PersonalSpacePage() {
           {/* 待完成作业放前:笔试 + 语言 */}
           <section className="space-y-8">
             <div className="space-y-4">
-              <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+                <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-sm">📐</span>
-                笔试作业 ({subjectOtherPending.length} 项待完成)
+                笔试作业 ({subjectOtherPending.length} 项待完成 / 补交)
               </h2>
               {subjectOtherPending.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的笔试作业,去练习区放松一下吧~</p>
@@ -397,9 +411,9 @@ export default function PersonalSpacePage() {
             </div>
 
             <div className="space-y-4">
-              <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
+                <h2 className="flex items-center gap-2 text-base font-bold text-slate-700">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-sm">🗣️</span>
-                语言作业 ({langOtherPending.length} 项待完成)
+                语言作业 ({langOtherPending.length} 项待完成 / 补交)
               </h2>
               {langOtherPending.length === 0 ? (
                 <p className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">暂无待完成的语言作业。</p>
@@ -433,12 +447,13 @@ export default function PersonalSpacePage() {
                       {subjectPast.map((a) => {
                         const sess = a.sessionId ? sessById.get(a.sessionId) : undefined;
                         const rate = sess && sess.total ? Math.round((sess.score! / sess.total) * 100) : null;
+                        const ps = pastStatus(a);
                         return (
                           <tr key={a.id} className="border-t border-slate-100">
                             <td className="px-4 py-3 font-medium text-slate-700">{a.title}</td>
                             <td className="px-4 py-3">{a.mode === "EXAM" ? "模考" : "练习"}</td>
                             <td className="px-4 py-3">
-                              <span className={`rounded-full px-2 py-0.5 text-xs ${a.status === "SUBMITTED" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>{statusLabel(a)}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-xs ${ps.cls}`}>{ps.label}</span>
                             </td>
                             <td className="px-4 py-3">{rate !== null ? `${sess!.score} / ${sess!.total} (${rate}%)` : "—"}</td>
                             <td className="px-4 py-3 text-slate-500">{a.submittedAt ? new Date(a.submittedAt).toLocaleString("zh-CN") : "—"}</td>
@@ -467,19 +482,21 @@ export default function PersonalSpacePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {langPast.map((a) => (
-                        <tr key={a.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            {a.title}
-                            {a.paper?.examType ? <span className="ml-2 text-xs text-slate-400">· {EXAM_LABEL[a.paper.examType] || a.paper.examType}</span> : ""}
-                          </td>
-                          <td className="px-4 py-3">{a.mode === "EXAM" ? "模考" : "练习"}</td>
-                          <td className="px-4 py-3">
-                            <span className={`rounded-full px-2 py-0.5 text-xs ${a.status === "SUBMITTED" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>{statusLabel(a)}</span>
-                          </td>
+                      {langPast.map((a) => {
+                        const ps = pastStatus(a);
+                        return (
+                          <tr key={a.id} className="border-t border-slate-100">
+                            <td className="px-4 py-3 font-medium text-slate-700">
+                              {a.title}
+                              {a.paper?.examType ? <span className="ml-2 text-xs text-slate-400">· {EXAM_LABEL[a.paper.examType] || a.paper.examType}</span> : ""}
+                            </td>
+                            <td className="px-4 py-3">{a.mode === "EXAM" ? "模考" : "练习"}</td>
+                            <td className="px-4 py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs ${ps.cls}`}>{ps.label}</span>
+                            </td>
                           <td className="px-4 py-3 text-slate-500">{a.submittedAt ? new Date(a.submittedAt).toLocaleString("zh-CN") : "—"}</td>
                         </tr>
-                      ))}
+                      ); })}
                     </tbody>
                   </table>
                 </div>

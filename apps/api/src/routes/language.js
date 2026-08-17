@@ -884,7 +884,7 @@ router.post(
       });
       if (!assignment || !assignment.languagePaperId) return fail(res, 403, "您没有被布置这份作业");
       if (assignment.status !== "ACTIVE") return fail(res, 400, "该作业已停止");
-      if (assignment.dueAt && new Date() > assignment.dueAt) return fail(res, 400, "该作业已过截止时间,无法作答");
+      // 注意:过期语言作业仍允许作答补交(会打「逾期补交」标签),此处不再拦截 dueAt
       const target = assignment.targets[0];
       if (!target) return fail(res, 403, "您没有被布置这份作业");
       if (target.status === "SUBMITTED") return fail(res, 400, "这份作业已提交,请勿重复作答");
@@ -1014,7 +1014,10 @@ router.post(
   "/sessions/:id/submit",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const session = await prisma.languageSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.languageSession.findUnique({
+      where: { id: req.params.id },
+      include: { assignment: { select: { dueAt: true } } },
+    });
     if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
     if (session.submittedAt) return fail(res, 400, "会话已提交");
 
@@ -1042,11 +1045,14 @@ router.post(
       data: { score, correctCount: correct, total, band, submittedAt: new Date() },
     });
 
-    // 作业回写已交
+    // 作业回写已交(逾期则标记补交)
     if (session.assignmentId) {
+      const isLateSubmit = !!(
+        session.assignment?.dueAt && new Date() > new Date(session.assignment.dueAt)
+      );
       await prisma.assignmentStudent.updateMany({
         where: { assignmentId: session.assignmentId, studentId: req.user.id },
-        data: { status: "SUBMITTED", submittedAt: new Date() },
+        data: { status: "SUBMITTED", submittedAt: new Date(), lateSubmit: isLateSubmit },
       });
     }
 
@@ -1174,6 +1180,7 @@ router.get(
         return {
           id: a.id, title: a.title, note: a.note, mode: a.mode, dueAt: a.dueAt,
           status: effective, submittedAt: t.submittedAt, sessionId: t.sessionId,
+          lateSubmit: t.lateSubmit,
           paper: paper ? { id: paper.id, title: paper.title, examType: paper.examType, skill: paper.skill, mode: paper.mode, durationMin: paper.durationMin } : null,
         };
       }),

@@ -78,7 +78,7 @@ router.post(
       if (!target) return fail(res, 403, "您没有被布置这份作业");
       if (target.status === "SUBMITTED") return fail(res, 400, "这份作业已提交,请勿重复作答");
       const assignment = target.assignment;
-      if (assignment?.dueAt && new Date() > assignment.dueAt) return fail(res, 400, "该作业已过截止时间,无法作答");
+      // 注意:过期作业仍允许作答补交(会打「逾期补交」标签),此处不再拦截 dueAt
       if (!assignment?.paper) return fail(res, 404, "作业对应的试卷不存在");
       assignmentId = assignment.id;
       assignmentPaperId = assignment.paper.id;
@@ -111,14 +111,6 @@ router.post(
       reuseWhere.assignmentId = null;
     }
     let existing = await prisma.session.findFirst({ where: reuseWhere, orderBy: { startedAt: "desc" } });
-    // 作业已过期则不复用(交由下方正常创建逻辑返回 400)
-    if (existing && assignmentId) {
-      const t = await prisma.assignmentStudent.findUnique({
-        where: { assignmentId_studentId: { assignmentId, studentId: req.user.id } },
-        include: { assignment: true },
-      });
-      if (t?.assignment?.dueAt && new Date() > new Date(t.assignment.dueAt)) existing = null;
-    }
     if (existing) {
       const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
       const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
@@ -229,7 +221,10 @@ router.post(
   "/:id/submit",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const session = await prisma.session.findUnique({ where: { id: req.params.id }, include: { records: true } });
+    const session = await prisma.session.findUnique({
+      where: { id: req.params.id },
+      include: { records: true, assignment: { select: { dueAt: true } } },
+    });
     if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
     if (session.submittedAt) return fail(res, 400, "会话已提交");
 
@@ -268,6 +263,13 @@ router.post(
     const deadline = deadlineOf(session);
     const timedOut = !!(deadline && Date.now() > deadline.getTime());
 
+    // 逾期补交标记:提交时间晚于作业 dueAt 则记为补交(仅作业类型会话)
+    const isLateSubmit = !!(
+      session.assignmentId &&
+      session.assignment?.dueAt &&
+      new Date() > new Date(session.assignment.dueAt)
+    );
+
     // 写回判分结果
     await prisma.$transaction([
       ...result.details.map((d) =>
@@ -290,12 +292,12 @@ router.post(
             update: { wrongCount: { increment: 1 }, mastered: false },
           })
         ),
-      // 作业类型会话提交 → 回写作业目标为已交
+      // 作业类型会话提交 → 回写作业目标为已交(逾期则标记补交)
       ...(session.assignmentId
         ? [
             prisma.assignmentStudent.updateMany({
               where: { assignmentId: session.assignmentId, studentId: req.user.id },
-              data: { status: "SUBMITTED", submittedAt: new Date() },
+              data: { status: "SUBMITTED", submittedAt: new Date(), lateSubmit: isLateSubmit },
             }),
           ]
         : []),

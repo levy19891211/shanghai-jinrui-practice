@@ -237,7 +237,8 @@ model Assignment {
 }
 
 // 作业分发目标:一个学生一份作业一条记录,记录完成状态
-// status 合法值:PENDING 未交 | SUBMITTED 已交 | EXPIRED 过期未交
+// status 合法值:PENDING 未交 | SUBMITTED 已交 | EXPIRED 过期未交(前端按 dueAt 计算,不持久化)
+// lateSubmit:逾期补交标记;提交时间晚于 assignment.dueAt 时为 true(仅当 dueAt 非空且作业确实已过期才有意义)
 model AssignmentStudent {
   id           String     @id @default(cuid())
   assignmentId String
@@ -245,6 +246,7 @@ model AssignmentStudent {
   studentId    String
   student      User       @relation(fields: [studentId], references: [id])
   status       String     @default("PENDING")
+  lateSubmit   Boolean    @default(false)
   sessionId    String? // 学生点击开始后创建的会话;提交后同步回写
   submittedAt  DateTime?
   createdAt    DateTime   @default(now())
