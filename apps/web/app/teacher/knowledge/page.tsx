@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getUser } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import type { Question } from "@/lib/types";
@@ -31,6 +31,15 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-600",
   ARCHIVED: "bg-slate-100 text-slate-400",
 };
+// 下拉圆点配色(与左侧学科色呼应)
+const DOT_COLOR: Record<string, string> = {
+  数学: "bg-indigo-400",
+  物理: "bg-emerald-400",
+  化学: "bg-amber-400",
+  生物: "bg-rose-400",
+  TMUA: "bg-violet-400",
+  ESAT: "bg-teal-400",
+};
 
 export default function KnowledgePage() {
   const user = getUser();
@@ -49,6 +58,22 @@ export default function KnowledgePage() {
   const [viewLoading, setViewLoading] = useState(false);
   // 可添加到题目的知识点(同知识点学科),供逐题打标签选择
   const [kpOptions, setKpOptions] = useState<KnowledgePoint[]>([]);
+  // 逐题"添加知识点"下拉:展开的题目 id + 搜索词
+  const [openTagFor, setOpenTagFor] = useState<string | null>(null);
+  const [tagSearch, setTagSearch] = useState("");
+  const tagPanelRef = useRef<HTMLDivElement>(null);
+
+  // 点击面板外关闭"添加知识点"下拉
+  useEffect(() => {
+    if (!openTagFor) return;
+    const handler = (e: MouseEvent) => {
+      if (tagPanelRef.current && !tagPanelRef.current.contains(e.target as Node)) {
+        setOpenTagFor(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openTagFor]);
 
   async function openView(kp: KnowledgePoint) {
     setViewKp(kp);
@@ -330,18 +355,58 @@ export default function KnowledgePage() {
                           </button>
                         </span>
                       ))}
-                      {kpOptions.length > 0 && (
-                        <select
-                          value=""
-                          onChange={(e) => { if (e.target.value) addTag(q, e.target.value); }}
-                          className="ml-1 rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-500 outline-none hover:border-indigo-400"
-                        >
-                          <option value="">+ 添加知识点</option>
-                          {kpOptions.filter((k) => !(q.topicIds || []).includes(k.id)).map((k) => (
-                            <option key={k.id} value={k.id}>{k.name}</option>
-                          ))}
-                        </select>
-                      )}
+                      {kpOptions.length > 0 && (() => {
+                        const available = kpOptions.filter((k) => !(q.topicIds || []).includes(k.id));
+                        const filtered = available.filter((k) => k.name.toLowerCase().includes(tagSearch.trim().toLowerCase()));
+                        return (
+                          <div className="relative" ref={openTagFor === q.id ? tagPanelRef : undefined}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTagSearch("");
+                                setOpenTagFor((cur) => (cur === q.id ? null : q.id));
+                              }}
+                              className="ml-1 inline-flex items-center gap-1 rounded-full border border-dashed border-indigo-300 bg-indigo-50/70 px-2.5 py-0.5 text-xs font-medium text-indigo-600 transition hover:border-indigo-400 hover:bg-indigo-100 active:scale-95"
+                            >
+                              <span className="text-[13px] leading-none">＋</span> 添加知识点
+                            </button>
+                            {openTagFor === q.id && (
+                              <div className="absolute left-0 top-full z-30 mt-1.5 w-60 origin-top-left rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-indigo-100">
+                                <div className="relative mb-1.5">
+                                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                                  <input
+                                    autoFocus
+                                    value={tagSearch}
+                                    onChange={(e) => setTagSearch(e.target.value)}
+                                    placeholder="搜索知识点…"
+                                    className="w-full rounded-lg border border-slate-200 py-1.5 pl-7 pr-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                                  />
+                                </div>
+                                <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                                  {filtered.length === 0 ? (
+                                    <p className="px-2.5 py-3 text-center text-xs text-slate-400">
+                                      {available.length === 0 ? "该题已含全部知识点" : "无匹配知识点"}
+                                    </p>
+                                  ) : (
+                                    filtered.map((k) => (
+                                      <button
+                                        key={k.id}
+                                        type="button"
+                                        onClick={() => { addTag(q, k.id); setOpenTagFor(null); }}
+                                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
+                                      >
+                                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_COLOR[k.subject] || "bg-slate-400"}`} />
+                                        <span className="flex-1 truncate">{k.name}</span>
+                                        <span className="text-xs text-slate-300">＋</span>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
