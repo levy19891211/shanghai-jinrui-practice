@@ -382,7 +382,7 @@ export default function KnowledgePage() {
                                     className="w-full rounded-lg border border-slate-200 py-1.5 pl-7 pr-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                                   />
                                 </div>
-                                <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                                <div className="max-h-80 space-y-0.5 overflow-y-auto">
                                   {filtered.length === 0 ? (
                                     <p className="px-2.5 py-3 text-center text-xs text-slate-400">
                                       {available.length === 0 ? "该题已含全部知识点" : "无匹配知识点"}
@@ -393,7 +393,7 @@ export default function KnowledgePage() {
                                         key={k.id}
                                         type="button"
                                         onClick={() => { addTag(q, k.id); setOpenTagFor(null); }}
-                                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
+                                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1 text-left text-xs text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
                                       >
                                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_COLOR[k.subject] || "bg-slate-400"}`} />
                                         <span className="flex-1 truncate">{k.name}</span>
