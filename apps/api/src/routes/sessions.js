@@ -85,13 +85,14 @@ router.post(
     }
 
     // 限时:EXAM 模式必须有时长(整数分钟)。
-    // 指定了试卷 → 强制用试卷配置的时长(学生不能改,前端也不传);随机组卷 → 用学生选的时长。
-    // 作业类型的 EXAM → 用作业所选试卷的时长
+    // 作业/考试分发类型 → 用老师设置的 assignment.durationMin(学生在试卷库自行模考时也可由老师预设);
+    // 学生自练(指定试卷)或随机组卷 → 时长由学生自选,前端传入 durationMin。
+    // 套题本身不再携带模式/时长,模式完全由本次作答决定。
     let durationMin = null;
     if (mode === "EXAM") {
-      if (assignmentPaperId || req.body?.paperId) {
-        const paper = await prisma.paper.findUnique({ where: { id: assignmentPaperId || req.body.paperId } });
-        durationMin = paper?.durationMin ?? null;
+      if (assignmentId) {
+        const assignment = await prisma.assignment.findUnique({ where: { id: assignmentId } });
+        durationMin = assignment?.durationMin ?? null;
       } else {
         durationMin = Math.round(Number(req.body?.durationMin));
       }

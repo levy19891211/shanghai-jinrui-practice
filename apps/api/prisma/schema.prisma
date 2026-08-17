@@ -130,8 +130,6 @@ model Paper {
   title       String
   subject     String // 科目:数学 | 物理 | 化学 | 生物
   sourceType  String? // 题源/试卷类型:TMUA | ESAT | NSAA | 其他(与 subject 区分)
-  mode        String   @default("PRACTICE")
-  durationMin Int? // EXAM 试卷的限时时长(分钟),练习卷可空
   questionIds String
   source      String? // 来源,如 "TMUA 2016 真题"
   origin      String   @default("MANUAL")
@@ -228,6 +226,7 @@ model Assignment {
   title       String // 作业名称(默认取试卷名)
   note        String? // 备注/要求
   mode        String    @default("PRACTICE")
+  durationMin Int? // 模考/考试的限时时长(分钟);由老师分发或考试管理时设置,练习模式可空
   dueAt       DateTime? // DDL(可空 = 不限时提交)
   status      String    @default("ACTIVE")
   createdAt   DateTime  @default(now())

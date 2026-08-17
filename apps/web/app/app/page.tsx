@@ -14,8 +14,6 @@ interface MyPaper {
   id: string;
   title: string;
   subject: string;
-  mode: string;
-  durationMin: number | null;
   questionCount: number;
   source: string | null;
   createdAt: string;
@@ -26,7 +24,7 @@ export default function StudentHome() {
   const router = useRouter();
   const user = getUser();
   const [form, setForm] = useState({ subject: "", limit: 10, mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: 40, paperId: "", knowledgePointId: "", difficulty: "" });
-  const [papers, setPapers] = useState<{ id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[]>([]);
+  const [papers, setPapers] = useState<{ id: string; title: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[]>([]);
   // 试卷库筛选/排序(与教师端试卷管理一致)
   const [libSubject, setLibSubject] = useState("");
   const [libKind, setLibKind] = useState("");
@@ -46,13 +44,11 @@ export default function StudentHome() {
   const [composeErr, setComposeErr] = useState("");
   const [compose, setCompose] = useState({
     title: "",
-    mode: "PRACTICE" as "PRACTICE" | "EXAM",
     source: "random" as "random" | "wrongbook",
     subject: "",
     knowledgePointId: "",
     difficulty: "",
     count: "10",
-    durationMin: 40,
     topics: [] as string[], // 错题组卷:按知识点多选
   });
   const [wrongTopics, setWrongTopics] = useState<{ topic: string; count: number }[]>([]);
@@ -68,7 +64,7 @@ export default function StudentHome() {
       setAllSessions(sess.list);
     } catch { /* ignore */ }
     api.get<StatsData>("/me/stats").then(setStats).catch(() => {});
-    api.get<{ list: { id: string; title: string; mode: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
+    api.get<{ list: { id: string; title: string; questionCount: number; subject: string; kind?: string; sourceType?: string | null; source?: string | null }[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
     // 知识点库(供知识点下拉与掌握度"针对练习")
     api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").then((d) => setAllKps(d.list || [])).catch(() => {});
     // 我的试卷
@@ -84,7 +80,7 @@ export default function StudentHome() {
 
   async function start() {
     setError("");
-    if (form.mode === "EXAM" && !form.paperId && (!form.durationMin || form.durationMin <= 0)) {
+    if (form.mode === "EXAM" && (!form.durationMin || form.durationMin <= 0)) {
       setError("模拟考模式请填写时长(分钟)");
       return;
     }
@@ -96,8 +92,8 @@ export default function StudentHome() {
         subject: form.subject || undefined,
         knowledgePointId: form.knowledgePointId || undefined,
         difficulty: form.difficulty || undefined,
-        // 指定试卷的模拟考:时长用试卷设定(不传,后端强制取试卷时长)
-        durationMin: form.mode === "EXAM" && !form.paperId ? form.durationMin : undefined,
+        // 模拟考时长由学生自行设置(套题本身不再携带时长)
+        durationMin: form.mode === "EXAM" ? form.durationMin : undefined,
         paperId: form.paperId || undefined,
       });
       sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
@@ -136,14 +132,20 @@ export default function StudentHome() {
     }
   }
 
-  // 从试卷库直接开始一张卷(PRACTICE 卷练题 / EXAM 卷模考,时长跟随试卷)
-  async function startPaper(p: { id: string; title: string; mode: string; questionCount: number }) {
+  // 从试卷库直接开始一张卷(学生自选 练习 或 模考;模考需自行设置时长)
+  async function startPaper(p: { id: string; title: string; questionCount: number }, mode: "PRACTICE" | "EXAM", durationMin?: number) {
     setError("");
     setLoading(true);
     try {
+      if (mode === "EXAM" && (!durationMin || durationMin <= 0)) {
+        setError("模拟考请填写有效的时长(分钟)");
+        setLoading(false);
+        return;
+      }
       const data = await api.post<CreateSessionData>("/sessions", {
-        mode: p.mode === "EXAM" ? "EXAM" : "PRACTICE",
+        mode,
         paperId: p.id,
+        ...(mode === "EXAM" ? { durationMin } : {}),
       });
       sessionStorage.setItem(`session-${data.sessionId}`, JSON.stringify(data.questions));
       router.push(`/app/practice/${data.sessionId}`);
@@ -166,25 +168,19 @@ export default function StudentHome() {
 
   async function createMyPaper() {
     setComposeErr("");
-    if (compose.mode === "EXAM" && (!compose.durationMin || compose.durationMin <= 0)) {
-      setComposeErr("模拟考模式请填写时长(分钟)");
-      return;
-    }
     setComposeBusy(true);
     try {
       await api.post("/papers/student", {
         title: compose.title,
-        mode: compose.mode,
         source: compose.source,
         subject: compose.subject || undefined,
         knowledgePointId: compose.knowledgePointId || undefined,
         difficulty: compose.difficulty || undefined,
         count: compose.count === "" ? undefined : Number(compose.count),
         topics: compose.source === "wrongbook" ? compose.topics : undefined,
-        ...(compose.mode === "EXAM" ? { durationMin: compose.durationMin } : {}),
       });
       setComposeOpen(false);
-      setCompose({ title: "", mode: "PRACTICE", source: "random", subject: "", knowledgePointId: "", difficulty: "", count: "10", durationMin: 40, topics: [] });
+      setCompose({ title: "", source: "random", subject: "", knowledgePointId: "", difficulty: "", count: "10", topics: [] });
       setMyMsg("组卷成功,已保存到「我的试卷」");
       setTimeout(() => setMyMsg(""), 4000);
       const d = await api.get<{ list: MyPaper[] }>("/papers/mine");
@@ -317,7 +313,7 @@ export default function StudentHome() {
               <label className="mb-1 block text-sm text-slate-600">试卷</label>
               <select className={`${input} ui-select`} value={form.paperId} onChange={(e) => setForm({ ...form, paperId: e.target.value })}>
                 <option value="">随机组卷</option>
-                {papers.filter((p) => p.mode === form.mode).map((p) => (
+                {papers.map((p) => (
                   <option key={p.id} value={p.id}>{p.title}({p.questionCount}题)</option>
                 ))}
               </select>
@@ -367,7 +363,7 @@ export default function StudentHome() {
               ))}
             </select>
           </div>
-          {form.mode === "EXAM" && !form.paperId && (
+          {form.mode === "EXAM" && (
             <div>
               <label className="mb-1 block text-sm text-slate-600">时长(分钟)</label>
               <input
@@ -379,11 +375,6 @@ export default function StudentHome() {
                 onChange={(e) => setForm({ ...form, durationMin: e.target.value === "" ? 0 : Number(e.target.value) })}
                 placeholder="自定义时长"
               />
-            </div>
-          )}
-          {form.mode === "EXAM" && form.paperId && (
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
-              时长跟随所选试卷设定,不可修改
             </div>
           )}
           <button
@@ -473,18 +464,12 @@ export default function StudentHome() {
                     {p.collectedFrom && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">收藏</span>}
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    {p.questionCount} 题 · {p.mode === "EXAM" ? `模拟考${p.durationMin ? `(限时 ${p.durationMin} 分钟)` : ""}` : "练习"}
+                    {p.questionCount} 题
                     {p.subject ? ` · ${p.subject}` : ""} · {new Date(p.createdAt).toLocaleString("zh-CN", { hour12: false })}
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    onClick={() => startPaper(p)}
-                    disabled={loading}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    开始
-                  </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <PaperStartButton paper={p} disabled={loading} onStart={startPaper} />
                   <button onClick={() => deleteMyPaper(p.id)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50">
                     删除
                   </button>
@@ -569,11 +554,7 @@ export default function StudentHome() {
                   key={p.id}
                   className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-300 hover:bg-indigo-50/40"
                 >
-                  <button
-                    onClick={() => startPaper(p)}
-                    disabled={loading}
-                    className="min-w-0 flex-1 text-left disabled:opacity-60"
-                  >
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
                       {p.kind === "OFFICIAL" ? (
@@ -583,13 +564,12 @@ export default function StudentHome() {
                       )}
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
-                      {p.questionCount} 题 · {p.mode === "EXAM" ? "模拟考" : "练习"}
+                      {p.questionCount} 题
                       {p.sourceType ? ` · ${p.sourceType}` : ""}
                       {p.subject ? ` · ${p.subject}` : ""}
                     </p>
-                  </button>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-xs font-medium text-indigo-600">{p.mode === "EXAM" ? "开始模考 →" : "开始练习 →"}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       onClick={() => collectPaper(p.id)}
                       disabled={loading || collected}
@@ -599,6 +579,7 @@ export default function StudentHome() {
                     >
                       {collected ? "✓ 已收藏" : "＋ 加入我的试卷"}
                     </button>
+                    <PaperStartButton paper={p} disabled={loading} onStart={startPaper} />
                   </div>
                 </div>
               );
@@ -756,30 +737,6 @@ export default function StudentHome() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-slate-600">模式</label>
-                <select
-                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
-                  value={compose.mode}
-                  onChange={(e) => setCompose({ ...compose, mode: e.target.value as "PRACTICE" | "EXAM" })}
-                >
-                  <option value="PRACTICE">练习(不限时)</option>
-                  <option value="EXAM">模拟考(限时)</option>
-                </select>
-              </div>
-              {compose.mode === "EXAM" && (
-                <div>
-                  <label className="mb-1 block text-sm text-slate-600">时长(分钟)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500"
-                    value={compose.durationMin || ""}
-                    onChange={(e) => setCompose({ ...compose, durationMin: e.target.value === "" ? 0 : Number(e.target.value) })}
-                    placeholder="自定义时长"
-                  />
-                </div>
-              )}
-              <div>
                 <label className="mb-1 block text-sm text-slate-600">科目</label>
                 <select
                   className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
@@ -898,6 +855,60 @@ export default function StudentHome() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// 试卷库 / 我的试卷 卡片右侧的「练习 / 模考」启动控件
+// 套题本身不再区分模式,模式与(模考)用时完全由学生自选
+function PaperStartButton({
+  paper,
+  disabled,
+  onStart,
+}: {
+  paper: { id: string; title: string; questionCount: number };
+  disabled: boolean;
+  onStart: (p: { id: string; title: string; questionCount: number }, mode: "PRACTICE" | "EXAM", durationMin?: number) => void;
+}) {
+  const [mode, setMode] = useState<"PRACTICE" | "EXAM">("PRACTICE");
+  const [dur, setDur] = useState<string>("40");
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs">
+        <button
+          type="button"
+          onClick={() => setMode("PRACTICE")}
+          className={`px-2.5 py-1 font-medium transition ${mode === "PRACTICE" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+        >
+          练习
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("EXAM")}
+          className={`px-2.5 py-1 font-medium transition ${mode === "EXAM" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+        >
+          模考
+        </button>
+      </div>
+      {mode === "EXAM" && (
+        <input
+          type="number"
+          min={1}
+          max={240}
+          value={dur}
+          onChange={(e) => setDur(e.target.value)}
+          placeholder="时长(分)"
+          className="h-7 w-20 rounded border border-slate-300 px-1.5 text-xs outline-none focus:border-indigo-500"
+        />
+      )}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onStart(paper, mode, mode === "EXAM" ? Number(dur) : undefined)}
+        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+      >
+        开始
+      </button>
     </div>
   );
 }

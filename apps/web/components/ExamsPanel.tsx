@@ -11,7 +11,7 @@ interface ExamRow {
   dueAt: string | null;
   status: string;
   createdAt: string;
-  paper: { title: string; mode: string; subject: string; sourceType: string | null; durationMin: number | null } | null;
+  paper: { title: string; subject: string; sourceType: string | null; durationMin: number | null } | null;
   stats: { total: number; submitted: number; inProgress: number; pending: number };
   avgRate: number | null;
   avgScore: number | null;
@@ -20,11 +20,9 @@ interface ExamRow {
 interface PaperOption {
   id: string;
   title: string;
-  mode: string;
   subject: string;
   sourceType: string | null;
   questionCount: number;
-  durationMin: number | null;
   status: string;
 }
 
@@ -36,7 +34,7 @@ interface StudentOption {
 
 interface Analysis {
   exam: { id: string; title: string; note: string | null; dueAt: string | null; createdAt: string };
-  paper: { id: string; title: string; subject: string; sourceType: string | null; mode: string; durationMin: number | null; questionCount: number } | null;
+  paper: { id: string; title: string; subject: string; sourceType: string | null; durationMin: number | null; questionCount: number } | null;
   students: {
     studentId: string;
     name: string;
@@ -78,7 +76,7 @@ export default function ExamsPanel() {
   const [papers, setPapers] = useState<PaperOption[]>([]);
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ paperId: "", title: "", note: "", dueAt: "" });
+  const [form, setForm] = useState({ paperId: "", title: "", note: "", dueAt: "", durationMin: "" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -118,6 +116,7 @@ export default function ExamsPanel() {
     setErr("");
     if (!form.paperId) { setErr("请选择考卷"); return; }
     if (selected.size === 0) { setErr("请选择至少一名考生"); return; }
+    if (!form.durationMin || Number(form.durationMin) <= 0) { setErr("考试必须设置考试用时(分钟)"); return; }
     setCreating(true);
     try {
       const r = await api.post<{ id: string }>("/exams", {
@@ -125,11 +124,12 @@ export default function ExamsPanel() {
         studentIds: Array.from(selected),
         title: form.title,
         note: form.note,
+        durationMin: Number(form.durationMin),
         dueAt: form.dueAt || undefined,
       });
       flash(r && typeof r === "object" && "id" in r ? "考试已安排" : "考试已安排");
       setCreateOpen(false);
-      setForm({ paperId: "", title: "", note: "", dueAt: "" });
+      setForm({ paperId: "", title: "", note: "", dueAt: "", durationMin: "" });
       setSelected(new Set());
       await loadExams();
     } catch (e) {
@@ -467,13 +467,25 @@ export default function ExamsPanel() {
                   <option value="">请选择考卷</option>
                   {readyPapers.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.title}({p.questionCount}题 · {p.mode === "EXAM" ? `模考限时${p.durationMin ?? ""}分钟` : "练习"} · {p.subject})
+                      {p.title}({p.questionCount}题 · {p.subject})
                     </option>
                   ))}
                 </select>
                 {readyPapers.length === 0 && (
                   <p className="mt-1 text-xs text-amber-500">暂无「可作答」的卷子,请先到试卷组卷把卷内题目审核发布。</p>
                 )}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">考试用时(分钟,必填)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  className={input}
+                  value={form.durationMin}
+                  onChange={(e) => setForm({ ...form, durationMin: e.target.value })}
+                  placeholder="如 90"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">考试名称(留空 = 用试卷名)</label>

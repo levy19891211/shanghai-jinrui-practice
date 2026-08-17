@@ -72,8 +72,6 @@ export default function TeacherPapersPage() {
     title: "",
     subject: "数学",
     sourceTypes: [] as string[], // 题源多选;空 = 全部
-    mode: "PRACTICE",
-    durationMin: "40", // 字符串受控,避免 number input 删 0 时被 Number("") 回写为 0
     count: "10",
   });
   const [topics, setTopics] = useState<string[]>([]);
@@ -100,8 +98,8 @@ export default function TeacherPapersPage() {
   const [ansTarget, setAnsTarget] = useState<{ qid: string; option: string; stem: string; oldAnswer: string } | null>(null);
   const [ansSaving, setAnsSaving] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  // 详情抽屉里的「试卷设置」草稿(科目/模式/限时)
-  const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string; mode: string; durationMin: string } | null>(null);
+  // 详情抽屉里的「试卷设置」草稿(科目/题源)
+  const [settingsDraft, setSettingsDraft] = useState<{ subject: string; sourceType: string } | null>(null);
   // 「添加试题」弹窗:可选题目列表 / 勾选 / 弹窗内搜索 / 知识点筛选
   const [addOpen, setAddOpen] = useState(false);
   const [addList, setAddList] = useState<Question[]>([]);
@@ -211,8 +209,6 @@ export default function TeacherPapersPage() {
         title: form.title,
         subject: form.subject,
         sourceTypes: form.sourceTypes,
-        mode: form.mode,
-        durationMin: form.mode === "EXAM" ? Number(form.durationMin) : undefined,
         topics,
         difficulties,
         count: Math.max(1, Number(form.count) || 1),
@@ -235,7 +231,7 @@ export default function TeacherPapersPage() {
       const d = await api.get<PaperManageDetail>(`/papers/${id}/manage`);
       setDetail(d);
       setTitleDraft(d.title);
-      setSettingsDraft({ subject: d.subject, sourceType: d.sourceType ?? "", mode: d.mode, durationMin: String(d.durationMin ?? "") });
+      setSettingsDraft({ subject: d.subject, sourceType: d.sourceType ?? "" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取试卷失败");
     } finally {
@@ -323,13 +319,6 @@ export default function TeacherPapersPage() {
     if (settingsDraft.sourceType !== (detail.sourceType ?? "")) {
       body.sourceType = settingsDraft.sourceType || null;
     }
-    if (settingsDraft.mode !== detail.mode) body.mode = settingsDraft.mode;
-    const dm = Number(settingsDraft.durationMin);
-    if (settingsDraft.mode === "EXAM" && !(dm > 0)) {
-      setError("模拟考模式必须填写限时(分钟)");
-      return;
-    }
-    if (dm > 0 && dm !== detail.durationMin) body.durationMin = dm;
     if (Object.keys(body).length === 0) return;
     await patchPaper(detail.id, body, "试卷设置已更新");
   }
@@ -519,17 +508,6 @@ export default function TeacherPapersPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm text-slate-600">模式</label>
-              <select
-                className={`${input} ui-select`}
-                value={form.mode}
-                onChange={(e) => setForm({ ...form, mode: e.target.value })}
-              >
-                <option value="PRACTICE">练习(不限时)</option>
-                <option value="EXAM">模拟考(限时)</option>
-              </select>
-            </div>
-            <div>
               <label className="mb-1 block text-sm text-slate-600">题目数量</label>
               <input
                 className={input}
@@ -540,19 +518,6 @@ export default function TeacherPapersPage() {
                 onChange={(e) => setForm({ ...form, count: e.target.value.replace(/[^0-9]/g, "") })}
               />
             </div>
-            {form.mode === "EXAM" && (
-              <div>
-                <label className="mb-1 block text-sm text-slate-600">限时(分钟)</label>
-                <input
-                  className={input}
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={form.durationMin}
-                  onChange={(e) => setForm({ ...form, durationMin: e.target.value.replace(/[^0-9]/g, "") })}
-                />
-              </div>
-            )}
           </div>
 
           {/* 题源:可多选,不选 = 全部题源 */}
@@ -767,7 +732,7 @@ export default function TeacherPapersPage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {p.mode === "EXAM" ? `模拟考 ${p.durationMin ?? "?"}min` : "练习"}
+                        套题
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">{p.questionCount} 题</td>
                       <td className="whitespace-nowrap px-4 py-3">
@@ -873,7 +838,7 @@ export default function TeacherPapersPage() {
                         <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{detail.sourceType}</span>
                       )}
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
-                        {detail.mode === "EXAM" ? `模拟考 ${detail.durationMin ?? "?"} 分钟` : "练习"}
+                        套题
                       </span>
                       {detail.origin === "AUTO_SET" && (
                         <span className="rounded bg-violet-50 px-2 py-0.5 text-violet-600">套题自动成卷</span>
@@ -884,15 +849,13 @@ export default function TeacherPapersPage() {
                       {detail.source && <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-500">{detail.source}</span>}
                     </div>
 
-                    {/* 试卷设置:改科目 / 改模式 / 调限时 */}
+                    {/* 试卷设置:改科目 / 改题源 */}
                     {settingsDraft && (
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-slate-500">试卷设置(可修改名称/科目/题源/模式)</span>
+                          <span className="text-xs font-medium text-slate-500">试卷设置(可修改名称/科目/题源)</span>
                           {(settingsDraft.subject !== detail.subject ||
-                            settingsDraft.sourceType !== (detail.sourceType ?? "") ||
-                            settingsDraft.mode !== detail.mode ||
-                            Number(settingsDraft.durationMin) !== (detail.durationMin ?? 0)) && (
+                            settingsDraft.sourceType !== (detail.sourceType ?? "")) && (
                             <button
                               onClick={saveSettings}
                               disabled={detailBusy}
@@ -923,27 +886,6 @@ export default function TeacherPapersPage() {
                             <option value="NSAA">NSAA</option>
                             <option value="SMC">SMC</option>
                           </select>
-                          <select
-                            value={settingsDraft.mode}
-                            onChange={(e) => setSettingsDraft({ ...settingsDraft, mode: e.target.value })}
-                            className="ui-select h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
-                          >
-                            <option value="PRACTICE">练习(不限时)</option>
-                            <option value="EXAM">模拟考(限时)</option>
-                          </select>
-                          {settingsDraft.mode === "EXAM" ? (
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={settingsDraft.durationMin}
-                              onChange={(e) => setSettingsDraft({ ...settingsDraft, durationMin: e.target.value.replace(/[^0-9]/g, "") })}
-                              className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs outline-none focus:border-indigo-500"
-                              placeholder="限时(分钟)"
-                            />
-                          ) : (
-                            <div className="flex h-8 items-center text-xs text-slate-400">练习模式不限时</div>
-                          )}
                         </div>
                         {detail.origin === "AUTO_SET" && settingsDraft.subject !== detail.subject && (
                           <p className="mt-2 text-xs text-amber-600">套题自动卷改科目会同步更新卷的唯一标识(sourceKey)。</p>

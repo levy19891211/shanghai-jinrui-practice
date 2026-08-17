@@ -42,7 +42,7 @@ router.post(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { title, subject, sourceTypes, mode, durationMin, topics, difficulties, count } = req.body || {};
+    const { title, subject, sourceTypes, topics, difficulties, count } = req.body || {};
     if (!title || !subject) return fail(res, 400, "title、subject 必填");
     const where = { status: "PUBLISHED", subject };
     // 题源多选:sourceTypes 数组非空时限定题目题源
@@ -89,8 +89,6 @@ router.post(
         subject,
         // 手动组卷的卷题源:只选了一个题源时带上,多选/不选留空(可在详情设置里改)
         sourceType: Array.isArray(sourceTypes) && sourceTypes.length === 1 ? String(sourceTypes[0]).trim() : null,
-        mode: mode === "EXAM" ? "EXAM" : "PRACTICE",
-        durationMin: Number(durationMin) || null,
         questionIds: JSON.stringify(picked.map((q) => q.id)),
         origin: "MANUAL",
         kind: "CUSTOM", // 手动组卷 = 组卷套题
@@ -100,7 +98,7 @@ router.post(
     await recalcPaper(paper.id);
     ok(res, {
       id: paper.id, title: paper.title, subject: paper.subject,
-      mode: paper.mode, durationMin: paper.durationMin, questionCount: picked.length,
+      questionCount: picked.length,
     }, "组卷成功");
   })
 );
@@ -126,8 +124,8 @@ router.get(
     if (!isTeacher) {
       return ok(res, {
         list: list.map((p) => ({
-          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
-          durationMin: p.durationMin, questionCount: parseIds(p).length, createdAt: p.createdAt,
+          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType,
+          questionCount: parseIds(p).length, createdAt: p.createdAt,
           kind: p.kind, origin: p.origin, source: p.source,
         })),
       });
@@ -137,8 +135,8 @@ router.get(
       list: list.map((p) => {
         const stats = statsMap.get(p.id);
         return {
-          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType, mode: p.mode,
-          durationMin: p.durationMin, questionCount: stats.total,
+          id: p.id, title: p.title, subject: p.subject, sourceType: p.sourceType,
+          questionCount: stats.total,
           source: p.source, origin: p.origin, kind: p.kind, status: p.status,
           stats, createdAt: p.createdAt,
         };
@@ -217,8 +215,6 @@ router.get(
           id: p.id,
           title: p.title,
           subject: p.subject,
-          mode: p.mode,
-          durationMin: p.durationMin,
           questionCount: parseIds(p).length,
           source: p.source,
           createdAt: p.createdAt,
@@ -248,8 +244,6 @@ router.post(
         title: paper.title,
         subject: paper.subject,
         sourceType: paper.sourceType,
-        mode: paper.mode,
-        durationMin: paper.durationMin,
         questionIds: paper.questionIds,
         source: "收藏自试卷库",
         origin: "STUDENT",
@@ -268,8 +262,7 @@ router.post(
   "/student",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { title, mode, durationMin, source, subject, knowledgePointId, difficulty, count, topics } = req.body || {};
-    const aMode = mode === "EXAM" ? "EXAM" : "PRACTICE";
+    const { title, source, subject, knowledgePointId, difficulty, count, topics } = req.body || {};
     const sourceKind = source === "wrongbook" ? "wrongbook" : "random";
 
     let picked = [];
@@ -310,7 +303,6 @@ router.post(
       picked = all.sort(() => Math.random() - 0.5).slice(0, n).map((q) => q.id);
     }
     if (picked.length < 2) return fail(res, 400, "组卷题目不足(至少 2 道)");
-    if (aMode === "EXAM" && (!durationMin || Number(durationMin) <= 0)) return fail(res, 400, "模拟考模式必须填写时长(分钟)");
 
     // 推断学科:优先用户选择,否则取多数
     const qs = await prisma.question.findMany({ where: { id: { in: picked } }, select: { subject: true } });
@@ -323,8 +315,6 @@ router.post(
         title: String(title || "").trim() || `${sourceKind === "wrongbook" ? "错题组卷" : "随机组卷"} ${new Date().toLocaleString("zh-CN", { hour12: false })}`,
         subject: subj,
         sourceType: null,
-        mode: aMode,
-        durationMin: aMode === "EXAM" ? Math.round(Number(durationMin)) : null,
         questionIds: JSON.stringify(picked),
         source: sourceKind === "wrongbook" ? "我的错题" : "学生自建·随机",
         origin: "STUDENT",
@@ -372,8 +362,8 @@ router.get(
     const map = new Map(rows.map((q) => [q.id, q]));
     const stats = (await statsForPapers([paper])).get(paper.id);
     ok(res, {
-      id: paper.id, title: paper.title, subject: paper.subject, mode: paper.mode,
-      durationMin: paper.durationMin, source: paper.source, origin: paper.origin,
+      id: paper.id, title: paper.title, subject: paper.subject,
+      source: paper.source, origin: paper.origin,
       status: paper.status, createdAt: paper.createdAt, stats,
       // 保持录入顺序;题目被删除时给出占位,方便老师发现卷内引用失效
       questions: ids.map((id, i) => {
@@ -411,15 +401,10 @@ router.patch(
     if (typeof b.subject === "string" && VALID_SUBJECTS.includes(b.subject)) data.subject = b.subject;
     // 题源/试卷类型:TMUA/ESAT/NSAA/其他,可设 null 清空
     if (b.sourceType !== undefined) data.sourceType = b.sourceType ? String(b.sourceType).trim() : null;
-    if (b.mode === "EXAM" || b.mode === "PRACTICE") data.mode = b.mode;
-    if (b.durationMin !== undefined) data.durationMin = Number(b.durationMin) || null;
     if (Array.isArray(b.questionIds)) data.questionIds = JSON.stringify(b.questionIds);
     // 只允许人工在 ARCHIVED 与自动推导状态之间切换,READY 不可手动设置(必须靠逐题审核挣得)
     if (b.status === "ARCHIVED") data.status = "ARCHIVED";
     if (b.status === "ACTIVE" && paper.status === "ARCHIVED") data.status = "DRAFT";
-    if (data.mode === "EXAM" && !(data.durationMin ?? paper.durationMin)) {
-      return fail(res, 400, "模拟考试卷必须设置限时(分钟)");
-    }
     // 改科目时检查 sourceKey 冲突,避免与已有套卷撞唯一键
     if (data.subject && paper.sourceKey) {
       const [, p, s] = paper.sourceKey.split("::");
@@ -476,8 +461,8 @@ router.get(
     });
     const map = new Map(questions.map((q) => [q.id, q]));
     ok(res, {
-      id: paper.id, title: paper.title, subject: paper.subject, mode: paper.mode,
-      durationMin: paper.durationMin, questionCount: ids.length, status: paper.status,
+      id: paper.id, title: paper.title, subject: paper.subject,
+      questionCount: ids.length, status: paper.status,
       questions: ids.map((id) => map.get(id)).filter(Boolean),
     });
   })

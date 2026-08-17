@@ -192,8 +192,6 @@ export interface PaperRow {
   subject: string;
   /** 题源/试卷类型:TMUA | ESAT | NSAA | 其他 */
   sourceType?: string | null;
-  mode: string;
-  durationMin: number | null;
   questionCount: number;
   createdAt: string;
   /** 以下字段仅老师视角返回 */
@@ -231,8 +229,6 @@ export interface PaperManageDetail {
   subject: string;
   /** 题源/试卷类型:TMUA | ESAT | NSAA | 其他 */
   sourceType?: string | null;
-  mode: string;
-  durationMin: number | null;
   source?: string | null;
   origin?: "MANUAL" | "AUTO_SET";
   status: "DRAFT" | "READY" | "ARCHIVED";

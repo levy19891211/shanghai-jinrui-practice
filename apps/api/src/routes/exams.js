@@ -12,10 +12,10 @@ router.use(requireAuth, requireRole("TEACHER", "ADMIN"));
 async function analyzeExam(assignmentId) {
   const exam = await prisma.assignment.findUnique({
     where: { id: assignmentId },
-    include: {
-      paper: { select: { id: true, title: true, mode: true, subject: true, sourceType: true, durationMin: true, questionIds: true } },
-      targets: { include: { student: { select: { id: true, name: true, email: true } } } },
-    },
+      include: {
+        paper: { select: { id: true, title: true, subject: true, sourceType: true, questionIds: true } },
+        targets: { include: { student: { select: { id: true, name: true, email: true } } } },
+      },
   });
   if (!exam || exam.mode !== "EXAM" || !exam.paperId) return null; // 仅学科卷考试
 
@@ -122,7 +122,7 @@ async function analyzeExam(assignmentId) {
   return {
     exam: { id: exam.id, title: exam.title, note: exam.note, dueAt: exam.dueAt, createdAt: exam.createdAt },
     paper: exam.paper
-      ? { id: exam.paper.id, title: exam.paper.title, subject: exam.paper.subject, sourceType: exam.paper.sourceType, mode: exam.paper.mode, durationMin: exam.paper.durationMin, questionCount: qids.length }
+      ? { id: exam.paper.id, title: exam.paper.title, subject: exam.paper.subject, sourceType: exam.paper.sourceType, durationMin: exam.durationMin, questionCount: qids.length }
       : null,
     students,
     perQuestion,
@@ -138,7 +138,7 @@ router.get(
     const list = await prisma.assignment.findMany({
       where: { teacherId: req.user.id, mode: "EXAM", paperId: { not: null } }, // 只管理学科卷考试,语言卷(雅思)模考不在此模块
       include: {
-        paper: { select: { title: true, mode: true, subject: true, sourceType: true, durationMin: true } },
+        paper: { select: { title: true, subject: true, sourceType: true } },
         targets: { select: { status: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -170,7 +170,7 @@ router.get(
           dueAt: a.dueAt,
           status: a.status,
           createdAt: a.createdAt,
-          paper: a.paper ? { title: a.paper.title, mode: a.paper.mode, subject: a.paper.subject, sourceType: a.paper.sourceType, durationMin: a.paper.durationMin } : null,
+          paper: a.paper ? { title: a.paper.title, subject: a.paper.subject, sourceType: a.paper.sourceType, durationMin: a.durationMin } : null,
           stats: { total, submitted, inProgress, pending: total - submitted - inProgress },
           avgRate: e && e.n ? Math.round((e.rateSum / e.n) * 100) : null,
           avgScore: e && e.n ? Math.round((e.scoreSum / e.n) * 100) / 100 : null,
@@ -184,7 +184,7 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { paperId, studentIds, title, note, dueAt } = req.body || {};
+    const { paperId, studentIds, title, note, dueAt, durationMin } = req.body || {};
     if (!paperId) return fail(res, 400, "请选择考卷");
     if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名考生");
     const paper = await prisma.paper.findUnique({ where: { id: paperId } });
@@ -194,6 +194,8 @@ router.post(
     if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
+    const dMin = durationMin ? Math.round(Number(durationMin)) : null;
+    if (!dMin || dMin <= 0) return fail(res, 400, "考试必须设置限时(分钟)");
     const assignment = await prisma.assignment.create({
       data: {
         teacherId: req.user.id,
@@ -201,6 +203,7 @@ router.post(
         title: String(title || "").trim() || paper.title,
         note: note ? String(note).trim() : null,
         mode: "EXAM",
+        durationMin: dMin,
         dueAt: parsedDue,
         targets: { create: studentIds.map((sid) => ({ studentId: sid })) },
       },

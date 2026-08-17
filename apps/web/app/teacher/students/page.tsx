@@ -26,10 +26,11 @@ interface AssignmentRow {
   title: string;
   note: string | null;
   mode: string;
+  durationMin?: number | null;
   dueAt: string | null;
   status: string;
   createdAt: string;
-  paper: { title: string; mode: string; subject: string; sourceType: string | null } | null;
+  paper: { title: string; subject: string; sourceType: string | null } | null;
   stats: { total: number; submitted: number; inProgress: number; pending: number };
 }
 
@@ -38,17 +39,17 @@ interface AssignmentDetail {
   title: string;
   note: string | null;
   mode: string;
+  durationMin?: number | null;
   dueAt: string | null;
   status: string;
   createdAt: string;
-  paper: { title: string; mode: string; subject: string; sourceType: string | null } | null;
+  paper: { title: string; subject: string; sourceType: string | null } | null;
   targets: { studentId: string; name: string; email: string; status: string; submittedAt: string | null; lateSubmit?: boolean; answeredCount?: number; total?: number }[];
 }
 
 interface PaperOption {
   id: string;
   title: string;
-  mode: string;
   subject: string;
   questionCount: number;
   kind?: string;
@@ -82,7 +83,7 @@ export default function TeacherStudentsPage() {
   const [assignList, setAssignList] = useState<AssignmentRow[]>([]);
   const [students, setStudents] = useState<{ id: string; name: string; email: string }[]>([]);
   const [papers, setPapers] = useState<PaperOption[]>([]);
-  const [assignForm, setAssignForm] = useState({ paperId: "", title: "", note: "", mode: "PRACTICE" as "PRACTICE" | "EXAM", dueAt: "" });
+  const [assignForm, setAssignForm] = useState({ paperId: "", title: "", note: "", mode: "PRACTICE" as "PRACTICE" | "EXAM", durationMin: "", dueAt: "" });
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [assignMsg, setAssignMsg] = useState("");
@@ -186,18 +187,23 @@ export default function TeacherStudentsPage() {
     setAssignMsg("");
     if (!assignForm.paperId) { setAssignErr("请选择试卷"); return; }
     if (selectedStudents.size === 0) { setAssignErr("请选择至少一名学生"); return; }
+    if (assignForm.mode === "EXAM" && (!assignForm.durationMin || Number(assignForm.durationMin) <= 0)) {
+      setAssignErr("模考模式必须设置限时(分钟)");
+      return;
+    }
     setCreating(true);
     try {
       await api.post("/teacher/assignments", {
         paperId: assignForm.paperId,
         title: assignForm.title,
         note: assignForm.note,
-        mode: "PRACTICE", // 教学管理仅布置作业(练习);考试请到「考试管理」
+        mode: assignForm.mode, // 作业分发可设为 练习 或 模考
+        durationMin: assignForm.mode === "EXAM" ? Number(assignForm.durationMin) : undefined,
         dueAt: assignForm.dueAt || undefined,
         studentIds: Array.from(selectedStudents),
       });
       setAssignMsg(`已向 ${selectedStudents.size} 名学生布置作业`);
-      setAssignForm({ paperId: "", title: "", note: "", mode: "PRACTICE", dueAt: "" });
+      setAssignForm({ paperId: "", title: "", note: "", mode: "PRACTICE", durationMin: "", dueAt: "" });
       setSelectedStudents(new Set());
       await loadAssignments();
     } catch (e) {
@@ -466,7 +472,7 @@ export default function TeacherStudentsPage() {
           {/* 新建作业 */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-sm font-medium text-slate-700">布置作业</h2>
-            <p className="mt-1 text-xs text-slate-400">选择试卷库中的卷子,作为平时练习分发给学生,可设置截止时间(DDL)。考试安排请到「考试管理」。</p>
+            <p className="mt-1 text-xs text-slate-400">选择试卷库中的卷子分发给学生,可设为「练习」或「模考」,模考需设置考试用时(分钟),作业可设截止时间(DDL)。正式考试安排请到「考试管理」。</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
                 <label className="mb-1 block text-sm text-slate-600">试卷(必选)</label>
@@ -478,19 +484,21 @@ export default function TeacherStudentsPage() {
                   <option value="">请选择试卷</option>
                   {papers.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.title}({p.questionCount}题 · {p.mode === "EXAM" ? "模考" : "练习"})
+                      {p.title}({p.questionCount}题)
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-slate-600">作业名称(留空 = 用试卷名)</label>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-                  value={assignForm.title}
-                  onChange={(e) => setAssignForm({ ...assignForm, title: e.target.value })}
-                  placeholder="如:2018 TMUA 限时练习"
-                />
+                <label className="mb-1 block text-sm text-slate-600">模式</label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ui-select"
+                  value={assignForm.mode}
+                  onChange={(e) => setAssignForm((f) => ({ ...f, mode: e.target.value as "PRACTICE" | "EXAM" }))}
+                >
+                  <option value="PRACTICE">练习(不限时)</option>
+                  <option value="EXAM">模考(限时)</option>
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">截止时间(DDL,可选)</label>
@@ -499,6 +507,29 @@ export default function TeacherStudentsPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
                   value={assignForm.dueAt}
                   onChange={(e) => setAssignForm({ ...assignForm, dueAt: e.target.value })}
+                />
+              </div>
+              {assignForm.mode === "EXAM" && (
+                <div>
+                  <label className="mb-1 block text-sm text-slate-600">考试用时(分钟)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                    value={assignForm.durationMin}
+                    onChange={(e) => setAssignForm((f) => ({ ...f, durationMin: e.target.value }))}
+                    placeholder="如 90"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">作业名称(留空 = 用试卷名)</label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  value={assignForm.title}
+                  onChange={(e) => setAssignForm({ ...assignForm, title: e.target.value })}
+                  placeholder="如:2018 TMUA 限时练习"
                 />
               </div>
             </div>
@@ -598,7 +629,7 @@ export default function TeacherStudentsPage() {
                     <tr key={a.id} className="border-b border-slate-50">
                       <td className="py-2.5 font-medium">{a.title}</td>
                       <td className="py-2.5 text-slate-500">{a.paper?.title ?? "—"}</td>
-                      <td className="py-2.5">{a.mode === "EXAM" ? "模考" : "练习"}</td>
+                      <td className="py-2.5">{a.mode === "EXAM" ? `模考${a.durationMin ? ` · ${a.durationMin}分钟` : ""}` : "练习"}</td>
                       <td className="py-2.5 text-slate-500">{a.dueAt ? new Date(a.dueAt).toLocaleString("zh-CN", { hour12: false }) : "不限"}</td>
                       <td className="py-2.5">
                         <span className="text-slate-600">
@@ -729,7 +760,7 @@ export default function TeacherStudentsPage() {
               <button onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              试卷:{detail.paper?.title ?? "—"} · {detail.mode === "EXAM" ? "模考" : "练习"} ·
+              试卷:{detail.paper?.title ?? "—"} · {detail.mode === "EXAM" ? `模考${detail.durationMin ? ` · ${detail.durationMin}分钟` : ""}` : "练习"} ·
               DDL:{detail.dueAt ? new Date(detail.dueAt).toLocaleString("zh-CN", { hour12: false }) : "不限"}
             </p>
             {detail.note && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">备注:{detail.note}</p>}

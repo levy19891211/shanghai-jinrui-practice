@@ -221,7 +221,7 @@ router.get(
     const list = await prisma.assignment.findMany({
       where: { teacherId: req.user.id, ...(req.query.mode ? { mode: String(req.query.mode) } : {}) },
       include: {
-        paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        paper: { select: { title: true, subject: true, sourceType: true } },
         languagePaper: { select: { id: true, title: true, examType: true, skill: true } },
         targets: { select: { status: true, submittedAt: true } },
       },
@@ -233,8 +233,8 @@ router.get(
         const submitted = a.targets.filter((t) => t.status === "SUBMITTED").length;
         const inProgress = a.targets.filter((t) => t.status === "IN_PROGRESS").length;
         return {
-          id: a.id, title: a.title, note: a.note, mode: a.mode, dueAt: a.dueAt, status: a.status, createdAt: a.createdAt,
-          paper: a.paper ? { title: a.paper.title, mode: a.paper.mode, subject: a.paper.subject, sourceType: a.paper.sourceType } : null,
+          id: a.id, title: a.title, note: a.note, mode: a.mode, dueAt: a.dueAt, status: a.status, createdAt: a.createdAt, durationMin: a.durationMin,
+          paper: a.paper ? { title: a.paper.title, subject: a.paper.subject, sourceType: a.paper.sourceType } : null,
           languagePaper: a.languagePaper ? { id: a.languagePaper.id, title: a.languagePaper.title, examType: a.languagePaper.examType, skill: a.languagePaper.skill } : null,
           stats: { total, submitted, inProgress, pending: total - submitted - inProgress },
         };
@@ -248,7 +248,7 @@ router.get(
 router.post(
   "/assignments",
   asyncHandler(async (req, res) => {
-    const { paperId, languagePaperId, title, note, studentIds, dueAt, mode } = req.body || {};
+    const { paperId, languagePaperId, title, note, studentIds, dueAt, mode, durationMin } = req.body || {};
     if (!paperId && !languagePaperId) return fail(res, 400, "请选择试卷");
     if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名学生");
 
@@ -269,13 +269,17 @@ router.post(
     const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT", status: "APPROVED" } });
     if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
 
-    // 显式 mode 优先(学生管理「作业分发」固定传 PRACTICE);未传时按卷子模式推断
+    // 模式:显式传入优先(作业分发/考试管理由前端选择 练习 或 模考);未传时按语言卷模式兜底,缺省为练习。
+    // 注意:套题(Paper)本身不再携带模式,模式完全由分发/考试时决定。
     const aMode =
       mode === "EXAM" ? "EXAM" :
       mode === "PRACTICE" ? "PRACTICE" :
-      languagePaper?.mode === "EXAM" || (paperId && (await prisma.paper.findUnique({ where: { id: paperId } }))?.mode === "EXAM") ? "EXAM" : "PRACTICE";
+      languagePaper?.mode === "EXAM" ? "EXAM" : "PRACTICE";
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
+    // 模考/考试时长(分钟):由老师分发或考试管理时设置;非 EXAM 或为空则置空
+    const aDuration = aMode === "EXAM" && durationMin ? Math.round(Number(durationMin)) : null;
+    if (aMode === "EXAM" && !aDuration) return fail(res, 400, "模考/考试必须设置限时(分钟)");
 
     const assignment = await prisma.assignment.create({
       data: {
@@ -285,6 +289,7 @@ router.post(
         title: String(title || "").trim() || paperTitle,
         note: note ? String(note).trim() : null,
         mode: aMode,
+        durationMin: aDuration,
         dueAt: parsedDue,
         targets: { create: studentIds.map((sid) => ({ studentId: sid })) },
       },
@@ -315,7 +320,7 @@ router.get(
     const assignment = await prisma.assignment.findUnique({
       where: { id: req.params.id },
       include: {
-        paper: { select: { title: true, mode: true, subject: true, sourceType: true } },
+        paper: { select: { title: true, subject: true, sourceType: true } },
         languagePaper: { select: { id: true, title: true, examType: true, skill: true } },
         targets: {
           include: { student: { select: { id: true, name: true, email: true } } },
@@ -342,6 +347,7 @@ router.get(
     }
     ok(res, {
       id: assignment.id, title: assignment.title, note: assignment.note, mode: assignment.mode, dueAt: assignment.dueAt,
+      durationMin: assignment.durationMin,
       status: assignment.status, createdAt: assignment.createdAt,
       paper: assignment.paper,
       languagePaper: assignment.languagePaper,
