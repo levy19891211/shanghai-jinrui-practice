@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+} from "recharts";
 import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import ScratchPad from "@/components/ScratchPad";
@@ -336,6 +339,11 @@ export default function PracticePage() {
     // 每题用时分析:平均用时(仅统计有真实计时的题)
     const times = items.map((d) => d.timeSpent).filter((v): v is number => typeof v === "number" && v > 0);
     const avgTime = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
+    // 折线图数据:每题用时(未计时的题记为 0)
+    const timeChartData = items.map((d, i) => ({
+      name: `Q${i + 1}`,
+      time: typeof d.timeSpent === "number" && d.timeSpent > 0 ? d.timeSpent : 0,
+    }));
 
     return (
       <div className="mx-auto max-w-3xl">
@@ -419,48 +427,62 @@ export default function PracticePage() {
               ))}
             </div>
           )}
-          {/* 逐题 */}
-          <div className="space-y-4 px-6 pb-8">
-            {items.map((d, i) => (
-              <div key={d.questionId} className={`rounded border bg-white p-5 ${d.isCorrect ? "border-[#2e7d32] shadow-[0_0_0_3px_rgba(46,125,50,0.15)]" : "border-[#c62828] shadow-[0_0_0_3px_rgba(198,40,40,0.12)]"}`}>
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 min-w-[52px] text-sm font-bold text-[#b8860b]">Q{i + 1}.</span>
-                  <div className="flex-1">
-                    <span className="mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(d.topic) }}>
-                      {d.topic}
-                    </span>
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${d.isCorrect ? "bg-[#e8f5e9] text-[#2e7d32]" : d.selected ? "bg-[#fdecea] text-[#c62828]" : "bg-[#f0ead8] text-[#5a5346]"}`}>
-                      {d.isCorrect ? "✓ 答对" : d.selected ? "✗ 答错" : "未作答"}
-                    </span>
-                    {typeof d.timeSpent === "number" && d.timeSpent > 0 && (
-                      <span className="ml-2 inline-block rounded-full bg-[#eef2f7] px-2 py-0.5 text-[11px] font-medium text-[#00467F]">用时 {d.timeSpent}s</span>
-                    )}
-                    <p className="mt-2 text-[15px] leading-relaxed text-[#1a1a1a]">{renderRich(d.stem)}</p>
-                    <div className="mt-3 space-y-1">
-                      {d.options.map((opt, j) => {
-                        const isAns = opt === d.answer;
-                        const isSel = opt === d.selected;
-                        return (
-                          <div key={j} className={`rounded px-3 py-1.5 text-[14px] ${isAns ? "bg-[#e8f5e9] font-medium text-[#1b3a1d]" : isSel ? "bg-[#fdecea] text-[#5a1a17]" : "text-[#5a5346]"}`}>
-                            <span className="mr-1 font-bold text-[#00467F]">{LETTERS[j]}.</span>
-                            {renderRich(opt)}
-                            {isAns && <span className="ml-2 text-xs text-[#2e7d32]">正确答案</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {d.solution && (
-                      <div className="mt-3 rounded border border-[#e3d6b0] bg-[#fbf6e9] px-3 py-2.5">
-                        <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-[#8a6d1f]">
-                          <span>💡</span><span>解析</span>
-                        </div>
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#3a3528]">{renderRich(d.solution, { smart: false })}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+          {/* 每题用时折线图 */}
+          <div className="px-6 pb-2 pt-2">
+            <h2 className="mb-2 flex items-center gap-2 text-base font-bold text-[#00467F]">
+              <span>⌛</span> 每题用时
+              {avgTime != null && <span className="text-xs font-normal text-[#8a8377]">平均 {avgTime}s / 题</span>}
+            </h2>
+            <div className="rounded border border-[#d9d2c2] bg-white p-3">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={timeChartData} margin={{ top: 8, right: 16, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#8a8377" }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 11, fill: "#8a8377" }} unit="s" width={42} />
+                  <Tooltip formatter={(v: number) => [`${v}s`, "用时"]} labelFormatter={(l) => `${l} 用时`} />
+                  <Line type="monotone" dataKey="time" name="用时" stroke="#1f6fb2" strokeWidth={2} dot={{ r: 3, fill: "#1f6fb2" }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* 逐题简洁列表:题号 / 知识点 / 正误 / 用时 */}
+          <div className="px-6 pb-8">
+            <h2 className="mb-2 flex items-center gap-2 text-base font-bold text-[#00467F]">
+              <span>📋</span> 答题明细
+            </h2>
+            <div className="overflow-hidden rounded border border-[#d9d2c2] bg-white">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#d9d2c2] bg-[#f1ead9] text-[#5a5346]">
+                    <th className="px-3 py-2 text-left font-normal">题号</th>
+                    <th className="px-3 py-2 text-left font-normal">知识点</th>
+                    <th className="px-3 py-2 text-left font-normal">正误</th>
+                    <th className="px-3 py-2 text-right font-normal">用时</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((d, i) => (
+                    <tr key={d.questionId} className="border-b border-[#eee] last:border-0">
+                      <td className="px-3 py-2 font-bold text-[#b8860b]">Q{i + 1}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-block rounded-full px-2 py-0.5 text-[11px] text-white" style={{ background: topicColor(d.topic) }}>
+                          {d.topic}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${d.isCorrect ? "bg-[#e8f5e9] text-[#2e7d32]" : d.selected ? "bg-[#fdecea] text-[#c62828]" : "bg-[#f0ead8] text-[#5a5346]"}`}>
+                          {d.isCorrect ? "✓ 答对" : d.selected ? "✗ 答错" : "未作答"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-[#00467F]">
+                        {typeof d.timeSpent === "number" && d.timeSpent > 0 ? `${d.timeSpent}s` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
