@@ -19,6 +19,7 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 31 | **文本形式 `sqrt(...)` 未渲染为根号**:TMUA 自编卷套题选项大量显示 `±(18sqrt(21))/(49)`,`sqrt(21)` 原样外露,无根号;学生/教师看到的选项像是普通英文而非数学公式 | ① `latexify` 函数名替换白名单遗漏 `sqrt`;② 从未把 `sqrt(...)` 这种**文本圆括号**形式转成 LaTeX `\sqrt{...}`;smartMath 虽把整段判为数学,KaTeX 收到的 `sqrt` 被当变量乘积,根号无法显示 | ① `apps/web/lib/rich.tsx`、`apps/api/src/lib/text-clean.js`、`apps/api/scripts/{verify_math.js,normalize_math_data.js,latexify_options.js}` 的 `latexify` 均加入 `fixSqrt`:循环把 `sqrt(...)`(支持嵌套,排除 `\sqrt`/变量前缀如 `rsqrt`)→`\sqrt{...}`;② 函数名替换正则加入 `sqrt`,并统一排除反斜杠避免 `\sqrt`→`\\sqrt`;③ 部署后运行 `fix_sqrt_text.mjs` 修复线上存量数据并同步 answer | this |
 | 30 | **PDF 双文件导入答案存成字母、全部无法判分(大量错答案)**:物理等学科「题目PDF+答案PDF」导入后,教师审题看到答案是 `F`/`H`/`G` 等单字母而非选项文本;学生选了正确选项也判错(判分 `a===s` 全等比对,字母永远≠选项文本);部分题字母越界(5 个选项却存 `G`) | ① `questions.js` 双文件导入在 `parsePdf`(已内部 `finalizeRow` 把字母→选项文本)之后,用答案文件**原始字母** `rows[i].answer = answers[i].answer` **覆盖答案**,而 `mapAnswerToOptionText` 只在 `finalizeRow` 内调用一次→覆盖后的字母再无映射机会;② 匹配用**位置**(`answers[i]`→`rows[i]`)而非题号,题数/编号不一致即整体错位 | ① `questions.js` 双文件匹配改为**按题号**(优先题目 `qno`,无则退回位置)并调用 `mapAnswerToOptionText` 把字母→选项文本;② `vision.js`/`import-pdf.js` 增加 `qno` 透传(题目提取带题号,答案按号匹配);③ **越界防护**:字母索引超出选项数量(如 5 选项给 G)视为识别错误,清空交教师审核;④ 一次性脚本把全库 `PDF 导入` 的字母答案映射回选项文本、越界清空 | 8e37100 |
 | 29 | **选项里罗马数字 `I` 被吞**——`I only`→`only`、`I and II only`→`and II only`、`I and IV only`→`and IV only`;线上 46 道含 `only` 的题中 **10 道** 中招(如 `cmslhyim70005k9n8qqzs1ld7`、`cmsles85u000cfqh19eiutve8`)。TMUA/ESAT 的「以下哪些正确」题型几乎全用 `I/II/III` 选项,影响面大且**改变题意**(学生看到的选项与原卷不一致) | `cleanOptionPrefix` 正则字母类 `[A-Ja-j]` **包含了 `I`**;而 `I only` 恰好是「大写字母 + 空格分隔符」,完全符合"选项字母前缀"的模式(等价于 `I. only`)→ 被当前缀删除。**这是 #17 的同一函数第二次踩坑**:#17 修 `*`→`+` 解决了"零分隔符"的误删,但没意识到 `I` 本身既是英文单词/罗马数字**又是合法选项字母**,只要它后面跟空格就必然误判——`+` 量词救不了 | ① `questions.js` `cleanOptionPrefix` 字母类改为 `[A-HJ-Za-hj-z]`,把 `I/i` 排除在可清洗前缀之外(第 9 个选项标签 `I.` 极少出现,宁可漏清洗也不能吞题意);② 线上脚本扫描全部含 `only` 的选项,按 `only`→`I only`、`and <罗马数字> only`→`I and <罗马数字> only` 规则回填修正 10 道题;③ 修复后复扫,损坏数 0 | 5acb124 |
 | 28 | **题干/解析多个独立公式挤在同一行、序号(I/II/III)贴在一起**:2022 TMUA Q10(`cmslcv3o0000zqayx5`)「I $y = x^3 - 3x^2 + 9x - 27$ II $y = x^3 - 9x^2 + 27x - 3$ III $y = 27x^3 - 9x^2 + x - 3$」、2022 TMUA Q3(`cmslcv3mn000sqayx16edoft6`)「- f''(x)=a for all x- f(0)=1,f(1)=2- ∫₀¹f(x)dx=1」等——**数据里每个公式独立一行(含 `\n`),但渲染出来全挤在一行** | `rich.tsx` text 包裹层用 `<span>{text}</span>`,HTML 默认 `white-space: normal` **把 `\n` 折叠为单个空格** → 多行数据渲染成一行 | `rich.tsx` 三处 `<span>` 加 `whitespace-pre-wrap` 类(L110/L111 renderRich 的 text token 包裹、L267 smartMath flushText),保留 `\n` 换行。短文本(无 `\n`)无影响。**注意**:V2.3.24 commit 曾因 push 遗漏导致线上未生效(用户复测仍坏),必须验证服务器 commit + grep 到改动才可交付 | this |
@@ -89,6 +90,7 @@
    - **`vision.js` 模板字符串内禁止反引号**(本规则集中最严的隐患):SYSTEM_PROMPT = \`...\` 是 JS 模板字符串,若在 prompt 内容里写反引号包裹示例(如 \`\`$x_1 = 7$\`\`)会**提前闭合**模板字符串,触发 SyntaxError 导致 api 启动失败(pm2 errored 一直重启 99 次,线上 api 整个不可用)。**已踩坑三次**(V2.3.14 加答案页 prompt / V2.3.15 修复 / V2.3.18 加公式排版规则——三次都因反引号)。**规则**:prompt 内的规则示例要用「公式」时,直接裸写 `$x_1 = 7$` 或用中文「」括号,绝不使用反引号;**修改 `vision.js` 后必须本地 `node --check` 验证语法**,并部署后 `curl /api/health` 确认 api 启动成功。
 
 30. **PDF 双文件导入的答案必须是「选项文本」而非字母**(见 #30):判分 `a===s` 全等比对,答案字段存 `F`/`G` 这类字母永远≠选项文本→全错。规则:① 任何把答案文件字母写回题目 `rows[i].answer` 的代码,**必须**经过 `mapAnswerToOptionText(letter, options)` 映射成选项文本(字母→文本只在 `finalizeRow` 内发生一次,覆盖式赋值时不会自动重跑,极易漏);② 答案与题目**按题号(`qno`)匹配**,绝不按位置(`answers[i]`→`rows[i]`),否则题数/编号错位即全错;③ **越界防护**:字母索引 `charCode-65 >= 选项数`(如 5 选项给 G)视为识别错误,清空交教师审核,绝不写入明显错误答案。修改 `questions.js` 双文件导入逻辑后,必须 `grep` 确认答案落库前经过 `mapAnswerToOptionText`,并查库确认 `PDF 导入` 题目的 answer 不再是单字母。
+31. **文本形式 `sqrt(...)` 必须转成 `\sqrt{...}`**(见 #31):视觉模型/外部导入常把根号写成 `sqrt(21)`。latexify 必须先把**圆括号参数**转成**花括号**,再给函数名加反斜杠;否则 KaTeX 把 `sqrt` 当变量乘积,根号无法显示。**必须**支持嵌套(如 `sqrt(a+sqrt(b))`→`\sqrt{a+\sqrt{b}}`);**必须**排除 `\sqrt` 本身(lookbehind 排除反斜杠)与 `rsqrt` 等变量前缀;新增数学函数时同步更新四份 latexify 与函数名白名单(FUNC_NAMES/FUNC_TOKEN/SM_FUNC)。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -108,6 +110,8 @@ log₁₀(2/(a + 2b + 3c))
 (4 − x^2)[(1 + 2x + 3x^2)^4 − (1 + 4x^3)^3]
 Σ(n=1..100) aₙ
 0 ≤ θ ≤ 4π
+±(18sqrt(21))/(49)        → ±\frac{18\sqrt{21}}{49}   (文本 sqrt 须正确渲染为根号)
+sqrt(a+sqrt(b))            → \sqrt{a+\sqrt{b}}        (支持嵌套)
 ```
 
 **#14 回归样本($ 后带空格 / 裸命令,必须正确渲染、不得露出反斜杠):**

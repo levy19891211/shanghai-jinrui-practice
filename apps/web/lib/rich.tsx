@@ -127,7 +127,19 @@ export function plainText(text: string | null | undefined): string {
 // 将常见非 LaTeX 数学记号转换为 KaTeX 语法(供批量录入使用)
 // 注意执行顺序:简单分数(π/4 等)必须在 π→\pi 之前处理,否则 \pi 中的 i 会被误当变量
 export function latexify(s: string): string {
-  return s
+  // 把文本形式的 sqrt(...) 转成 LaTeX \sqrt{...}(必须先把圆括号参数转成花括号,否则 KaTeX 不识别)
+  // 支持嵌套括号,并排除前面带反斜杠或字母的情况(避免误伤 \sqrt 本身或 rsqrt 等变量名)
+  const fixSqrt = (str: string): string => {
+    // 从最深层的 sqrt(...) 开始逐层替换,支持嵌套;排除 \sqrt 本身与 rsqrt 等变量前缀
+    let prev: string;
+    do {
+      prev = str;
+      str = str.replace(/(?<![a-zA-Z\\])sqrt\(([^()]+)\)/g, "\\sqrt{$1}");
+    } while (str !== prev);
+    return str;
+  };
+
+  return fixSqrt(s)
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
     .replace(/√([0-9a-zA-Z])/g, "\\sqrt{$1}")
     .replace(/log₁₀/g, "\\log_{10}")
@@ -167,7 +179,7 @@ export function latexify(s: string): string {
       "_{" + m.split("").map((c) => ({ "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9" })[c] || c).join("") + "}"
     )
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母或已有反斜杠,避免 \log 变成 \\log)
-    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
+    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
     // 简单分数:数字/π/θ/单变量的 A/B(如 3π/4、1/2、x/y、5650/79.5;分母至少 1 字符)
     // 此时 π/上标已转(\pi、^{3} 形式);单字母变量前后不能是字母(避免 \pi 的 i 被误当变量)
     .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")

@@ -8,7 +8,18 @@ import { prisma } from "../src/lib/db.js";
 
 // ===== 与前端 lib/rich.tsx 同步的 latexify =====
 function latexify(s) {
-  return s
+  // 把文本形式的 sqrt(...) 转成 LaTeX \sqrt{...}(支持嵌套,排除 \sqrt 本身与 rsqrt 等变量前缀)
+  const fixSqrt = (str) => {
+    // 从最深层的 sqrt(...) 开始逐层替换,支持嵌套;排除 \sqrt 本身与 rsqrt 等变量前缀
+    let prev;
+    do {
+      prev = str;
+      str = str.replace(/(?<![a-zA-Z\\])sqrt\(([^()]+)\)/g, "\\sqrt{$1}");
+    } while (str !== prev);
+    return str;
+  };
+
+  return fixSqrt(s)
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
     .replace(/√([0-9a-zA-Z])/g, "\\sqrt{$1}")
     .replace(/log₁₀/g, "\\log_{10}")
@@ -38,7 +49,7 @@ function latexify(s) {
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
-    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
+    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
     .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/\(([^()]+)\)\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
     .replace(/(?<![\^{])([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")

@@ -6,7 +6,19 @@
 // 把常见非 LaTeX 数学记号转成 KaTeX 语法。
 // 顺序敏感:简单分数必须在 π→\pi 之前处理,否则 \pi 的 i 会被误当变量。
 export function latexify(s) {
-  return s
+  // 把文本形式的 sqrt(...) 转成 LaTeX \sqrt{...}(先转圆括号为花括号,避免 KaTeX 不识别)
+  // 支持嵌套,并排除前面带反斜杠或字母的情况(避免误伤 \sqrt 本身或 rsqrt 等变量)
+  const fixSqrt = (str) => {
+    // 从最深层的 sqrt(...) 开始逐层替换,支持嵌套;排除 \sqrt 本身与 rsqrt 等变量前缀
+    let prev;
+    do {
+      prev = str;
+      str = str.replace(/(?<![a-zA-Z\\])sqrt\(([^()]+)\)/g, "\\sqrt{$1}");
+    } while (str !== prev);
+    return str;
+  };
+
+  return fixSqrt(s)
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
     .replace(/√([0-9a-zA-Z])/g, "\\sqrt{$1}")
     .replace(/log₁₀/g, "\\log_{10}")
@@ -43,7 +55,7 @@ export function latexify(s) {
     .replace(/≠/g, "\\ne")
     .replace(/Σ/g, "\\sum")
     .replace(/∫/g, "\\int")
-    .replace(/(?<![a-zA-Z])(log|sin|cos|tan|ln|sec|csc|cot|exp|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
+    .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1");
 }
 
 // 行内公式首尾空格规范化:$ x $ → $x$(块级 $$...$$ 原样保留)。

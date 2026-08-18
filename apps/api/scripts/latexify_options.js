@@ -15,7 +15,18 @@ function isPureMath(s) {
 }
 
 function latexify(s) {
-  return s
+  // 把文本形式的 sqrt(...) 转成 LaTeX \sqrt{...}(支持嵌套,排除 \sqrt 本身与 rsqrt 等变量前缀)
+  const fixSqrt = (str) => {
+    // 从最深层的 sqrt(...) 开始逐层替换,支持嵌套;排除 \sqrt 本身与 rsqrt 等变量前缀
+    let prev;
+    do {
+      prev = str;
+      str = str.replace(/(?<![a-zA-Z\\])sqrt\(([^()]+)\)/g, "\\sqrt{$1}");
+    } while (str !== prev);
+    return str;
+  };
+
+  return fixSqrt(s)
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
     .replace(/√([0-9a-zA-Z])/g, "\\sqrt{$1}")
     .replace(/log₁₀/g, "\\log_{10}")
