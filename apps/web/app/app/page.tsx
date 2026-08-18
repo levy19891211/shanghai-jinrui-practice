@@ -905,7 +905,7 @@ function PaperStartButton({
         type="button"
         disabled={disabled}
         onClick={() => onStart(paper, mode, mode === "EXAM" ? Number(dur) : undefined)}
-        className="flex h-7 items-center rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+        className="flex h-7 items-center rounded-lg bg-emerald-500 px-3 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
       >
         开始
       </button>
