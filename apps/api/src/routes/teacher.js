@@ -387,7 +387,7 @@ router.get(
       const session = await prisma.session.findFirst({
         where: { assignmentId: assignment.id, studentId: req.params.studentId },
         select: { id: true },
-        orderBy: { createdAt: "desc" },
+        orderBy: { startedAt: "desc" },
       });
       if (session) {
         const records = await prisma.answerRecord.findMany({
@@ -420,7 +420,7 @@ router.get(
       const session = await prisma.languageSession.findFirst({
         where: { assignmentId: assignment.id, studentId: req.params.studentId },
         select: { id: true },
-        orderBy: { createdAt: "desc" },
+        orderBy: { startedAt: "desc" },
       });
       if (session) {
         const records = await prisma.languageAnswerRecord.findMany({
