@@ -368,6 +368,92 @@ router.get(
   })
 );
 
+// GET /api/teacher/assignments/:id/students/:studentId/wrongs — 某学生在该作业中的错题
+router.get(
+  "/assignments/:id/students/:studentId/wrongs",
+  asyncHandler(async (req, res) => {
+    const assignment = await prisma.assignment.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, teacherId: true, paperId: true, languagePaperId: true },
+    });
+    if (!assignment || assignment.teacherId !== req.user.id) return fail(res, 404, "作业不存在");
+    const target = await prisma.assignmentStudent.findUnique({
+      where: { assignmentId_studentId: { assignmentId: assignment.id, studentId: req.params.studentId } },
+    });
+    if (!target) return fail(res, 404, "该学生不在此作业分发范围内");
+
+    const questions = [];
+    if (assignment.paperId) {
+      const session = await prisma.session.findFirst({
+        where: { assignmentId: assignment.id, studentId: req.params.studentId },
+        select: { id: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (session) {
+        const records = await prisma.answerRecord.findMany({
+          where: { sessionId: session.id, isCorrect: false },
+          include: {
+            question: {
+              select: {
+                id: true, subject: true, sourceType: true, type: true,
+                stem: true, options: true, answer: true, solution: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        for (const r of records) {
+          questions.push({
+            id: r.question.id,
+            subject: r.question.subject,
+            sourceType: r.question.sourceType,
+            qType: r.question.type,
+            stem: r.question.stem,
+            options: parseJsonArray(r.question.options),
+            answer: r.question.answer,
+            solution: r.question.solution,
+            selected: r.selected,
+          });
+        }
+      }
+    } else if (assignment.languagePaperId) {
+      const session = await prisma.languageSession.findFirst({
+        where: { assignmentId: assignment.id, studentId: req.params.studentId },
+        select: { id: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (session) {
+        const records = await prisma.languageAnswerRecord.findMany({
+          where: { sessionId: session.id, isCorrect: false },
+          include: {
+            question: {
+              select: {
+                id: true, examType: true, skill: true, qType: true,
+                stem: true, options: true, answer: true, solution: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        for (const r of records) {
+          questions.push({
+            id: r.question.id,
+            examType: r.question.examType,
+            skill: r.question.skill,
+            qType: r.question.qType,
+            stem: r.question.stem,
+            options: parseJsonArray(r.question.options),
+            answer: r.question.answer,
+            solution: r.question.solution,
+            selected: r.selected,
+          });
+        }
+      }
+    }
+    ok(res, { questions });
+  })
+);
+
 // GET /api/teacher/stats/overview — 班级学情总览(学生数/刷题量/薄弱知识点 TOP)
 router.get(
   "/stats/overview",

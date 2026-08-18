@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { renderRich } from "@/lib/rich";
 import ExamsPanel from "@/components/ExamsPanel";
 import GroupsPanel from "@/components/GroupsPanel";
 import GroupPicker from "@/components/GroupPicker";
@@ -58,6 +59,31 @@ interface PaperOption {
   kind?: string;
 }
 
+interface WrongQuestion {
+  id: string;
+  subject?: string;
+  sourceType?: string | null;
+  qType?: string;
+  examType?: string;
+  skill?: string;
+  stem: string;
+  options?: string[];
+  answer: string;
+  solution?: string | null;
+  selected: string | null;
+}
+
+interface WrongViewState {
+  assignmentId: string;
+  studentId: string;
+  name: string;
+  loading: boolean;
+  error: string;
+  questions: WrongQuestion[];
+}
+
+const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "未交",
   IN_PROGRESS: "进行中",
@@ -92,6 +118,7 @@ export default function TeacherStudentsPage() {
   const [assignMsg, setAssignMsg] = useState("");
   const [assignErr, setAssignErr] = useState("");
   const [detail, setDetail] = useState<AssignmentDetail | null>(null);
+  const [wrongView, setWrongView] = useState<WrongViewState | null>(null);
 
   // 作业分发:按分组选择(可选)
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -239,6 +266,16 @@ export default function TeacherStudentsPage() {
       setDetail(d);
     } catch (e) {
       setAssignErr(e instanceof Error ? e.message : "加载详情失败");
+    }
+  }
+
+  async function openWrongs(assignmentId: string, studentId: string, name: string) {
+    setWrongView({ assignmentId, studentId, name, loading: true, questions: [], error: "" });
+    try {
+      const d = await api.get<{ questions: WrongQuestion[] }>(`/teacher/assignments/${assignmentId}/students/${studentId}/wrongs`);
+      setWrongView((prev) => (prev ? { ...prev, questions: d.questions, loading: false } : null));
+    } catch (e) {
+      setWrongView((prev) => (prev ? { ...prev, error: e instanceof Error ? e.message : "加载失败", loading: false } : null));
     }
   }
 
@@ -695,6 +732,82 @@ export default function TeacherStudentsPage() {
         </div>
       )}
 
+      {/* 错题弹窗 */}
+      {wrongView && (
+        <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+          <div className="mt-8 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold">{wrongView.name} 的错题</h2>
+                <p className="text-xs text-slate-500">作业:{detail?.title ?? "—"}</p>
+              </div>
+              <button onClick={() => setWrongView(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            {wrongView.loading ? (
+              <p className="mt-6 text-center text-sm text-slate-500">加载中…</p>
+            ) : wrongView.error ? (
+              <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{wrongView.error}</p>
+            ) : wrongView.questions.length === 0 ? (
+              <p className="mt-6 text-center text-sm text-slate-400">该学生暂无错题。</p>
+            ) : (
+              <div className="mt-4 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+                {wrongView.questions.map((q, idx) => (
+                  <div key={q.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="mb-2 text-xs font-medium text-slate-400">第 {idx + 1} 题</p>
+                    <div className="text-sm text-slate-800">{renderRich(q.stem)}</div>
+                    {q.options && q.options.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {q.options.map((opt, i) => {
+                          const letter = LETTERS[i] ?? String(i + 1);
+                          const selectedSet = new Set((q.selected || "").split(/[, ]+/).filter(Boolean));
+                          const answerSet = new Set((q.answer || "").split(/[, ]+/).filter(Boolean));
+                          const isSelected = selectedSet.has(letter) || selectedSet.has(String(opt));
+                          const isAnswer = answerSet.has(letter) || answerSet.has(String(opt));
+                          return (
+                            <div
+                              key={i}
+                              className={`flex items-start gap-2 rounded-lg px-3 py-1.5 text-sm ${
+                                isAnswer
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : isSelected
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-white text-slate-600"
+                              }`}
+                            >
+                              <span className="font-bold">{letter}.</span>
+                              <span className="flex-1">{renderRich(opt)}</span>
+                              {isAnswer && <span className="shrink-0 text-xs font-medium">✓ 正确答案</span>}
+                              {isSelected && !isAnswer && <span className="shrink-0 text-xs font-medium">✗ 你的选择</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(!q.options || q.options.length === 0) && (
+                      <div className="mt-2 rounded-lg bg-white px-3 py-2 text-sm text-slate-600">
+                        <p>学生作答:{q.selected || "未作答"}</p>
+                        <p className="mt-1 text-emerald-700">正确答案:{q.answer}</p>
+                      </div>
+                    )}
+                    {q.solution && (
+                      <div className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-700">
+                        <p className="mb-1 text-xs font-medium text-slate-400">解析</p>
+                        {renderRich(q.solution)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setWrongView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600">
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === "review" && (
         <div className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -813,6 +926,7 @@ export default function TeacherStudentsPage() {
                   <th className="pb-2 font-normal">状态</th>
                   <th className="pb-2 font-normal">已完成题数</th>
                   <th className="pb-2 font-normal">提交时间</th>
+                  <th className="pb-2 font-normal">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -832,6 +946,16 @@ export default function TeacherStudentsPage() {
                     </td>
                     <td className="py-2.5 text-slate-500">
                       {t.submittedAt ? new Date(t.submittedAt).toLocaleString("zh-CN", { hour12: false }) : "—"}
+                    </td>
+                    <td className="py-2.5">
+                      {(t.status === "SUBMITTED" || t.status === "IN_PROGRESS") && (
+                        <button
+                          onClick={() => openWrongs(detail.id, t.studentId, t.name)}
+                          className="text-xs text-indigo-600 hover:underline"
+                        >
+                          查看错题
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
