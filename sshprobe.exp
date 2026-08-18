@@ -1,9 +1,0 @@
-#!/usr/bin/expect -f
-set timeout 120
-set pw "Xhx19891211"
-set mux "-o ControlMaster=auto -o ControlPath=/tmp/ssh_mux_%r@%h:%p -o ControlPersist=180 -o PreferredAuthentications=password -o PubkeyAuthentication=no"
-spawn ssh {*}$mux root@8.219.151.140 {*}$argv
-expect {
-    -re "(?i)password:" { send "$pw\r"; exp_continue }
-    eof {}
-}
