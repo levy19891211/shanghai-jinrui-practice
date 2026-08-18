@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+set timeout 600
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@8.219.151.140
+expect {
+    -re "password:" { send "Xhx19891211\r"; exp_continue }
+    -re "\\\$|#" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect -re "\\\$|$"
+send "cd /root/shanghai-jinrui-practice && git pull 2>&1 | tail -5\r"
+expect -re "\\\$|$"
+send "cd apps/api && npx prisma db push --accept-data-loss 2>&1 | tail -8\r"
+expect -re "\\\$|$"
+send "cd /root/shanghai-jinrui-practice/apps/web && npm run build 2>&1 | tail -15\r"
+expect -re "\\\$|$"
+send "pm2 restart api web 2>&1 | tail -6\r"
+expect -re "\\\$|$"
+send "sleep 3 && pm2 ls 2>/dev/null | head -12\r"
+expect -re "\\\$|$"
+send "exit\r"
+expect eof

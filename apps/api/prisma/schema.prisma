@@ -46,6 +46,8 @@ model User {
   languageSessions LanguageSession[]
   languageWrongBook LanguageWrongBook[]
   favorites        FavoriteQuestion[]
+  groups           Group[] // 老师创建的学生分组
+  groupMemberships GroupStudent[] // 学生所属分组(反向关系)
 }
 
 model Question {
@@ -251,6 +253,33 @@ model AssignmentStudent {
   createdAt    DateTime   @default(now())
 
   @@unique([assignmentId, studentId])
+}
+
+// ——— 学生分组(教师可将学生分组,作业/考试按组布置)———
+// 说明:分组是"教师维度"的便捷选择集合,不替代作业/考试本身的"逐学生"分发结构。
+//   作业/考试创建时若传入 groupIds,后端会把组内学生展开成逐生的 AssignmentStudent(向后兼容)。
+// Group.name 在同一老师下唯一(teacherId_name),GroupStudent 同组学生唯一(groupId_studentId)。
+model Group {
+  id        String         @id @default(cuid())
+  teacherId String
+  teacher   User           @relation(fields: [teacherId], references: [id])
+  name      String
+  note      String?
+  createdAt DateTime       @default(now())
+  students  GroupStudent[]
+
+  @@unique([teacherId, name])
+}
+
+model GroupStudent {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, studentId])
 }
 
 // ============================================================

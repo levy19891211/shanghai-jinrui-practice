@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { resolveTargetStudents } from "../lib/groups.js";
 import { parseIds } from "../lib/paper-set.js";
 import { llmConfigured, chatComplete } from "../lib/llm.js";
 
@@ -184,14 +185,16 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { paperId, studentIds, title, note, dueAt, durationMin } = req.body || {};
+    const { paperId, studentIds, groupIds, title, note, dueAt, durationMin } = req.body || {};
     if (!paperId) return fail(res, 400, "请选择考卷");
-    if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名考生");
+    // 支持"按组布置":展开组内学生并与逐选考生合并去重
+    const finalStudentIds = await resolveTargetStudents({ studentIds, groupIds, teacherId: req.user.id });
+    if (finalStudentIds.length === 0) return fail(res, 400, "请选择至少一名考生(或选择一个分组)");
     const paper = await prisma.paper.findUnique({ where: { id: paperId } });
     if (!paper) return fail(res, 404, "试卷不存在");
     if (paper.status !== "READY") return fail(res, 400, "该试卷尚未「可作答」:卷内还有题目未通过审核。请先在试卷管理里把题目审核发布。");
-    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT", status: "APPROVED" } });
-    if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
+    const students = await prisma.user.findMany({ where: { id: { in: finalStudentIds }, role: "STUDENT", status: "APPROVED" } });
+    if (students.length !== finalStudentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
     const parsedDue = dueAt ? new Date(dueAt) : null;
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
     const dMin = durationMin ? Math.round(Number(durationMin)) : null;
@@ -205,7 +208,7 @@ router.post(
         mode: "EXAM",
         durationMin: dMin,
         dueAt: parsedDue,
-        targets: { create: studentIds.map((sid) => ({ studentId: sid })) },
+        targets: { create: finalStudentIds.map((sid) => ({ studentId: sid })) },
       },
     });
     ok(res, { id: assignment.id }, `已安排考试「${assignment.title}」,考生 ${students.length} 人`);

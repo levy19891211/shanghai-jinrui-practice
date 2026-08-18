@@ -3,6 +3,7 @@ import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { parseJsonArray } from "../lib/vision.js";
+import { resolveTargetStudents } from "../lib/groups.js";
 
 const router = Router();
 // 老师/管理员专用
@@ -132,6 +133,8 @@ router.delete(
     await prisma.wrongBook.deleteMany({ where: { studentId: student.id } });
     await prisma.languageWrongBook.deleteMany({ where: { studentId: student.id } });
     await prisma.roguelikeRun.deleteMany({ where: { studentId: student.id } });
+    // 3b) 该学生所在的分组成员关系
+    await prisma.groupStudent.deleteMany({ where: { studentId: student.id } });
     // 4) 学生账号
     await prisma.user.delete({ where: { id: student.id } });
 
@@ -158,6 +161,7 @@ async function deleteStudentCascade(studentId) {
   await prisma.languageWrongBook.deleteMany({ where: { studentId } });
   await prisma.roguelikeRun.deleteMany({ where: { studentId } });
   await prisma.favorite.deleteMany({ where: { studentId } });
+  await prisma.groupStudent.deleteMany({ where: { studentId } });
   await prisma.user.delete({ where: { id: studentId } });
 }
 
@@ -249,9 +253,11 @@ router.get(
 router.post(
   "/assignments",
   asyncHandler(async (req, res) => {
-    const { paperId, languagePaperId, title, note, studentIds, dueAt, mode, durationMin } = req.body || {};
+    const { paperId, languagePaperId, title, note, studentIds, groupIds, dueAt, mode, durationMin } = req.body || {};
     if (!paperId && !languagePaperId) return fail(res, 400, "请选择试卷");
-    if (!Array.isArray(studentIds) || studentIds.length === 0) return fail(res, 400, "请选择至少一名学生");
+    // 支持"按组布置":把选中的组内学生展开,与逐选学生合并去重
+    const finalStudentIds = await resolveTargetStudents({ studentIds, groupIds, teacherId: req.user.id });
+    if (finalStudentIds.length === 0) return fail(res, 400, "请选择至少一名学生(或选择一个分组)");
 
     let paperTitle = "";
     if (paperId) {
@@ -267,8 +273,8 @@ router.post(
     }
 
     // 校验学生存在、都是 STUDENT 且已通过审核(待审核学生不能接收作业/考试)
-    const students = await prisma.user.findMany({ where: { id: { in: studentIds }, role: "STUDENT", status: "APPROVED" } });
-    if (students.length !== studentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
+    const students = await prisma.user.findMany({ where: { id: { in: finalStudentIds }, role: "STUDENT", status: "APPROVED" } });
+    if (students.length !== finalStudentIds.length) return fail(res, 400, "存在无效或未通过审核的学生");
 
     // 模式:显式传入优先(作业分发/考试管理由前端选择 练习 或 模考);未传时按语言卷模式兜底,缺省为练习。
     // 注意:套题(Paper)本身不再携带模式,模式完全由分发/考试时决定。
@@ -292,7 +298,7 @@ router.post(
         mode: aMode,
         durationMin: aDuration,
         dueAt: parsedDue,
-        targets: { create: studentIds.map((sid) => ({ studentId: sid })) },
+        targets: { create: finalStudentIds.map((sid) => ({ studentId: sid })) },
       },
     });
     ok(res, { id: assignment.id }, `已向 ${students.length} 名学生布置「${assignment.title}」`);

@@ -313,3 +313,21 @@ export interface AiFixPlan {
   clean: boolean;
   model?: string;
 }
+
+// ---- 学生分组(老师可按组布置作业/考试) ----
+export interface GroupStudent {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+}
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  note: string | null;
+  createdAt: string;
+  memberCount: number;
+  students: GroupStudent[];
+}
+

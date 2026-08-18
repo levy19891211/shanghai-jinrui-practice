@@ -1,0 +1,29 @@
+#!/usr/bin/expect -f
+set timeout 120
+set pw "Xhx19891211"
+proc b64 {p} {
+  set raw [exec base64 -i $p]
+  regsub -all "\n" $raw "" raw
+  return $raw
+}
+set json_b64 [b64 "/Users/levi/WorkBuddy/2026-08-07-13-05-24/tmua_missing.json"]
+set mjs_b64  [b64 "/Users/levi/WorkBuddy/2026-08-07-13-05-24/bulu.mjs"]
+set bak_b64  [b64 "/Users/levi/WorkBuddy/2026-08-07-13-05-24/backup2.mjs"]
+
+spawn ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no root@8.219.151.140
+expect {
+  -re "(?i)password:" { send "$pw\r"; exp_continue }
+  -re "# " {}
+}
+send "echo '$json_b64' | base64 -d > /root/tmua_missing.json\r"
+expect -re "# "
+send "echo '$mjs_b64' | base64 -d > /root/shanghai-jinrui-practice/apps/api/scripts/bulu.mjs\r"
+expect -re "# "
+send "echo '$bak_b64' | base64 -d > /root/shanghai-jinrui-practice/apps/api/backup2.mjs\r"
+expect -re "# "
+send "node /root/shanghai-jinrui-practice/apps/api/backup2.mjs\r"
+expect -re "# "
+send "cd /root/shanghai-jinrui-practice/apps/api && node scripts/bulu.mjs\r"
+expect -re "# "
+send "exit\r"
+expect eof

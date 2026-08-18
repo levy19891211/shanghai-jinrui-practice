@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+set timeout 600
+spawn ssh -o StrictHostKeyChecking=no root@8.219.151.140
+expect {
+  "password:" { send "Xhx19891211\r" }
+  timeout { puts "SSH TIMEOUT"; exit 1 }
+}
+expect {
+  "$ " { }
+  "# " { }
+  timeout { puts "SHELL TIMEOUT"; exit 1 }
+}
+send "cd /root/shanghai-jinrui-practice && git pull\r"
+expect {
+  "$ " { }
+  "# " { }
+  timeout { puts "PULL TIMEOUT"; exit 1 }
+}
+send "npm run build\r"
+expect {
+  "$ " { }
+  "# " { }
+  timeout { puts "BUILD TIMEOUT"; exit 1 }
+}
+send "pm2 restart api web\r"
+expect {
+  "$ " { }
+  "# " { }
+  timeout { puts "RESTART TIMEOUT"; exit 1 }
+}
+send "pm2 status\r"
+expect {
+  "$ " { }
+  "# " { }
+  timeout { }
+}
+send "exit\r"
+expect eof

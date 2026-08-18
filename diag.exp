@@ -1,0 +1,15 @@
+#!/usr/bin/expect -f
+set timeout 120
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@8.219.151.140
+expect {
+    -re "password:" { send "Xhx19891211\r"; exp_continue }
+    -re "\\\$|#" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect -re "\\\$|$"
+send "cd /root/shanghai-jinrui-practice && echo '=== git log ===' && git log -1 --oneline && echo '=== git status ===' && git status --short && echo '=== .next build time ===' && ls -la --time-style=+%H:%M:%S apps/web/.next/BUILD_ID 2>/dev/null && echo '=== pm2 ===' && pm2 ls 2>/dev/null | head -20\r"
+expect -re "\\\$|$"
+send "echo '=== grep 继续做题 in built chunks ===' && grep -rl '继续做题' apps/web/.next/static/chunks 2>/dev/null | head -3; echo '=== grep pausedRemaining in api ===' && grep -c 'pausedRemaining' apps/api/src/routes/sessions.js\r"
+expect -re "\\\$|$"
+send "exit\r"
+expect eof

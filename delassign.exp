@@ -1,0 +1,77 @@
+#!/usr/bin/expect -f
+set timeout 150
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@8.219.151.140
+expect {
+    -re "password:" { send "Xhx19891211\r"; exp_continue }
+    -re "\\$|#" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect -re "\\$|$"
+send -- {cat > /tmp/delassign.mjs <<'JSEOF'}
+send "\r"
+expect -re "JSEOF"
+send -- {import { PrismaClient } from '@prisma/client';}
+send "\r"
+expect -re "JSEOF"
+send -- {const p = new PrismaClient();}
+send "\r"
+expect -re "JSEOF"
+send -- {const base = 'http://localhost:4000/api';}
+send "\r"
+expect -re "JSEOF"
+send -- {const login = await fetch(base + '/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email:'test.student1@jinrui.com', password:'Test123456' }) });}
+send "\r"
+expect -re "JSEOF"
+send -- {const lt = await login.json();}
+send "\r"
+expect -re "JSEOF"
+send -- {const TOK = lt && lt.data && lt.data.token;}
+send "\r"
+expect -re "JSEOF"
+send -- {if(!TOK){ console.log('LOGIN_FAIL ' + JSON.stringify(lt)); process.exit(0); }}
+send "\r"
+expect -re "JSEOF"
+send -- {const a = await p.assignment.findFirst();}
+send "\r"
+expect -re "JSEOF"
+send -- {if(!a){ console.log('NO_ASSIGNMENT'); process.exit(0); }}
+send "\r"
+expect -re "JSEOF"
+send -- {const u = await p.user.findFirst({ where:{ email:'test.student1@jinrui.com' } });}
+send "\r"
+expect -re "JSEOF"
+send -- {const sid = 'testdel_' + Date.now();}
+send "\r"
+expect -re "JSEOF"
+send -- {await p.assignmentStudent.create({ data:{ assignmentId:a.id, studentId:u.id, status:'PENDING' } });}
+send "\r"
+expect -re "JSEOF"
+send -- {await p.session.create({ data:{ id:sid, studentId:u.id, assignmentId:a.id, mode:'PRACTICE', total:1, questionIds:'[]' } });}
+send "\r"
+expect -re "JSEOF"
+send -- {console.log('CREATED session=' + sid + ' assignment=' + a.id);}
+send "\r"
+expect -re "JSEOF"
+send -- {const res = await fetch(base + '/sessions/' + sid, { method:'DELETE', headers:{ Authorization:'Bearer ' + TOK } });}
+send "\r"
+expect -re "JSEOF"
+send -- {const txt = await res.text();}
+send "\r"
+expect -re "JSEOF"
+send -- {console.log('DELETE_HTTP ' + res.status + ' ' + txt);}
+send "\r"
+expect -re "JSEOF"
+send -- {await p.\$disconnect();}
+send "\r"
+expect -re "JSEOF"
+send -- {process.exit(0);}
+send "\r"
+expect -re "JSEOF"
+send -- {JSEOF}
+send "\r"
+expect -re "\\$|$"
+send -- {cd /root/shanghai-jinrui-practice/apps/api && node /tmp/delassign.mjs 2>&1 | tail -10}
+send "\r"
+expect -re "\\$|$"
+send "exit\r"
+expect eof

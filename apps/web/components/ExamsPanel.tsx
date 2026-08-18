@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import GroupPicker from "@/components/GroupPicker";
+import type { GroupSummary } from "@/lib/types";
 
 interface ExamRow {
   id: string;
@@ -78,6 +80,8 @@ export default function ExamsPanel() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ paperId: "", title: "", note: "", dueAt: "", durationMin: "" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -109,19 +113,21 @@ export default function ExamsPanel() {
     loadExams();
     api.get<{ list: PaperOption[] }>("/papers").then((d) => setPapers(d.list || [])).catch(() => {});
     api.get<{ list: StudentOption[] }>("/teacher/students").then((d) => setStudents(d.list || [])).catch(() => {});
+    api.get<{ list: GroupSummary[] }>("/teacher/groups").then((d) => setGroups(d.list || [])).catch(() => {});
     api.get<{ llmConfigured: boolean }>("/health").then((d) => setLlmOn(!!d.llmConfigured)).catch(() => {});
   }, [loadExams]);
 
   async function createExam() {
     setErr("");
     if (!form.paperId) { setErr("请选择考卷"); return; }
-    if (selected.size === 0) { setErr("请选择至少一名考生"); return; }
     if (!form.durationMin || Number(form.durationMin) <= 0) { setErr("考试必须设置考试用时(分钟)"); return; }
+    if (totalTargets === 0) { setErr("请选择至少一名考生(或选择一个分组)"); return; }
     setCreating(true);
     try {
       const r = await api.post<{ id: string }>("/exams", {
         paperId: form.paperId,
         studentIds: Array.from(selected),
+        groupIds: Array.from(selectedGroups),
         title: form.title,
         note: form.note,
         durationMin: Number(form.durationMin),
@@ -131,6 +137,7 @@ export default function ExamsPanel() {
       setCreateOpen(false);
       setForm({ paperId: "", title: "", note: "", dueAt: "", durationMin: "" });
       setSelected(new Set());
+      setSelectedGroups(new Set());
       await loadExams();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "安排失败");
@@ -187,6 +194,19 @@ export default function ExamsPanel() {
     const kw = search.trim().toLowerCase();
     return !kw || s.name.toLowerCase().includes(kw) || s.email.toLowerCase().includes(kw);
   });
+
+  // 选中的分组展开成学生 id 集合,与逐选考生合并得到最终总人数
+  const groupStudentIds = useMemo(() => {
+    const set = new Set<string>();
+    groups.forEach((g) => {
+      if (selectedGroups.has(g.id)) g.students.forEach((s) => set.add(s.id));
+    });
+    return set;
+  }, [groups, selectedGroups]);
+  const totalTargets = useMemo(
+    () => new Set(Array.from(selected).concat(Array.from(groupStudentIds))).size,
+    [selected, groupStudentIds]
+  );
 
   const rateColor = (r: number | null | undefined) => {
     if (r == null) return "text-slate-400";
@@ -501,9 +521,10 @@ export default function ExamsPanel() {
               </div>
             </div>
 
+            <GroupPicker groups={groups} selected={selectedGroups} onToggle={(id) => setSelectedGroups((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />
             <div className="mt-3">
               <div className="mb-1 flex items-center gap-2">
-                <label className="text-sm text-slate-600">参加考试的学生(已选 {selected.size} 人)</label>
+                <label className="text-sm text-slate-600">参加考试的学生(逐选 {selected.size} 人,含分组共 {totalTargets} 人)</label>
                 <input
                   className="ml-auto w-44 rounded-lg border border-slate-300 px-2.5 py-1 text-sm outline-none focus:border-indigo-500"
                   placeholder="搜索学生姓名/邮箱…"

@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import ExamsPanel from "@/components/ExamsPanel";
+import GroupsPanel from "@/components/GroupsPanel";
+import GroupPicker from "@/components/GroupPicker";
+import type { GroupSummary } from "@/lib/types";
 
 interface StudentRow {
   id: string;
@@ -70,7 +73,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function TeacherStudentsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"stats" | "assign" | "exams" | "review">("stats");
+  const [tab, setTab] = useState<"stats" | "assign" | "exams" | "review" | "groups">("stats");
   const [pendingCount, setPendingCount] = useState(0);
 
   // ——— 学情统计 ———
@@ -89,6 +92,10 @@ export default function TeacherStudentsPage() {
   const [assignMsg, setAssignMsg] = useState("");
   const [assignErr, setAssignErr] = useState("");
   const [detail, setDetail] = useState<AssignmentDetail | null>(null);
+
+  // 作业分发:按分组选择(可选)
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
 
   // 已布置作业:筛选与搜索
   const [assignSearch, setAssignSearch] = useState("");
@@ -137,6 +144,8 @@ export default function TeacherStudentsPage() {
     // 学生与试卷库(供作业分发)
     api.get<{ list: { id: string; name: string; email: string }[] }>("/teacher/students").then((d) => setStudents(d.list)).catch(() => {});
     api.get<{ list: PaperOption[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
+    // 分组(供按组布置)
+    api.get<{ list: GroupSummary[] }>("/teacher/groups").then((d) => setGroups(d.list)).catch(() => {});
   }, [loadAssignments]);
 
   // 注册审核:拉取待审核(PENDING)学生
@@ -182,11 +191,20 @@ export default function TeacherStudentsPage() {
     setSelectedStudents((prev) => (prev.size === students.length ? new Set() : new Set(students.map((s) => s.id))));
   }
 
+  function toggleGroup(id: string) {
+    setSelectedGroups((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
   async function createAssignment() {
     setAssignErr("");
     setAssignMsg("");
     if (!assignForm.paperId) { setAssignErr("请选择试卷"); return; }
-    if (selectedStudents.size === 0) { setAssignErr("请选择至少一名学生"); return; }
+    if (totalTargets === 0) { setAssignErr("请选择至少一名学生(或选择一个分组)"); return; }
     if (assignForm.mode === "EXAM" && (!assignForm.durationMin || Number(assignForm.durationMin) <= 0)) {
       setAssignErr("模考模式必须设置限时(分钟)");
       return;
@@ -201,10 +219,12 @@ export default function TeacherStudentsPage() {
         durationMin: assignForm.mode === "EXAM" ? Number(assignForm.durationMin) : undefined,
         dueAt: assignForm.dueAt || undefined,
         studentIds: Array.from(selectedStudents),
+        groupIds: Array.from(selectedGroups),
       });
-      setAssignMsg(`已向 ${selectedStudents.size} 名学生布置作业`);
+      setAssignMsg(`已向 ${totalTargets} 名学生布置作业`);
       setAssignForm({ paperId: "", title: "", note: "", mode: "PRACTICE", durationMin: "", dueAt: "" });
       setSelectedStudents(new Set());
+      setSelectedGroups(new Set());
       await loadAssignments();
     } catch (e) {
       setAssignErr(e instanceof Error ? e.message : "创建失败");
@@ -303,6 +323,19 @@ export default function TeacherStudentsPage() {
     return students.filter((s) => s.name.toLowerCase().includes(kw) || s.email.toLowerCase().includes(kw));
   }, [students, search]);
 
+  // 选中的分组展开成学生 id 集合,与逐选学生合并得到最终分发人数
+  const groupStudentIds = useMemo(() => {
+    const set = new Set<string>();
+    groups.forEach((g) => {
+      if (selectedGroups.has(g.id)) g.students.forEach((s) => set.add(s.id));
+    });
+    return set;
+  }, [groups, selectedGroups]);
+  const totalTargets = useMemo(
+    () => new Set(Array.from(selectedStudents).concat(Array.from(groupStudentIds))).size,
+    [selectedStudents, groupStudentIds]
+  );
+
   // 已布置作业:按模式/科目分类筛选 + 按作业名称/试卷名称搜索
   const assignSubjects = useMemo(() => {
     const set = new Set<string>();
@@ -345,6 +378,12 @@ export default function TeacherStudentsPage() {
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "exams" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
             考试管理
+          </button>
+          <button
+            onClick={() => setTab("groups")}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "groups" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            分组管理
           </button>
           <button
             onClick={() => setTab("review")}
@@ -542,9 +581,10 @@ export default function TeacherStudentsPage() {
                 placeholder="如:本周五前完成,模考计时"
               />
             </div>
+            <GroupPicker groups={groups} selected={selectedGroups} onToggle={toggleGroup} />
             <div className="mt-3">
               <div className="mb-1 flex items-center gap-2">
-                <label className="text-sm text-slate-600">分发给学生(已选 {selectedStudents.size} 人)</label>
+                <label className="text-sm text-slate-600">分发给学生(逐选 {selectedStudents.size} 人,含分组共 {totalTargets} 人)</label>
                 <button onClick={toggleAllStudents} className="text-xs text-indigo-600 hover:underline">
                   {selectedStudents.size === students.length ? "取消全选" : "全选"}
                 </button>
@@ -748,6 +788,8 @@ export default function TeacherStudentsPage() {
           </div>
         </div>
       )}
+
+      {tab === "groups" && <GroupsPanel />}
 
       {tab === "exams" && <ExamsPanel />}
 

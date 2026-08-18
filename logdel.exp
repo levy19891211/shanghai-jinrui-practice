@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 120
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@8.219.151.140
+expect {
+    -re "password:" { send "Xhx19891211\r"; exp_continue }
+    -re "\\$|#" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect -re "\\$|$"
+send -- {cd /root/shanghai-jinrui-practice; echo "=== grep assignmentStudent / delete errors in full api log ==="; grep -inE "assignmentStudent|No delete|deleteMany|Cannot delete|FOREIGN|P2003|not found|会话不存在" /root/.pm2/logs/api-error.log 2>/dev/null | tail -25}
+send "\r"
+expect -re "\\$|$"
+send "exit\r"
+expect eof
