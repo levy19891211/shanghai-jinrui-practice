@@ -34,6 +34,8 @@ const DONE_FILE = getFlag("--done-file");
 const IDS_FILE = getFlag("--ids-file");
 const RETRIES = Number(getFlag("--retries") ?? 1);
 const MODEL = getFlag("--model"); // 覆盖 LLM_MODEL,如 --model deepseek-reasoner
+const FALLBACK_MODEL = getFlag("--fallback-model"); // MODEL 多次失败后降级使用的模型,如 --fallback-model deepseek-chat
+const TEMPERATURE = Number(getFlag("--temperature") ?? 0.1);
 const MAX_TOKENS = Number(getFlag("--max-tokens") ?? 800);
 // 已完成集合(用于断点续跑)
 const doneSet = new Set();
@@ -157,30 +159,36 @@ async function main() {
       try {
         let raw = "";
         let lastErr = null;
-        for (let attempt = 0; attempt <= RETRIES; attempt++) {
-          try {
-            raw = await chatComplete({
-              system: SYSTEM_PROMPT,
-              user: buildUserPrompt({
-                stem: q.stem,
-                options: safeParseOptions(q.options),
-                answer: q.answer,
-                topic: q.topic,
-              }),
-              temperature: 0.1,
-              maxTokens: MAX_TOKENS,
-              ...(MODEL ? { model: MODEL } : {}),
-            });
-            lastErr = null;
-            break;
-          } catch (e) {
-            lastErr = e;
-            if (attempt < RETRIES) {
-              await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        let solved = false;
+        const modelList = [MODEL, FALLBACK_MODEL].filter(Boolean);
+        for (const m of modelList) {
+          for (let attempt = 0; attempt <= RETRIES; attempt++) {
+            try {
+              raw = await chatComplete({
+                system: SYSTEM_PROMPT,
+                user: buildUserPrompt({
+                  stem: q.stem,
+                  options: safeParseOptions(q.options),
+                  answer: q.answer,
+                  topic: q.topic,
+                }),
+                temperature: TEMPERATURE,
+                maxTokens: MAX_TOKENS,
+                ...(m ? { model: m } : {}),
+              });
+              lastErr = null;
+              solved = true;
+              break;
+            } catch (e) {
+              lastErr = e;
+              if (attempt < RETRIES) {
+                await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+              }
             }
           }
+          if (solved) break;
         }
-        if (lastErr) throw lastErr;
+        if (!solved) throw lastErr || new Error("生成失败");
         const solution = cleanSolution(raw);
         if (!solution) throw new Error("LLM 返回为空");
         if (!DRY_RUN) {
