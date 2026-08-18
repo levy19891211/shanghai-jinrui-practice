@@ -31,6 +31,7 @@ const ONLY_MISSING = hasFlag("--only-missing");
 const STATUS_FILTER = getFlag("--status");
 const CONCURRENCY = Math.max(1, Math.min(8, Number(getFlag("--concurrency") ?? 1)));
 const DONE_FILE = getFlag("--done-file");
+const IDS_FILE = getFlag("--ids-file");
 const RETRIES = Number(getFlag("--retries") ?? 1);
 // 已完成集合(用于断点续跑)
 const doneSet = new Set();
@@ -67,7 +68,7 @@ const SYSTEM_PROMPT = `你是一位资深的国际课程理科竞赛辅导老师
 要求：
 1. 用中文，语言精炼，直击要点，不要冗长铺垫。
 2. 结构清晰：先用一句话点明思路或核心考点，再给出关键解题步骤（步骤间用换行分隔）；如确有易错点可附一句提醒，否则省略。
-3. **只呈现正确的解题路径，不要展示任何错误的推导、试错过程或"先得到某值发现不对再纠正"的弯路。**
+3. **只呈现正确的解题路径，绝对不要展示任何错误的推导、试错过程或"先得到某值发现不对再纠正"的弯路。禁止出现"但此值不在选项中""重新理解/考虑""我们先算X发现不对""其实应该""换一种思路"等表述。直接、干净地给出正确解法，不要描写你自己的思考挣扎。**
 4. 公式使用 LaTeX：行内公式用 $...$，独立公式用 $$...$$；不要使用 \\(\\)、\\[\\]、\\text{}、\\begin{} 或 \\\\。保持公式简洁合法（如 $x^2-5x+6=0$、$\\frac{1}{2}$）。
 5. 不要使用 Markdown 标题（##）、列表符号（-/•）、加粗（**）等语法，用自然换行即可。
 6. 只输出解析正文，不要问候语，不要"解析："之类前缀。`;
@@ -104,17 +105,36 @@ async function main() {
   console.log(`✓ 已备份 ${all.length} 道题的当前解析 → ${backupPath}`);
 
   // 2) 选取本次要处理的题目
-  const where = {};
+  let where = {};
   if (STATUS_FILTER) where.status = STATUS_FILTER;
   if (ONLY_MISSING) where.solution = null;
-  const total = await prisma.question.count({ where });
-  let rows = await prisma.question.findMany({
-    where,
-    orderBy: { createdAt: "asc" },
-    skip: OFFSET,
-    ...(LIMIT != null ? { take: LIMIT } : {}),
-    select: { id: true, subject: true, topic: true, stem: true, options: true, answer: true, solution: true },
-  });
+  let total;
+  let rows;
+  if (IDS_FILE) {
+    // 按指定 ID 列表处理(用于针对性重跑)
+    const ids = fs
+      .readFileSync(IDS_FILE, "utf8")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    total = ids.length;
+    rows = await prisma.question.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, subject: true, topic: true, stem: true, options: true, answer: true, solution: true },
+    });
+    // 保持与传入 ID 顺序一致
+    const pos = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+  } else {
+    total = await prisma.question.count({ where });
+    rows = await prisma.question.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+      skip: OFFSET,
+      ...(LIMIT != null ? { take: LIMIT } : {}),
+      select: { id: true, subject: true, topic: true, stem: true, options: true, answer: true, solution: true },
+    });
+  }
   // 断点续跑:跳过已完成的
   const skipped = doneSet.size ? rows.filter((r) => doneSet.has(r.id)).length : 0;
   if (doneSet.size) rows = rows.filter((r) => !doneSet.has(r.id));
@@ -145,7 +165,7 @@ async function main() {
                 answer: q.answer,
                 topic: q.topic,
               }),
-              temperature: 0.2,
+              temperature: 0.1,
               maxTokens: 800,
             });
             lastErr = null;
