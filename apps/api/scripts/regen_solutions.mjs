@@ -30,6 +30,16 @@ const DRY_RUN = hasFlag("--dry-run");
 const ONLY_MISSING = hasFlag("--only-missing");
 const STATUS_FILTER = getFlag("--status");
 const CONCURRENCY = Math.max(1, Math.min(8, Number(getFlag("--concurrency") ?? 1)));
+const DONE_FILE = getFlag("--done-file");
+const RETRIES = Number(getFlag("--retries") ?? 1);
+// 已完成集合(用于断点续跑)
+const doneSet = new Set();
+if (DONE_FILE && fs.existsSync(DONE_FILE)) {
+  for (const line of fs.readFileSync(DONE_FILE, "utf8").split("\n")) {
+    const id = line.trim();
+    if (id) doneSet.add(id);
+  }
+}
 
 // ---------- 工具 ----------
 function safeParseOptions(raw) {
@@ -57,9 +67,10 @@ const SYSTEM_PROMPT = `你是一位资深的国际课程理科竞赛辅导老师
 要求：
 1. 用中文，语言精炼，直击要点，不要冗长铺垫。
 2. 结构清晰：先用一句话点明思路或核心考点，再给出关键解题步骤（步骤间用换行分隔）；如确有易错点可附一句提醒，否则省略。
-3. 公式使用 LaTeX：行内公式用 $...$，独立公式用 $$...$$；不要使用 \\(\\)、\\[\\]、\\text{}、\\begin{} 或 \\\\。保持公式简洁合法（如 $x^2-5x+6=0$、$\\frac{1}{2}$）。
-4. 不要使用 Markdown 标题（##）、列表符号（-/•）、加粗（**）等语法，用自然换行即可。
-5. 只输出解析正文，不要问候语，不要"解析："之类前缀。`;
+3. **只呈现正确的解题路径，不要展示任何错误的推导、试错过程或"先得到某值发现不对再纠正"的弯路。**
+4. 公式使用 LaTeX：行内公式用 $...$，独立公式用 $$...$$；不要使用 \\(\\)、\\[\\]、\\text{}、\\begin{} 或 \\\\。保持公式简洁合法（如 $x^2-5x+6=0$、$\\frac{1}{2}$）。
+5. 不要使用 Markdown 标题（##）、列表符号（-/•）、加粗（**）等语法，用自然换行即可。
+6. 只输出解析正文，不要问候语，不要"解析："之类前缀。`;
 
 function buildUserPrompt({ stem, options, answer, topic }) {
   const optText =
@@ -97,15 +108,18 @@ async function main() {
   if (STATUS_FILTER) where.status = STATUS_FILTER;
   if (ONLY_MISSING) where.solution = null;
   const total = await prisma.question.count({ where });
-  const rows = await prisma.question.findMany({
+  let rows = await prisma.question.findMany({
     where,
     orderBy: { createdAt: "asc" },
     skip: OFFSET,
     ...(LIMIT != null ? { take: LIMIT } : {}),
     select: { id: true, subject: true, topic: true, stem: true, options: true, answer: true, solution: true },
   });
+  // 断点续跑:跳过已完成的
+  const skipped = doneSet.size ? rows.filter((r) => doneSet.has(r.id)).length : 0;
+  if (doneSet.size) rows = rows.filter((r) => !doneSet.has(r.id));
   console.log(
-    `本次处理:选取 ${rows.length} 道 / 符合条件 ${total} 道 (offset=${OFFSET}, limit=${LIMIT ?? "ALL"}, dryRun=${DRY_RUN}, concurrency=${CONCURRENCY})`
+    `本次处理:选取 ${rows.length} 道 / 符合条件 ${total} 道 (offset=${OFFSET}, limit=${LIMIT ?? "ALL"}, dryRun=${DRY_RUN}, concurrency=${CONCURRENCY}, 续跑跳过 ${skipped})`
   );
 
   let okCount = 0;
@@ -119,22 +133,37 @@ async function main() {
       const idx = cursor++;
       const q = rows[idx];
       try {
-        const raw = await chatComplete({
-          system: SYSTEM_PROMPT,
-          user: buildUserPrompt({
-            stem: q.stem,
-            options: safeParseOptions(q.options),
-            answer: q.answer,
-            topic: q.topic,
-          }),
-          temperature: 0.2,
-          maxTokens: 800,
-        });
+        let raw = "";
+        let lastErr = null;
+        for (let attempt = 0; attempt <= RETRIES; attempt++) {
+          try {
+            raw = await chatComplete({
+              system: SYSTEM_PROMPT,
+              user: buildUserPrompt({
+                stem: q.stem,
+                options: safeParseOptions(q.options),
+                answer: q.answer,
+                topic: q.topic,
+              }),
+              temperature: 0.2,
+              maxTokens: 800,
+            });
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e;
+            if (attempt < RETRIES) {
+              await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+            }
+          }
+        }
+        if (lastErr) throw lastErr;
         const solution = cleanSolution(raw);
         if (!solution) throw new Error("LLM 返回为空");
         if (!DRY_RUN) {
           await prisma.question.update({ where: { id: q.id }, data: { solution } });
         }
+        if (DONE_FILE) fs.appendFileSync(DONE_FILE, q.id + "\n");
         okCount++;
         console.log(`\n【${idx + 1}/${rows.length}】${q.subject} / ${q.topic}\n${solution}\n${"─".repeat(60)}`);
       } catch (e) {
