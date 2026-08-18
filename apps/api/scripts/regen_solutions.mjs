@@ -33,6 +33,8 @@ const CONCURRENCY = Math.max(1, Math.min(8, Number(getFlag("--concurrency") ?? 1
 const DONE_FILE = getFlag("--done-file");
 const IDS_FILE = getFlag("--ids-file");
 const RETRIES = Number(getFlag("--retries") ?? 1);
+const MODEL = getFlag("--model"); // 覆盖 LLM_MODEL,如 --model deepseek-reasoner
+const MAX_TOKENS = Number(getFlag("--max-tokens") ?? 800);
 // 已完成集合(用于断点续跑)
 const doneSet = new Set();
 if (DONE_FILE && fs.existsSync(DONE_FILE)) {
@@ -166,7 +168,8 @@ async function main() {
                 topic: q.topic,
               }),
               temperature: 0.1,
-              maxTokens: 800,
+              maxTokens: MAX_TOKENS,
+              ...(MODEL ? { model: MODEL } : {}),
             });
             lastErr = null;
             break;

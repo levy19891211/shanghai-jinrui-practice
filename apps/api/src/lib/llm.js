@@ -16,7 +16,7 @@ export function llmInfo() {
   };
 }
 
-export async function chatComplete({ system, user, temperature = 0.2, maxTokens = 900 }) {
+export async function chatComplete({ system, user, temperature = 0.2, maxTokens = 900, model: modelOverride }) {
   const key = process.env.LLM_API_KEY;
   if (!key) {
     const e = new Error("未配置 LLM_API_KEY,无法生成解析。请在服务端 .env 配置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL。");
@@ -24,7 +24,7 @@ export async function chatComplete({ system, user, temperature = 0.2, maxTokens 
     throw e;
   }
   const base = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const model = process.env.LLM_MODEL || "gpt-4o-mini";
+  const model = modelOverride || process.env.LLM_MODEL || "gpt-4o-mini";
   const url = `${base}/chat/completions`;
 
   let res;
