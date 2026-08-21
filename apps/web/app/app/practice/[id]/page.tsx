@@ -214,17 +214,26 @@ export default function PracticePage() {
     }
   }, [id]);
 
-  // 倒计时:归零后自动交卷
+  // 倒计时:以服务端截止时间 deadline 为唯一时钟,每帧由真实时间推导剩余秒数,
+  // 避免旧实现“自减计时器”与服务端时钟漂移(尤其切后台被节流)导致倒计时还在走、却已超时禁答。
+  // 归零后自动交卷。
   useEffect(() => {
-    remainingRef.current = remaining;
     if (remaining === null || detail || result) return;
-    if (remaining <= 0) {
-      submit(true);
-      return;
-    }
-    const t = setTimeout(() => setRemaining((r) => (r === null ? null : r - 1)), 1000);
-    return () => clearTimeout(t);
-  }, [remaining, detail, result, submit]);
+    if (deadline === null) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      remainingRef.current = left;
+      setRemaining(left);
+      if (left <= 0) {
+        submit(true);
+        return;
+      }
+      t = setTimeout(tick, 1000);
+    };
+    tick();
+    return () => { if (t) clearTimeout(t); };
+  }, [deadline, detail, result, submit]);
 
   // 考试中途退出 → 暂停计时:页面被隐藏(切后台/关标签)或卸载时,用 keepalive 上报剩余秒数,
   // 服务端将 deadlineAt 改写为 now + 剩余,续做时从剩余时间起算。keepalive 保证请求在页面关闭时仍能发出。
@@ -234,6 +243,11 @@ export default function PracticePage() {
       if (submittedRef.current || detail?.submittedAt || result) return;
       const rem = remainingRef.current;
       if (rem == null || rem <= 0) return;
+      // 与服务端 /pause 改写 deadlineAt 保持一致:把本地 deadline 也延后 remaining,
+      // 否则“服务端已延长、本地 deadline 仍旧”会让 expired(剩余<=0)提前为真,
+      // 表现为“倒计时还在走却点不了选项”。
+      setDeadline(Date.now() + rem * 1000);
+      setRemaining(rem);
       const token = (window.localStorage.getItem("wb_token") || "").trim();
       try {
         fetch(`/api/sessions/${id}/pause`, {
@@ -246,14 +260,21 @@ export default function PracticePage() {
         /* ignore */
       }
     };
-    const onVis = () => { if (document.hidden) pauseNow(); };
+    const onVis = () => {
+      if (document.hidden) {
+        pauseNow();
+      } else if (deadline !== null) {
+        // 从后台切回:立即按 deadline 重新对齐剩余秒数(修正节流导致的短暂滞后)
+        setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+      }
+    };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", pauseNow);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", pauseNow);
     };
-  }, [isExam, id, detail, result]);
+  }, [isExam, id, detail, result, deadline]);
 
   // 键盘导航:←/→ 切题(批注书写时禁用,浏览模式可切)
   useEffect(() => {
@@ -288,7 +309,7 @@ export default function PracticePage() {
   }, [openItem]);
 
   function choose(selected: string) {
-    if (isExam && deadline && Date.now() > deadline) return; // 超时禁答
+    if (isExam && deadline !== null && Date.now() >= deadline) return; // 超时禁答
     if (questions.length === 0) return;
     const qid = questions[current].id;
     const next = { ...answers, [qid]: selected };
@@ -570,7 +591,7 @@ export default function PracticePage() {
     return <p className="py-10 text-center text-sm text-slate-500">该会话没有可用的题目。</p>;
   }
   const q = questions[current];
-  const expired = isExam && deadline !== null && Date.now() > deadline;
+  const expired = isExam && deadline !== null && remaining !== null && remaining <= 0;
   const remainingStr = remaining === null ? "" : fmt(remaining);
 
   return (
@@ -583,7 +604,7 @@ export default function PracticePage() {
               <h1 className="text-base font-bold tracking-wide">金瑞升学金鹰系统</h1>
               <p className="mt-0.5 text-xs opacity-90">
                 {modeLabel} · 共 {total} 题 · 每题 1 分
-                {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.round((deadline - Date.now() + remaining! * 1000) / 60000) : ""} 分钟</span>}
+                {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.max(1, Math.ceil((deadline - Date.now()) / 60000)) : ""} 分钟</span>}
               </p>
             </div>
             <div className="text-right">
