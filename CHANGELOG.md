@@ -1,5 +1,9 @@
 # 版本历史
 
+## V2.4.77 (2026-08-21) — 修复模考末尾无法点击选项
+- 根因：`practice/[id]` 答题页用**两套独立时钟**——倒计时 `remaining` 靠 `setTimeout` 每秒自减（显示用），而选项 `disabled` 判定 `expired` 用绝对时间戳 `deadline`。学生切后台时 `setTimeout` 被浏览器节流、`/pause` 只改服务端 `deadlineAt` 未回写本地 `deadline`，两套时钟错位 → `expired` 提前为真、选项被禁用，但倒计时仍显示"还有时间"，表现为"最后 1 分钟点不了选项"。
+- 修复：统一以服务端 `deadline` 为唯一时钟，每帧由真实时间推导 `remaining`；`/pause` 暂停时同步回写本地 `deadline`；从后台切回立即按 `deadline` 重新对齐剩余秒数；`expired` 改为 `remaining<=0` 判定，与显示严格同拍；修正头部"限时 X 分钟"重复累加的倒计时计算。
+
 ## V2.4.76 (2026-08-12) — 学生注册账号审核流程
 - User 模型新增 `status`(PENDING/APPROVED/REJECTED)、`reviewNote`、`reviewedBy`、`reviewedAt` 字段。
 - 注册不再直接签发 token:账号进入 PENDING 待审核,需教师审核通过(`APPROVED`)后才能登录使用系统;登录与 `requireAuth` 中间件均对未通过审核的 STUDENT 拦截。
