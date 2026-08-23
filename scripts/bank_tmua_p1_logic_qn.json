@@ -1,0 +1,576 @@
+{
+  "paper": {
+    "title": "TMUA P1 逻辑专练·量词否定 20 题",
+    "subject": "数学",
+    "sourceType": "TMUA",
+    "source": "TMUA-P1-LOGIC-QN",
+    "origin": "AUTO_SET",
+    "kind": "mock",
+    "status": "READY",
+    "sourceKey": "数学::P1::TMUA-P1-LOGIC-QN",
+    "questionIds": [
+      "__Q0__",
+      "__Q1__",
+      "__Q2__",
+      "__Q3__",
+      "__Q4__",
+      "__Q5__",
+      "__Q6__",
+      "__Q7__",
+      "__Q8__",
+      "__Q9__",
+      "__Q10__",
+      "__Q11__",
+      "__Q12__",
+      "__Q13__",
+      "__Q14__",
+      "__Q15__",
+      "__Q16__",
+      "__Q17__",
+      "__Q18__",
+      "__Q19__"
+    ]
+  },
+  "questions": [
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q1",
+      "sourceType": "TMUA",
+      "stem": "A function f, whose domain is the set of all positive integers, is declared to be harmonic-linked precisely when the following condition is satisfied: for each and every positive integer a one may possibly choose, it is invariably possible to find a different positive integer b (one that is strictly not equal to a) for which the numerical value f(b) happens to be an exact integer multiple of the value f(a) — that is to say, the equation f(b) = k f(a) holds true for at least one positive integer k, no matter how that multiplier k is eventually selected. In plainer words, every input of the function must possess at least one distinct partner input whose function value is an integer-scaled copy of its own.\n\nSuppose now that a student working through a problem set firmly asserts that a particular function f, defined on the positive integers, is NOT harmonic-linked. Bearing in mind the exact wording of the definition given above, which one of the following eight statements expresses, in full and in strictly logical equivalence, the necessary and sufficient condition that must then hold for that assertion to be correct?",
+      "options": [
+        "For every positive integer a that one might take, there exists a positive integer b different from a such that the value f(b) is not an integer multiple of the value f(a).",
+        "For every positive integer a and also for every positive integer b different from a, the value f(b) fails to be an integer multiple of f(a), without any exception whatsoever.",
+        "There exists a positive integer a such that, for every positive integer b different from a, the value f(b) is in fact an integer multiple of f(a).",
+        "There does not exist any positive integer a for which some b different from a makes f(b) an integer multiple of f(a).",
+        "For every positive integer a, no positive integer k can ever satisfy f(a) = k f(b) for any choice of b different from a, however that b is picked.",
+        "There exists a positive integer a such that, for every positive integer b different from a and also for every positive integer k, the equality f(b) = k f(a) never holds, regardless of how b and k are chosen.",
+        "There exists a positive integer a together with a single, specifically chosen positive integer b different from a such that, for every positive integer k, the value f(b) is not equal to k f(a).",
+        "There exists a positive integer a for which the value f(a) is not an integer multiple of f(b) no matter which b different from a one happens to pick."
+      ],
+      "answer": "There exists a positive integer a such that, for every positive integer b different from a and also for every positive integer k, the equality f(b) = k f(a) never holds, regardless of how b and k are chosen.",
+      "solution": "Solution: The definition reads ∀a ∃(b≠a) ∃k ( f(b)=k f(a) ). Negating flips every quantifier and the equality: ∃a ∀(b≠a) ∀k ( f(b)≠k f(a) ), which is exactly option F — there is some anchor a such that no partner b and no multiplier k ever work.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q2",
+      "sourceType": "TMUA",
+      "stem": "Let (x_n) be a sequence of real numbers and let L be a fixed real number. We declare that the sequence (x_n) is q-stabilising about the value L exactly when the following holds: for every real number ε that is strictly greater than zero, no matter how tiny that tolerance ε may be chosen, there is guaranteed to be some positive integer N (whose size may well depend on the choice of ε) such that each and every integer n larger than N satisfies the inequality |x_n − L| < ε. Equivalently, once one passes the threshold N, all the later terms of the sequence remain permanently trapped within the open interval (L−ε, L+ε).\n\nWrite down, with complete precision, the exact negation of the statement that the sequence (x_n) is q-stabilising about the number L. Among the eight candidates below, select the one that captures every quantifier flip and every reversal of the final inequality without either strengthening or weakening the original claim.",
+      "options": [
+        "For every real ε > 0, there exists a positive integer N such that, for every integer n > N, we have |x_n − L| ≥ ε.",
+        "For every real ε > 0 and for every positive integer N, there exists an integer n > N with |x_n − L| ≥ ε.",
+        "There exists a real ε > 0 such that, for every positive integer N, the inequality |x_n − L| < ε holds for all integers n > N.",
+        "There exists a real ε > 0 together with a positive integer N such that, for all integers n > N, |x_n − L| ≥ ε.",
+        "For every real ε > 0, and also for every positive integer N, the relation |x_n − L| ≥ ε is true for some integer n > N.",
+        "There exists a real number ε > 0 such that, for every positive integer N, there exists an integer n > N with |x_n − L| ≥ ε.",
+        "There exists a real ε > 0 for which there exists a positive integer N such that, for all integers n > N, |x_n − L| < ε.",
+        "There does not exist any ε > 0 for which the sequence eventually stays within ε of L."
+      ],
+      "answer": "There exists a real number ε > 0 such that, for every positive integer N, there exists an integer n > N with |x_n − L| ≥ ε.",
+      "solution": "Solution: Original: ∀ε>0 ∃N ∀n>N (|x_n−L|<ε). Negate by flipping all three quantifiers and reversing the strict inequality: ∃ε>0 ∀N ∃n>N (|x_n−L|≥ε), which is option F — the standard 'sequence does not converge to L' form, where some positive tolerance is permanently breached no matter how far out one goes.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q3",
+      "sourceType": "TMUA",
+      "stem": "Let P be a finite set of points situated in the Euclidean plane. We call the set P linear if and only if there is at least one straight line ℓ with the property that every single point P belonging to the set P actually lies on that very line ℓ — so the whole collection of points can be arranged along a single straight line without exception. If no such line exists, then the points are said to be non-linear, meaning they refuse to be collinear.\n\nWhich one of the following eight statements is true if and only if the set P is NOT linear (that is, if and only if the points of P are genuinely non-collinear)? Choose the option that is exactly logically equivalent to the negation of the definition, and take care with the interplay between the existential line and the universal point.",
+      "options": [
+        "There exists a straight line ℓ such that, for every point P in P, the point P does not lie on ℓ.",
+        "There exists a straight line ℓ and a point P in P such that P does not lie on ℓ.",
+        "No straight line contains every point of P.",
+        "For every straight line ℓ, every point P in P fails to lie on ℓ.",
+        "There exists a point P in P that lies on no straight line whatsoever.",
+        "For every straight line ℓ, there exists a point P in P such that P does not lie on ℓ.",
+        "There exists a straight line ℓ such that, for every point P in P not on ℓ, some other point is also not on ℓ.",
+        "There is at least one pair of points in P that determines a line not containing all of P."
+      ],
+      "answer": "For every straight line ℓ, there exists a point P in P such that P does not lie on ℓ.",
+      "solution": "Solution: Definition: ∃ℓ ∀P∈P (P on ℓ). Negation: ∀ℓ ∃P∈P (P not on ℓ), i.e. option F — for every candidate line one can propose, some point escapes it. This is exactly 'no line contains all the points', which is the precise meaning of non-collinear.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q4",
+      "sourceType": "TMUA",
+      "stem": "Let S be a finite set of integers, each of which is strictly greater than 1. We say that the set S is prime-covered precisely when the following condition obtains: for each and every element a contained in S, and for each prime factor p of that element a, it is the case that the prime p divides at least one other element of S — that is to say, p divides some element b in S with b different from a. In effect, no prime factor of any member of S is private to that member; every prime showing up is shared with a neighbour somewhere else in the set.\n\nWhich of the following eight statements is true if and only if the set S is NOT prime-covered (that is, if and only if at least one prime factor of at least one member turns out to be shared with no other element)? Read each option carefully, paying special attention to whether the failure is asked of 'some' prime or of 'every' prime, and of 'some' element or of 'every' element.",
+      "options": [
+        "For every element a in S, some prime factor of a divides at least one other element of S.",
+        "For every element a in S, no prime factor of a divides any other element of S.",
+        "There exists an element a in S such that every prime factor of a divides at least one other element of S.",
+        "There exists an element a in S such that, for every prime factor p of a, p divides no other element of S.",
+        "There exists an element a in S and, for every prime factor p of a, some other element of S is divisible by p.",
+        "No element of S has a prime factor that divides another element of S.",
+        "There exists an element a in S for which there is at least one prime factor of a that divides no other element of S.",
+        "There exists an element a in S such that at least one prime factor of a divides some other element of S."
+      ],
+      "answer": "There exists an element a in S for which there is at least one prime factor of a that divides no other element of S.",
+      "solution": "Solution: Definition: ∀a∈S ∀p|a ∃b≠a (p|b). Negation: ∃a∈S ∃p|a ∀b≠a (p∤b) — there is some element whose SOME (at least one) prime factor is shared with nothing else. That is option G.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q5",
+      "sourceType": "TMUA",
+      "stem": "Let F be a family of real-valued functions, each of which is defined on the whole real line. We call the family F cap-bounded exactly when the following holds: for every function f belonging to F, there exists a real number M > 0 (depending possibly on the choice of f) such that, for every real number x, the two inequalities −M ≤ f(x) and f(x) ≤ M both hold simultaneously — so that the graph of f is trapped, at every point of the domain, between the horizontal lines y = −M and y = M. In other words, each function in the family is individually bounded above and below, though the bounding constant is allowed to vary from one function to another.\n\nWhich of the following eight statements is true if and only if the family F is NOT cap-bounded (that is, if and only if at least one member function escapes every bounding cap, no matter how large a cap one attempts to place on it)? Be especially careful with the fate of the inner AND when the quantifiers are flipped.",
+      "options": [
+        "For every f in F, there exists M > 0 such that for all x, f(x) > M or f(x) < −M.",
+        "No function in F is bounded above or below by any constant whatsoever.",
+        "There exists f in F and a real M > 0 such that for all x, −M ≤ f(x) ≤ M.",
+        "For every f in F and every real M > 0, there exists x with f(x) > M or f(x) < −M.",
+        "There exists f in F such that for all real M > 0, f(x) > M for all x.",
+        "There exists a function f in F such that, for every real number M > 0, there exists a real x with f(x) > M or f(x) < −M.",
+        "There exists f in F for which, for some M > 0, no x satisfies −M ≤ f(x) ≤ M.",
+        "Every function in F is bounded above and below by the same constant M."
+      ],
+      "answer": "There exists a function f in F such that, for every real number M > 0, there exists a real x with f(x) > M or f(x) < −M.",
+      "solution": "Solution: Definition: ∀f ∃M>0 ∀x ( (−M≤f(x)) ∧ (f(x)≤M) ). Negate: flip quantifiers to ∃f ∀M>0 ∃x, and the inner AND becomes OR with the inequalities reversed: (f(x)>M) ∨ (f(x)<−M). That is option F — some function keeps breaking out of every cap, on at least one side.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q6",
+      "sourceType": "TMUA",
+      "stem": "A real sequence (x_n), indexed throughout by the positive integers, is declared to be ultimately positive if and only if the following condition is satisfied: there can be found at least one positive integer N, which one should think of as a threshold beyond which we are willing to look, having the property that, for absolutely every integer n that is strictly larger than that chosen N, the corresponding term x_n of the sequence is required to be strictly greater than zero. In plainer words, once the index passes the threshold N, negativity and the value zero are both forbidden forever after; the tail of the sequence settles, permanently, into the strictly positive half-line. Equivalently, the set of indices n for which x_n is less than or equal to zero is necessarily finite, since only terms before the threshold are permitted to be non-positive.\n\nSuppose a student carefully writes down the claim that a particular sequence (x_n) is ultimately positive, and then is asked to produce, in full and in exact logical equivalence, the single statement that must hold precisely when that claim fails to be true — that is, the necessary and sufficient condition for the sequence to possess at least one non-positive term arbitrarily far out. Which one of the following eight options gives the correct negation of the assertion that (x_n) is ultimately positive, taking care to flip the threshold quantifier and to reverse the strict inequality into a non-strict one?",
+      "options": [
+        "For every positive integer N that one might possibly choose, it is invariably the case that x_n is strictly greater than zero for absolutely all integers n satisfying n > N, without any exception whatsoever.",
+        "There exists at least one positive integer N such that, once we pass it, every single integer n with n > N has the term x_n less than or equal to zero, so the whole tail beyond that point is non-positive.",
+        "For every positive integer N, no matter how large a threshold one is prepared to tolerate, there is bound to exist at least one integer n strictly larger than N for which the term x_n is less than or equal to zero, so some later non-positive term can always be located no matter how far out one looks.",
+        "There is at least one positive integer N together with at least one integer n larger than N such that the term x_n happens to be less than or equal to zero.",
+        "For each and every integer n, irrespective of how large its size may be, the term x_n is less than or equal to zero.",
+        "There exists a positive integer N such that, for all integers n satisfying n > N, the term x_n is less than or equal to zero.",
+        "No matter how large a positive integer N is taken to be, every integer n with n > N is forced to satisfy x_n less than or equal to zero.",
+        "The set of indices n for which x_n is less than or equal to zero contains infinitely many elements, though they need not appear beyond any particular threshold."
+      ],
+      "answer": "For every positive integer N, no matter how large a threshold one is prepared to tolerate, there is bound to exist at least one integer n strictly larger than N for which the term x_n is less than or equal to zero, so some later non-positive term can always be located no matter how far out one looks.",
+      "solution": "Solution: Original: ∃N ∀n>N (x_n>0). The negation must flip the existential threshold into a universal one and the universal tail into an existential one, while reversing the strict inequality to a non-strict one: ∀N ∃n>N (x_n≤0). This says that no matter how far out you push the threshold, a later non-positive term can still be located. That is option C. The ≤ (not <) matters because the negation of 'strictly greater than zero' is 'less than or equal to zero'.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q7",
+      "sourceType": "TMUA",
+      "stem": "Let S be a finite set whose elements are all integers strictly greater than 1. We say that S is pairwise linked precisely when the following condition is met: for every element a that belongs to S, and also for every element b that belongs to S provided that b is different from a, the greatest common divisor of the pair, written gcd(a,b), is required to be strictly greater than 1. Equivalently, no two distinct members of S are ever coprime to each other; every distinct pair of elements in the set is forced to share at least one prime factor. If even a single distinct pair were coprime, the property would fail.\n\nImagine now that someone asserts a certain set S is NOT pairwise linked, meaning the defining condition above fails because at least one distinct pair of elements fails to share a common divisor exceeding 1. Which of the following eight statements is true if and only if S fails to be pairwise linked, paying close attention to whether the failure is asked of a single pair (existential) or of every pair (universal)?",
+      "options": [
+        "For every pair of distinct elements a and b drawn from S, the value gcd(a,b) is equal to 1, so all such pairs are coprime without exception.",
+        "There exists at least one element a in S such that, for every other element b different from a, the greatest common divisor gcd(a,b) turns out to be exactly 1.",
+        "No two distinct elements of S have a greatest common divisor that exceeds 1; in other words, every distinct pair is coprime.",
+        "For all elements a and b in S, whether distinct or not, the quantity gcd(a,b) is less than or equal to 1.",
+        "There can be found two distinct elements a and b belonging to S for which the greatest common divisor gcd(a,b) is equal to 1.",
+        "There exists an element a in S and there also exists an element b in S, with a different from b, such that the greatest common divisor of the two, gcd(a,b), is equal to 1 — that is, at least one distinct pair is coprime.",
+        "For every element a in S, there is at least one other element b different from a such that gcd(a,b) equals 1, so every member has a coprime partner.",
+        "Some element of S is coprime to every other element of S, sharing no prime factor with any of them whatsoever."
+      ],
+      "answer": "There exists an element a in S and there also exists an element b in S, with a different from b, such that the greatest common divisor of the two, gcd(a,b), is equal to 1 — that is, at least one distinct pair is coprime.",
+      "solution": "Solution: Definition: ∀a∈S ∀b≠a (gcd(a,b)>1). The negation flips both universal quantifiers into existential ones and reverses the inequality: ∃a∈S ∃b≠a (gcd(a,b)=1). Thus the failure of pairwise linked means there is at least one pair of distinct elements that are coprime. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q8",
+      "sourceType": "TMUA",
+      "stem": "A function f whose domain and codomain are both the set of all real numbers is called separating exactly when the following holds: for all real numbers x and for all real numbers y, the situation in which f(x) equals f(y) necessarily implies that x is equal to y. In other words, distinct inputs are forced to produce distinct outputs, and this is precisely the usual definition of injectivity — no two different real numbers are ever sent to the same image under f. If two distinct inputs were ever to collapse to the same output, the function would cease to be separating.\n\nA learner claims that a given function f is NOT separating, i.e. that it fails the injectivity condition above because at least one collision between distinct inputs occurs. Which one of the following eight statements is true if and only if f is not separating, remembering that the negation of an implication 'P implies Q' is the conjunction 'P and not Q' rather than a flipped implication?",
+      "options": [
+        "For all real numbers x that are different from y, it is guaranteed that f(x) is not equal to f(y).",
+        "For all real numbers x and y, the assumption that x equals y implies that f(x) is not equal to f(y).",
+        "There exist real numbers x and y for which the values f(x) and f(y) are not equal to each other.",
+        "There exist real numbers x and y for which x is equal to y yet f(x) is not equal to f(y).",
+        "For all real numbers x and y, the equality f(x) = f(y) implies that x is different from y.",
+        "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y (so two distinct inputs collapse to the same output, which is exactly the failure of injectivity).",
+        "There exists a real number x such that, for every real number y, the value f(x) is equal to f(y); that is, one input maps to everything.",
+        "The function f is not defined for at least one pair of real numbers x and y, so injectivity cannot even be discussed."
+      ],
+      "answer": "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y (so two distinct inputs collapse to the same output, which is exactly the failure of injectivity).",
+      "solution": "Solution: Definition: ∀x,y ( f(x)=f(y) → x=y ). The negation of an implication is the premise true AND the conclusion false: ∃x,y ( f(x)=f(y) ∧ x≠y ). Hence f is not separating exactly when two distinct inputs share an output. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q9",
+      "sourceType": "TMUA",
+      "stem": "Let M be a family (that is, a collection) of square matrices, not necessarily all of the same size. We say that the family M is nondegenerate precisely when the following requirement is satisfied: for every single matrix A that belongs to M, the determinant of A, written det A, is not equal to zero. Equivalently, each and every matrix in the family is invertible, and no singular matrix is permitted to appear among its members. The moment a single singular matrix creeps into the collection, the family loses the nondegenerate status.\n\nNow suppose it is announced that a certain family M is NOT nondegenerate, so the condition just stated does not hold for M because at least one of its matrices fails to be invertible. Which of the following eight statements is true if and only if M fails to be nondegenerate, being careful to distinguish the claim that some matrix is singular from the much stronger claim that every matrix is singular?",
+      "options": [
+        "For every matrix A that belongs to M, the determinant det A is equal to zero.",
+        "No matrix in the family M has a determinant that is different from zero; equivalently, all of them are singular.",
+        "For all matrices A in M, the determinant det A is strictly greater than zero.",
+        "There exists at least one matrix A belonging to M for which the determinant det A is equal to zero.",
+        "There exists at least one matrix A belonging to M for which the determinant det A is not equal to zero.",
+        "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero (so the family contains at least one singular matrix, which is exactly what makes it fail to be nondegenerate).",
+        "Every singular matrix, no matter where it comes from in the world, is automatically a member of the family M.",
+        "For at least one matrix A in M, the determinant det A is undefined or fails to exist."
+      ],
+      "answer": "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero (so the family contains at least one singular matrix, which is exactly what makes it fail to be nondegenerate).",
+      "solution": "Solution: Definition: ∀A∈M (det A ≠ 0). Negation: ∃A∈M (det A = 0). The family fails to be nondegenerate exactly when it contains at least one singular matrix. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q10",
+      "sourceType": "TMUA",
+      "stem": "Let E be a collection of events situated inside some fixed probability space. We say that the collection E is almost sure exactly when the following is true: for every event E that is a member of the collection, the probability of that event, denoted P(E), is required to be exactly equal to 1. In effect, each individual event in the collection is certain to occur with probability one; the merest doubt attached to any single member would destroy the property. If even one event in the collection had a probability strictly below 1, the collection would cease to be almost sure.\n\nA statistician states that a particular collection E is NOT almost sure, meaning the above condition fails because at least one event in the collection falls short of certainty. Which of the following eight statements is true if and only if E is not almost sure, recalling that for a probability one always has 0 ≤ P(E) ≤ 1, so the negation P(E) ≠ 1 is exactly the same as P(E) < 1?",
+      "options": [
+        "For every event E in the collection, the probability P(E) is strictly less than 1.",
+        "For all events E in the collection, the probability P(E) is equal to 0.",
+        "There exists an event E in the collection whose probability P(E) is not equal to 1.",
+        "There exists an event E in the collection whose probability P(E) is equal to 0.",
+        "For every event E in the collection, the probability P(E) is less than or equal to 1.",
+        "There exists an event E in the collection such that the probability P(E) is strictly less than 1 (which, since probabilities lie in [0,1], is equivalent to saying P(E) is not equal to 1, and this is exactly the failure of almost sure).",
+        "No event in the collection has a probability that is equal to 1; in other words, every event has probability strictly below 1.",
+        "There exists an event E in the collection whose probability P(E) is strictly greater than 1."
+      ],
+      "answer": "There exists an event E in the collection such that the probability P(E) is strictly less than 1 (which, since probabilities lie in [0,1], is equivalent to saying P(E) is not equal to 1, and this is exactly the failure of almost sure).",
+      "solution": "Solution: Definition: ∀E (P(E)=1). Negation: ∃E (P(E)≠1). Because probabilities are confined to the interval [0,1], the condition P(E)≠1 is exactly equivalent to P(E)<1. Hence the collection is not almost sure precisely when at least one event has probability below 1. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q11",
+      "sourceType": "TMUA",
+      "stem": "Let G be a finite simple graph, meaning a graph with finitely many vertices, no loops, and no multiple edges between the same pair. We say that G is dominated exactly when there exists at least one vertex v of G having the following property: for every other vertex u of G (that is, every vertex distinct from v), the two vertices u and v are adjacent to one another. Thus v is connected by an edge to each and every remaining vertex of the graph, so v is what is usually called a dominating vertex. If no single vertex enjoys this all-reaching adjacency, the graph is not dominated.\n\nSuppose it is claimed that a certain finite simple graph G is NOT dominated, so no vertex is adjacent to all the others. Which of the following eight statements is true if and only if G fails to be dominated, watching carefully whether the failure means one vertex lacks a neighbour (too weak) or every vertex lacks some neighbour (correct) or every vertex lacks all neighbours (too strong)?",
+      "options": [
+        "There exists a vertex v such that, for every other vertex u, the vertices u and v are not adjacent to each other.",
+        "There exists a vertex v and there also exists another vertex u such that u and v are not adjacent.",
+        "For every vertex v, there is some other vertex u that is adjacent to v.",
+        "For every vertex v and for every other vertex u, the vertices u and v are not adjacent.",
+        "No vertex of G has any neighbour at all; every vertex is isolated.",
+        "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent (so each vertex has at least one non-neighbour, which is exactly the negation of having one universal neighbour).",
+        "There exists a vertex v such that, for every other vertex u not adjacent to v, some further vertex is also not adjacent to v.",
+        "Every vertex of G has degree at least 1, meaning no vertex is isolated."
+      ],
+      "answer": "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent (so each vertex has at least one non-neighbour, which is exactly the negation of having one universal neighbour).",
+      "solution": "Solution: Definition: ∃v ∀u≠v (adj(u,v)). Negation flips both quantifiers: ∀v ∃u≠v (¬adj(u,v)). Thus G is not dominated exactly when every vertex has at least one non-neighbour. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q12",
+      "sourceType": "TMUA",
+      "stem": "A polynomial p(x) whose coefficients are all real numbers is called tame exactly when the following holds: there exists a real number R (which may be thought of as a large radius, possibly very big) such that, for all real numbers x whose absolute value exceeds R (that is, |x| > R), the value p(x) is not equal to zero. In effect, beyond some finite threshold the polynomial never vanishes; all of its real roots, if any, must be confined to a bounded interval centred at the origin. A polynomial that has only finitely many real roots is automatically tame, because one can simply choose R larger than the absolute value of the largest root.\n\nA student asserts that a given polynomial p is NOT tame, i.e. the defining condition above fails because no finite radius can contain all the roots. Which of the following eight statements is true if and only if p is not tame, being careful to flip the existential radius into a universal one while preserving the existence of a large root?",
+      "options": [
+        "For all real numbers R, the polynomial p(x) is not equal to zero for every x satisfying |x| > R.",
+        "There exists a real number R such that, for all x with |x| > R, the polynomial p(x) is equal to zero.",
+        "For every real number R, there exists a real number x with |x| > R and also p(x) equal to zero.",
+        "There exists a real number R and there exists an x with |x| > R such that p(x) is equal to zero.",
+        "The polynomial p has no real root at all; it never vanishes anywhere on the real line.",
+        "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero (so a larger root can always be found beyond any threshold, making p have infinitely many real roots).",
+        "The polynomial p has only finitely many real roots in total.",
+        "For some real number R, the equation p(x) = 0 holds for infinitely many x with |x| > R."
+      ],
+      "answer": "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero (so a larger root can always be found beyond any threshold, making p have infinitely many real roots).",
+      "solution": "Solution: Definition: ∃R ∀|x|>R (p(x)≠0). Negation: ∀R ∃|x|>R (p(x)=0). The polynomial is not tame exactly when, no matter how large a bound R is selected, one can always find a root beyond it — equivalently, p has infinitely many real roots. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q13",
+      "sourceType": "TMUA",
+      "stem": "A real sequence (x_n) is called tight exactly when the following four-layer condition is satisfied: for every real number ε that is strictly greater than zero, there exists a positive integer N such that, for all integers m and for all integers n that are both strictly larger than N, the distance between the two terms |x_m − x_n| is strictly less than ε. In plainer language, the tails of the sequence eventually become arbitrarily close to one another — any two sufficiently late terms differ by less than any prescribed positive tolerance — and this is precisely the celebrated Cauchy criterion for convergence of a sequence of real numbers.\n\nWrite down, in exact logical equivalence, the statement that must hold precisely when the sequence (x_n) is NOT tight; that is, the necessary and sufficient condition under which the Cauchy criterion fails. Which option below is the correct negation of the assertion that (x_n) is tight, taking care to flip each of the four quantifier levels and to reverse the strict inequality into a non-strict one?",
+      "options": [
+        "For every ε > 0, there exists a positive integer N such that, for all integers m and n with m,n > N, the inequality |x_m − x_n| ≥ ε holds.",
+        "For every ε > 0 and also for every positive integer N, there exist integers m and n with m,n > N such that |x_m − x_n| ≥ ε.",
+        "There exists an ε > 0 such that, for every positive integer N, the inequality |x_m − x_n| ≥ ε holds for all integers m and n with m,n > N.",
+        "There exists an ε > 0 together with a positive integer N such that, for all integers m and n with m,n > N, the inequality |x_m − x_n| ≥ ε holds.",
+        "For every ε > 0, and for every positive integer N, there exist integers m and n with m,n > N such that |x_m − x_n| < ε.",
+        "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds (so some tail always contains a pair at least ε apart, which is exactly the failure of the Cauchy criterion).",
+        "There exists an ε > 0 such that there exists a positive integer N for which, for all integers m and n with m,n > N, the inequality |x_m − x_n| < ε holds.",
+        "The sequence (x_n) is not convergent to any real limit whatsoever."
+      ],
+      "answer": "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds (so some tail always contains a pair at least ε apart, which is exactly the failure of the Cauchy criterion).",
+      "solution": "Solution: Original: ∀ε>0 ∃N ∀m,n>N (|x_m−x_n|<ε). The negation flips every one of the four quantifier levels and reverses the strict inequality: ∃ε>0 ∀N ∃m,n>N (|x_m−x_n|≥ε). This says that some positive tolerance ε can never be achieved — no matter how far out one goes, a pair at least ε apart can be found. That is option F, the standard 'sequence is not Cauchy' form.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q14",
+      "sourceType": "TMUA",
+      "stem": "Let S be a finite set whose elements are integers. We say that S is sum-rich exactly when the following condition holds: for every element a that belongs to S, there exists some element b that also belongs to S, with the additional requirement that b is different from a, such that the sum a + b is itself an element of S. Thus each and every member of the set can be paired with a distinct partner whose sum stays inside the set; the property asks for a partner for every element, not merely for some element. If even one element of S cannot find such a distinct partner, the set is not sum-rich.\n\nSuppose a set S is declared to be NOT sum-rich, so the defining condition fails because at least one element lacks a suitable partner. Which of the following eight statements is true if and only if S is not sum-rich, distinguishing carefully between the claim that some element fails for all partners (correct) and the much weaker claim that some element merely fails for one partner?",
+      "options": [
+        "For every element a in S, there exists some element b different from a such that the sum a + b is not an element of S.",
+        "For every element a in S and for every element b different from a, the sum a + b is not an element of S.",
+        "There exists an element a in S such that, for every element b different from a in S, the sum a + b is an element of S.",
+        "There exists an element a in S and also an element b different from a such that the sum a + b is not an element of S.",
+        "For all elements a and b in S with a different from b, the sum a + b is not an element of S.",
+        "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S (so this one element's sum with every other element escapes the set, which is exactly the negation).",
+        "There exists an element a in S for which at least one element b different from a satisfies that a + b is not in S (merely one bad partner).",
+        "No two distinct elements of S have their sum belonging to S."
+      ],
+      "answer": "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S (so this one element's sum with every other element escapes the set, which is exactly the negation).",
+      "solution": "Solution: Definition: ∀a∈S ∃b≠a (a+b∈S). Negation: ∃a∈S ∀b≠a (a+b∉S). The set fails to be sum-rich exactly when some element's sum with EVERY other element falls outside S. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q15",
+      "sourceType": "TMUA",
+      "stem": "A function f whose domain and codomain are both the set of real numbers is called repetitive exactly when the following holds: there exists a real number T that is strictly greater than zero (a candidate period) such that, for all real numbers x without exception, the equality f(x + T) = f(x) is satisfied. Thus the function repeats its values at every step of size T along the entire real line; it possesses at least one positive period, though that period need not be the smallest one. If no positive number T works for all x, the function is not repetitive.\n\nImagine that a given function f is said to be NOT repetitive, meaning it possesses no such positive period that works at every point. Which of the following eight statements is true if and only if f is not repetitive, watching whether the failure means one period is broken at one point (too weak) or every period is broken at some point (correct) or one period is broken at every point (too strong)?",
+      "options": [
+        "For all real numbers T > 0, and for all real numbers x, the equality f(x + T) = f(x) holds.",
+        "There exists a real number T > 0 such that, for all real x, the inequality f(x + T) ≠ f(x) holds.",
+        "For every real number T > 0, there exists a real number x with f(x + T) ≠ f(x).",
+        "There exists a real number T > 0 and there exists a real number x with f(x + T) ≠ f(x).",
+        "For all real numbers T > 0, the inequality f(x + T) ≠ f(x) holds for every real x.",
+        "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds (so no positive candidate period survives unbroken, which is exactly the negation of having one universal period).",
+        "There exists a real number T > 0 such that, for every real x, the statement f(x + T) = f(x) fails for some x.",
+        "The function f is constant on the whole real line, taking the same value everywhere."
+      ],
+      "answer": "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds (so no positive candidate period survives unbroken, which is exactly the negation of having one universal period).",
+      "solution": "Solution: Definition: ∃T>0 ∀x (f(x+T)=f(x)). Negation: ∀T>0 ∃x (f(x+T)≠f(x)). The function is not repetitive exactly when every positive candidate period is broken by at least one point. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q16",
+      "sourceType": "TMUA",
+      "stem": "Let R be a binary relation defined on a set X (so R is a collection of ordered pairs of elements of X, with (a,b) in R written as a R b). We say that R is transitive-closed exactly when the following condition is met: for all elements a, b, and c in X, the situation in which both (a is related to b) and (b is related to c) implies that (a is related to c). Here the antecedent is an explicit conjunction of two relatedness facts, and the whole statement is the usual transitivity requirement phrased with that conjunction spelled out. To negate it, one negates the entire implication, not the inner conjunction — a subtle but crucial point.\n\nNow suppose a relation R is declared to be NOT transitive-closed, so the transitivity condition fails because at least one chain breaks. Which of the following eight statements is true if and only if R is not transitive-closed, remembering that the negation of 'P and Q implies R' is 'P and Q and not R', where the inner 'and' is preserved rather than split by De Morgan?",
+      "options": [
+        "For all a, b, c in X, if (a R b) and (b R c) then (a is not R c), so every transitive-looking chain is reversed.",
+        "There exist elements a and b in X with (a R b) and (b is not R a), a symmetry failure.",
+        "For every a, b, c in X, the conjunction (a R b) and (b R c) never holds simultaneously, so no chain ever exists.",
+        "There exist elements a, b, c in X such that (a is not R b) or (b is not R c) or (a R c), a loose disjunction.",
+        "No triple a, b, c of elements of X satisfies both (a R b) and (b R c); the set of chains is empty.",
+        "There exist elements a, b, c in X such that (a R b) and (b R c) both hold, but (a is not R c) — a single broken chain, which is exactly the negation of transitivity with the inner conjunction preserved.",
+        "There exists an element a in X such that, for all b and c, the conditions (a R b) and (b R c) imply that (a is not R c).",
+        "The relation R is symmetric, meaning (a R b) implies (b R a) for all a, b in X."
+      ],
+      "answer": "There exist elements a, b, c in X such that (a R b) and (b R c) both hold, but (a is not R c) — a single broken chain, which is exactly the negation of transitivity with the inner conjunction preserved.",
+      "solution": "Solution: Definition: ∀a,b,c ( (aRb ∧ bRc) → aRc ). The negation of an implication is premise true AND conclusion false: ∃a,b,c ( aRb ∧ bRc ∧ aR̸c ). Crucially, the inner conjunction (aRb ∧ bRc) is preserved, not split by De Morgan — only the whole implication is negated. That is option F: at least one transitive chain breaks.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q17",
+      "sourceType": "TMUA",
+      "stem": "Let F be a family of functions each defined on the closed interval [0,1] (that is, on all real numbers x with 0 ≤ x ≤ 1). We say that F is integrable-bounded exactly when the following holds: for every function f that belongs to F, there exists a real number M such that the inequality |f(x)| ≤ M is satisfied for all x lying in the interval [0,1]. Thus each function is bounded in absolute value across the whole interval by some constant of its own; the bounding constant is allowed to vary from one function to another, but every function must have some bound. If even one function in the family is unbounded on [0,1], the family fails to be integrable-bounded.\n\nSuppose it is announced that a family F is NOT integrable-bounded, so the condition fails because at least one member escapes every bound. Which of the following eight statements is true if and only if F is not integrable-bounded, being careful to flip the function quantifier and to turn the single bound into a universally defeated one?",
+      "options": [
+        "For every function f in F, there exists a real number M with |f(x)| ≤ M for all x in [0,1].",
+        "No function in F is bounded on the interval [0,1]; each one is unbounded there.",
+        "There exists a function f in F and there exists a real number M such that |f(x)| > M for at least one x in [0,1].",
+        "For every function f in F and for every real number M, there is some x in [0,1] with |f(x)| > M.",
+        "There exists a function f in F such that, for all real numbers M, the inequality |f(x)| ≤ M holds for all x in [0,1].",
+        "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M (so this one function is unbounded on the interval, which is exactly the negation).",
+        "There exists a function f in F for which, for some real number M, the inequality |f(x)| ≤ M fails to hold at at least one point of [0,1] (merely one overshoot for one M).",
+        "Every function in F is bounded on [0,1] by the very same constant M, shared across the whole family."
+      ],
+      "answer": "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M (so this one function is unbounded on the interval, which is exactly the negation).",
+      "solution": "Solution: Definition: ∀f∈F ∃M ∀x∈[0,1] (|f(x)|≤M). Negation: ∃f∈F ∀M ∃x∈[0,1] (|f(x)|>M). The family fails to be integrable-bounded exactly when at least one function is unbounded on [0,1]. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q18",
+      "sourceType": "TMUA",
+      "stem": "Let S be a finite set whose elements are all integers strictly greater than 1. We say that S is prime-fed exactly when the following holds: for every element a that belongs to S, there exists at least one prime factor of a that divides no other element of S — that is, at least one prime factor of a is private to a and is not shared with any distinct member of the set. Thus every element is allowed to keep at least one of its prime factors to itself. The moment some element has all of its prime factors shared with others, the set is not prime-fed.\n\nSuppose a set S is declared to be NOT prime-fed, so this condition fails because at least one element has no private prime factor. Which of the following eight statements is true if and only if S is not prime-fed, distinguishing the claim that some element has all primes shared (correct) from the much weaker claim that some element has merely one shared prime (part of prime-fed itself)?",
+      "options": [
+        "For every element a in S, there exists a prime factor of a that divides some other element of S.",
+        "For every element a in S and also for every prime factor of a, that prime divides some other element of S.",
+        "There exists an element a in S such that no prime factor of a divides any other element of S.",
+        "There exists an element a in S for which every prime factor of a divides at least one other element of S.",
+        "There exists an element a in S together with a prime factor of a that divides no other element of S.",
+        "For every element a in S, every prime factor of a divides at least one other element of S (so no element retains any private prime factor, which is exactly the negation).",
+        "There exists an element a in S such that at least one prime factor of a divides some other element of S.",
+        "Every element of S shares a prime factor with every other element of S, a doubly strong universal claim."
+      ],
+      "answer": "For every element a in S, every prime factor of a divides at least one other element of S (so no element retains any private prime factor, which is exactly the negation).",
+      "solution": "Solution: Definition: ∀a∈S ∃p|a ∀b≠a (p∤b). Negation: ∃a∈S ∀p|a ∃b≠a (p|b). The set is not prime-fed exactly when some element has EVERY one of its prime factors shared with another element. That is option F. (Notice this is precisely the prime-covered definition, confirming the two concepts are negations of each other.)",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q19",
+      "sourceType": "TMUA",
+      "stem": "Let V be a family of vectors lying in the Euclidean space R^n for some fixed n. We say that V is aligned exactly when the following holds: there exists a nonzero vector v such that, for every vector w that belongs to V, the vector w is a scalar multiple of v AND, in addition, the scalar involved is non-negative. Thus every vector in the family points along v in the forward, non-opposing direction; all members are collinear with v and lie on the same ray from the origin. If for a candidate direction v even one vector fails to be a forward multiple, that v does not certify alignment, and alignment fails only when every direction is so defeated.\n\nSuppose a family V is declared to be NOT aligned, so the condition fails because no single forward direction captures all members. Which of the following eight statements is true if and only if V is not aligned, remembering that the inner conjunction 'multiple AND non-negative' becomes a disjunction 'not-multiple OR negative' when the implication is negated, while the quantifiers flip from existential-forall to forall-exists?",
+      "options": [
+        "There exists a nonzero vector v such that, for every vector w in V, the vector w is not a scalar multiple of v.",
+        "There exists a nonzero vector v and there exists a vector w in V that is not a scalar multiple of v.",
+        "For every nonzero vector v, every vector w in V is a scalar multiple of v.",
+        "For every nonzero vector v and for every vector w in V, the vector w is not a scalar multiple of v.",
+        "No two vectors in V are scalar multiples of each other, so the family is totally non-collinear.",
+        "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative (so every candidate direction is defeated by some vector, which is exactly the negation with the inner AND turned into OR).",
+        "There exists a nonzero vector v such that, for every vector w in V not a multiple of v, some other vector is also not a multiple of v.",
+        "The family V contains at least two linearly independent vectors, a consequence but not the exact negation."
+      ],
+      "answer": "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative (so every candidate direction is defeated by some vector, which is exactly the negation with the inner AND turned into OR).",
+      "solution": "Solution: Definition: ∃v≠0 ∀w∈V ( (w∥v) ∧ (scalar≥0) ). Negation: ∀v≠0 ∃w∈V ( (w∦v) ∨ (scalar<0) ). The inner AND becomes OR with the direction reversed; the quantifiers flip. V is not aligned exactly when, for every candidate direction, some vector either fails to be collinear or points the opposite way. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-LOGIC-QN-Q20",
+      "sourceType": "TMUA",
+      "stem": "A function f whose domain and codomain are both the real numbers is called order-preserving exactly when the following holds: for all real numbers x and for all real numbers y, the condition that (x < y) OR (y < x) — which is merely another way of saying that x and y are distinct — implies that f(x) ≤ f(y). Thus the function never reverses the order of two different inputs; whenever two numbers differ, the smaller one (in the usual order) is sent to a value no larger than the larger one. If even one distinct pair is reversed, the function is not order-preserving. Note carefully that the antecedent is a disjunction, but it is the antecedent of an implication and so must be kept intact when the whole implication is negated.\n\nSuppose a function f is declared to be NOT order-preserving, meaning the condition fails because some distinct pair reverses order. Which of the following eight statements is true if and only if f is not order-preserving, recalling that the negation of 'P or Q implies R' is '(P or Q) and not R', where the inner OR is preserved and is NOT itself split by De Morgan?",
+      "options": [
+        "For all real numbers x < y, the inequality f(x) > f(y) holds, so the function reverses every ordered pair.",
+        "For all real numbers x and y, if x < y then f(x) ≥ f(y), reversing the conclusion's direction.",
+        "There exist real numbers x and y with x < y and also f(x) ≠ f(y).",
+        "There exist real numbers x and y with f(x) > f(y).",
+        "For all real numbers x and y with x different from y, the inequality f(x) ≤ f(y) fails to hold.",
+        "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y) (so some distinct pair is reversed in order, which is exactly the negation with the inner OR preserved).",
+        "There exists a pair x < y such that f(x) = f(y), a flat pair under the function.",
+        "The function f is strictly decreasing on the whole real line, reversing all pairs everywhere."
+      ],
+      "answer": "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y) (so some distinct pair is reversed in order, which is exactly the negation with the inner OR preserved).",
+      "solution": "Solution: Definition: ∀x,y ( ((xf(y)) ). Thus f is not order-preserving exactly when some distinct pair reverses order. That is option F.",
+      "srcNote": "TMUA P1 逻辑专练·量词否定"
+    }
+  ]
+}
