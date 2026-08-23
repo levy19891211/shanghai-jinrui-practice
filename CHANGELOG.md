@@ -1,5 +1,9 @@
 # 版本历史
 
+## V2.4.78 (2026-08-24) — 修复 \text{} 内单位被 latexify 误转导致公式裸显
+- 根因：`latexify` 在转换简单分式时未保护 `\text{...}` 文本参数，导致 `$18\text{ km/h}$` 中的 `m/h` 被转成 `\frac{m}{h}`，生成的 `\text{ k\frac{m}{h}}` 在 KaTeX text 模式下非法，渲染失败并回退为裸露 LaTeX 源码。
+- 修复：`latexify` 先保护 `\text/\mathrm/\operatorname/...` 等文本参数块，转换完成后再原样恢复，确保单位、文字说明不被破坏；同时保留对普通文本中 `x^2`、`3/4` 等 casual math 的自动转换能力。
+
 ## V2.4.77 (2026-08-21) — 修复模考末尾无法点击选项
 - 根因：`practice/[id]` 答题页用**两套独立时钟**——倒计时 `remaining` 靠 `setTimeout` 每秒自减（显示用），而选项 `disabled` 判定 `expired` 用绝对时间戳 `deadline`。学生切后台时 `setTimeout` 被浏览器节流、`/pause` 只改服务端 `deadlineAt` 未回写本地 `deadline`，两套时钟错位 → `expired` 提前为真、选项被禁用，但倒计时仍显示"还有时间"，表现为"最后 1 分钟点不了选项"。
 - 修复：统一以服务端 `deadline` 为唯一时钟，每帧由真实时间推导 `remaining`；`/pause` 暂停时同步回写本地 `deadline`；从后台切回立即按 `deadline` 重新对齐剩余秒数；`expired` 改为 `remaining<=0` 判定，与显示严格同拍；修正头部"限时 X 分钟"重复累加的倒计时计算。

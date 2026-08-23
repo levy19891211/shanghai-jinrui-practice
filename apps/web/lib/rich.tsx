@@ -24,7 +24,18 @@ function stripDollarArtifacts(token: string): string {
 // 若包含多个普通英文单词(非函数名),很可能是数据源里的零散 $ 被误当定界符。
 // 注意:先剔除 LaTeX 命令/环境名(如 \begin {pmatrix} \frac \sqrt),否则会把真公式误判成文本。
 function looksLikeTextInDollars(expr: string): boolean {
-  const cleaned = expr.replace(/\\[a-zA-Z]+/g, " ").replace(/\{[a-zA-Z]+\}/g, " ");
+  // 含明显数学信号(反斜杠命令 / 数字 / 上下标 / 运算符 / 希腊字母 / 括号)的,直接判为数学。
+  // 否则会把含微分记号 dx 的积分式(如 "$2\int_0^1 f(x)\,dx + 5\int_1^2 f(x)\,dx = 14$")误判成英文正文,
+  // 导致积分以裸 LaTeX 源码显示(#2026-08-22 双源 M2 卷 Q15/Q21 再现此问题)。
+  if (/[\\0-9]/.test(expr) || /[=_^+\-*/<>≤≥≈≠×÷πθ()]/.test(expr)) return false;
+  // 先把 \command{...}（包括 \text{circumference of } 这种带空格的文本参数）连同其花括号参数一起剥离，
+  // 避免真实数学公式里 \text{} 中的英文单词被误判成正文。
+  const cleaned = expr
+    .replace(/\\[a-zA-Z]+\{[^{}]*\}/g, " ")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .replace(/\\[^a-zA-Z]/g, " ") // 去掉 \, \; \! 等"反斜杠+非字母"间距命令,避免残留成英文片段
+    .replace(/\{[a-zA-Z]+\}/g, " ")
+    .replace(/\bd[a-z]\b/g, " "); // 微分记号 dx/dy/dt 不算英文单词
   const words = (cleaned.match(/\b[a-z]{2,}\b/g) || []).filter((w) => !FUNC_NAMES.has(w));
   return words.length >= 2;
 }
@@ -124,6 +135,39 @@ export function plainText(text: string | null | undefined): string {
     .trim();
 }
 
+// 保护 \text{...} 等文本参数块,避免 latexify 把里面的 "m/s"、"km/h" 等当成数学分式转换,
+// 导致 KaTeX 在 text 模式下遇到 \frac 而报错,最终回退为裸露源码。
+function protectTextBlocks(s: string): { text: string; chunks: string[] } {
+  const chunks: string[] = [];
+  // 匹配 \text{...}、\mathrm{...}、\operatorname{...} 等文本/算子参数,支持一层嵌套花括号
+  const re = /\\(text|mathrm|operatorname|mathsf|mathit|mathbf|mathtt)\{/g;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    out += s.slice(last, m.index + m[0].length);
+    let depth = 1;
+    let i = m.index + m[0].length;
+    while (i < s.length && depth > 0) {
+      if (s[i] === "{") depth++;
+      else if (s[i] === "}") depth--;
+      i++;
+    }
+    // i 现在指向匹配闭合花括号的下一个字符
+    const content = s.slice(m.index + m[0].length, i - 1);
+    const idx = chunks.push(content) - 1;
+    out += `__PROT_${idx}__}`;
+    last = i;
+    re.lastIndex = last;
+  }
+  out += s.slice(last);
+  return { text: out, chunks };
+}
+
+function restoreTextBlocks(s: string, chunks: string[]): string {
+  return s.replace(/__PROT_(\d+)__/g, (_, idx) => chunks[parseInt(idx, 10)]);
+}
+
 // 将常见非 LaTeX 数学记号转换为 KaTeX 语法(供批量录入使用)
 // 注意执行顺序:简单分数(π/4 等)必须在 π→\pi 之前处理,否则 \pi 中的 i 会被误当变量
 export function latexify(s: string): string {
@@ -139,7 +183,8 @@ export function latexify(s: string): string {
     return str;
   };
 
-  return fixSqrt(s)
+  const { text: protectedText, chunks } = protectTextBlocks(s);
+  const out = fixSqrt(protectedText)
     .replace(/√\(([^)]+)\)/g, "\\sqrt{$1}")
     .replace(/√([0-9a-zA-Z])/g, "\\sqrt{$1}")
     .replace(/log₁₀/g, "\\log_{10}")
@@ -189,6 +234,7 @@ export function latexify(s: string): string {
     // A 前不能是 ^ 或 {(避免把 ^{2} 的上标数字当分子)
     .replace(/(?<![\^{])([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
     .replace(/\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}");
+  return restoreTextBlocks(out, chunks);
 }
 
 // ===== 智能数学识别:将文本中的数学片段自动渲染为公式 =====
