@@ -1,0 +1,516 @@
+{
+  "paper": {
+    "title": "TMUA Paper1 模考8",
+    "subject": "数学",
+    "sourceType": "TMUA",
+    "source": "TMUA-P1-MOCK8",
+    "origin": "AUTO_SET",
+    "kind": "mock",
+    "status": "READY",
+    "sourceKey": "数学::P1::TMUA-P1-MOCK8",
+    "questionIds": [
+      "__Q0__",
+      "__Q1__",
+      "__Q2__",
+      "__Q3__",
+      "__Q4__",
+      "__Q5__",
+      "__Q6__",
+      "__Q7__",
+      "__Q8__",
+      "__Q9__",
+      "__Q10__",
+      "__Q11__",
+      "__Q12__",
+      "__Q13__",
+      "__Q14__",
+      "__Q15__",
+      "__Q16__",
+      "__Q17__",
+      "__Q18__",
+      "__Q19__"
+    ]
+  },
+  "questions": [
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 3,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q1",
+      "sourceType": "TMUA",
+      "stem": "Let $r,s$ be integers. The number $E(r,s)=\\frac{6^{\\,r+s}\\,12^{\\,r-s}}{8^{\\,r}\\,9^{\\,r+2s}}$ simplifies to a power of $2$ and $3$ depending only on $s$. For how many integers $s$ in the set $\\{-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6\\}$ is $E(r,s)$ guaranteed to be an integer for every integer $r$?",
+      "options": [
+        "$7$",
+        "$6$",
+        "$13$",
+        "$4$",
+        "$8$"
+      ],
+      "answer": "$7$",
+      "solution": "Write every base as a power of $2$ or $3$: $6=2\\cdot3$, $12=2^{2}\\cdot3$, $8=2^{3}$, $9=3^{2}$. The numerator is $2^{\\,3r-s}3^{\\,2r}$ and the denominator is $2^{\\,3r}3^{\\,2r+4s}$, so $E=2^{-s}3^{-4s}.$ This is an integer exactly when both exponents are non-negative, i.e. $s\\le 0$ and $4s\\le 0$, which reduces to $s\\le 0$. In the set, the admissible integers are $s=-6,-5,-4,-3,-2,-1,0$: that is $7$ values.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q1). Difficulty 3, early."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 3,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q2",
+      "sourceType": "TMUA",
+      "stem": "For positive integers $a,b$ define $P(a,b)=2^{\\,a}\\cdot 4^{\\,b}\\cdot 8^{\\,a+b}.$ For how many ordered pairs $(a,b)$ with $1\\le a\\le 6$ and $1\\le b\\le 4$ is $P(a,b)$ a perfect square?",
+      "options": [
+        "$12$",
+        "$24$",
+        "$6$",
+        "$16$",
+        "$8$"
+      ],
+      "answer": "$12$",
+      "solution": "Since $4=2^{2}$ and $8=2^{3}$, $P(a,b)=2^{\\,a}\\cdot 2^{\\,2b}\\cdot 2^{\\,3(a+b)}=2^{\\,a+2b+3a+3b}=2^{\\,4a+5b}.$ A power of $2$ is a perfect square exactly when its exponent is even. Now $4a$ is always even and $5b$ has the same parity as $b$, so $P(a,b)$ is a square iff $b$ is even. With $1\\le b\\le 4$, the even values are $b=2,4$ (two choices), and $a$ may be any of $1,\\dots,6$ (six choices), giving $6\\times 2=12$ ordered pairs.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q51). Difficulty 3, early."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 3,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q3",
+      "sourceType": "TMUA",
+      "stem": "For how many integers $m$ with $-5\\le m\\le 5$ is the line with equation $y=mx-2\\sqrt{2}$ a tangent to the circle $x^{2}+y^{2}=4$?",
+      "options": [
+        "$2$",
+        "$11$",
+        "$1$",
+        "$0$",
+        "$5$"
+      ],
+      "answer": "$2$",
+      "solution": "The circle has centre $(0,0)$ and radius $2$. Write the line as $mx-y-2\\sqrt2=0$. The distance from the origin to this line is $\\frac{|m\\cdot0-0-2\\sqrt2|}{\\sqrt{m^{2}+1}}=\\frac{2\\sqrt2}{\\sqrt{m^{2}+1}}.$ Tangency means this equals the radius $2$: $\\frac{2\\sqrt2}{\\sqrt{m^{2}+1}}=2\\;\\Longrightarrow\\;m^{2}+1=2\\;\\Longrightarrow\\;m^{2}=1\\;\\Longrightarrow\\;m=\\pm1.$ Among the integers $-5,-4,\\dots,5$, only $m=-1$ and $m=1$ qualify, so there are $2$ such integers. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q50). Difficulty 3, early."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q4",
+      "sourceType": "TMUA",
+      "stem": "For a real number $a$, define the functions\n$p_a(x)=x^{2}+ax+(a-1),\\qquad q_a(x)=a x^{2}+x-(a-1).$\nLet $R(a)$ be the set of integers $x$ for which $p_a(x)=0$. An integer $a$ with $-5\\le a\\le 5$ is called linked if $|R(a)|=2$ and the larger element of $R(a)$ is also a root of $q_a$.\nHow many linked integers $a$ are there?",
+      "options": [
+        "$5$",
+        "$3$",
+        "$4$",
+        "$6$",
+        "$2$"
+      ],
+      "answer": "$5$",
+      "solution": "The roots of $p_a(x)=0$ are always $x=-1$ and $x=1-a$, since $(x+1)(x+a-1)=x^{2}+ax+(a-1)$. Thus $R(a)$ has two elements exactly when $a\\neq 2$. The two functions share the root $x=-1$ for every $a$, because $p_a(-1)=0$ and $q_a(-1)=a-1-(a-1)=0$.\nWhen $a>2$, the larger root of $p_a$ is $-1$ (since $1-a<-1$), which is automatically a root of $q_a$, so every $a\\in\\{3,4,5\\}$ is linked. When $a<2$, the larger root is $1-a$, and we need $q_a(1-a)=0$, i.e. $a(1-a)^{2}+(1-a)-(a-1)=a^{3}-2a^{2}-a+2=(a-1)(a+1)(a-2)=0$, giving $a=-1$ or $a=1$ in range. Hence the linked integers are $-1,1,3,4,5$, a total of $5$. A sketch of the two parabolas shows they always meet at $x=-1$, confirming the case split.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q60). Difficulty 4, early."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q5",
+      "sourceType": "TMUA",
+      "stem": "For each integer $n$, write $I_n=\\int_{n}^{n+1} f(x)\\,dx$, and suppose $I_n=2n+1$ for every integer $n$. Now define a new function $g$ by $g(x)=f(x)+f(x+1)$, and let $J_n=\\int_{n}^{n+1} g(x)\\,dx$.\nFor how many integers $n$ with $1\\le n\\le 24$ is $J_n>50$?",
+      "options": [
+        "$13$",
+        "$12$",
+        "$14$",
+        "$11$",
+        "$15$"
+      ],
+      "answer": "$13$",
+      "solution": "By linearity, $J_n=\\int_n^{n+1}f(x)\\,dx+\\int_n^{n+1}f(x+1)\\,dx=I_n+\\int_n^{n+1}f(x+1)\\,dx$. For the second term, substitute $u=x+1$ to get $\\int_{n+1}^{n+2}f(u)\\,du=I_{n+1}$. Hence $J_n=I_n+I_{n+1}=(2n+1)+(2(n+1)+1)=4n+4$. The inequality $4n+4>50$ gives $n>11.5$, so $n\\ge 12$. In the range $1\\le n\\le 24$ this gives $n=12,13,\\dots,24$, i.e. $13$ integers. A sketch of the area interpretation of $I_n$ and the shifted copy $I_{n+1}$ makes the index shift clear before the algebra closes.",
+      "srcNote": "Source: TMUA-2023-P1-Q3 (TMUA P1 Q3). Difficulty 4, early."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q6",
+      "sourceType": "TMUA",
+      "stem": "Define the function $\\psi$ by $\\psi(t)=3t^{2}-2t$. Let $a$ and $b$ be the two roots of $2x^{2}-x=0$.\nSet $A=\\psi(a)$ and $B=\\psi(b)$. Which quadratic equation has $A$ and $B$ as its roots?",
+      "options": [
+        "$4t^{2}+t=0$",
+        "$4t^{2}-t=0$",
+        "$t^{2}+ \\frac{1}{4}t=0$",
+        "$4t^{2}+5t=0$",
+        "$2t^{2}+t=0$"
+      ],
+      "answer": "$4t^{2}+t=0$",
+      "solution": "The equation $2x^{2}-x=0$ gives $x(2x-1)=0$, so the two roots are $a=0$ and $b=\\tfrac12$. Then $A=\\psi(0)=0$ and $B=\\psi(\\tfrac12)=3(\\tfrac14)-2(\\tfrac12)=\\tfrac34-1=-\\tfrac14$. The monic quadratic with roots $A$ and $B$ is $(t-A)(t-B)=t^{2}-(A+B)t+AB=t^{2}+\\tfrac14 t=0$, which clears to $4t^{2}+t=0$.",
+      "srcNote": "Source: TMUA-2022-P1-Q2 (TMUA P1 Q2). Difficulty 5, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q7",
+      "sourceType": "TMUA",
+      "stem": "How many points with integer coordinates lie on the circle $x^{2}+y^{2}+6x+8y=75?$",
+      "options": [
+        "$12$",
+        "$8$",
+        "$10$",
+        "$16$",
+        "$4$"
+      ],
+      "answer": "$12$",
+      "solution": "Complete the square: $(x+3)^{2}-9+(y+4)^{2}-16=75$, so $(x+3)^{2}+(y+4)^{2}=100.$ This is a circle of radius $10$ centred at $(-3,-4)$. The integer points at distance $10$ from the origin (and hence, after the integer shift, on this circle) are $(\\pm10,0),(0,\\pm10),(\\pm6,\\pm8),(\\pm8,\\pm6)$. That is $2+2+4+4=12$ points. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q22). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q8",
+      "sourceType": "TMUA",
+      "stem": "For functions $f$ and $g$, $\\int_{0}^{1}(f+g)\\,dx=5,\\qquad \\int_{0}^{1}(f-g)\\,dx=1,\\qquad \\int_{1}^{2}f\\,dx=2,\\qquad \\int_{1}^{2}g\\,dx=3.$ Evaluate $\\int_{0}^{2}\\bigl(2f(x)-g(x)\\bigr)\\,dx.$",
+      "options": [
+        "$5$",
+        "$7$",
+        "$9$",
+        "$3$",
+        "$1$"
+      ],
+      "answer": "$5$",
+      "solution": "From the first two equations on $[0,1]$, $\\int_{0}^{1}f=\\frac{5+1}{2}=3,\\qquad \\int_{0}^{1}g=\\frac{5-1}{2}=2.$ Hence $\\int_{0}^{2}f=\\int_{0}^{1}f+\\int_{1}^{2}f=3+2=5$ and $\\int_{0}^{2}g=\\int_{0}^{1}g+\\int_{1}^{2}g=2+3=5$. Therefore $\\int_{0}^{2}(2f-g)=2\\int_{0}^{2}f-\\int_{0}^{2}g=2\\cdot5-5=5.$ A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q8). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q9",
+      "sourceType": "TMUA",
+      "stem": "Suppose $f$ is a function for which $f(0)=0$ and $x\\,f(x)>0$ whenever $x\\neq0$. The total signed area under $y=f(x)$ from $-2$ to $2$ equals $4$, while the total unsigned area equals $8$. What is the value of $\\int_{-2}^{2} f(|x|)\\,dx\\,?$",
+      "options": [
+        "$12$",
+        "$6$",
+        "$18$",
+        "$0$",
+        "$24$"
+      ],
+      "answer": "$12$",
+      "solution": "From $x\\,f(x)>0$ we know $f(x)>0$ for $x>0$ and $f(x)<0$ for $x<0$. Let $A=\\int_{-2}^{0}f(x)\\,dx$ and $B=\\int_{0}^{2}f(x)\\,dx$. Then $\\int_{-2}^{2}f=A+B=4,\\qquad \\int_{-2}^{2}|f|=-A+B=8.$ Adding gives $2B=12$, so $B=6$, and $A=-2$. Now $\\int_{-2}^{2}f(|x|)\\,dx=\\int_{-2}^{0}f(|x|)\\,dx+\\int_{0}^{2}f(|x|)\\,dx$. For $x\\in[-2,0]$, $|x|=-x\\in[0,2]$, so substituting $u=-x$ gives $\\int_{-2}^{0}f(|x|)\\,dx=\\int_{0}^{2}f(u)\\,du=B=6$; for $x\\in[0,2]$, $f(|x|)=f(x)$ so the second part is also $B=6$. Total $=6+6=12$. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: TMUA-2021-P1-Q7 (TMUA P1 Q7). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q10",
+      "sourceType": "TMUA",
+      "stem": "The minimum value of $x^{4}-kx^{2}$ is $-16$. For how many positive integers $k$ with $k\\le 20$ is the minimum value of $x^{2}-kx+8$ strictly less than $-8$?",
+      "options": [
+        "$12$",
+        "$11$",
+        "$8$",
+        "$10$",
+        "$6$"
+      ],
+      "answer": "$12$",
+      "solution": "Write $x^{4}-kx^{2}=(x^{2})^{2}-k(x^{2})$. As a quadratic in $u=x^{2}\\ge0$, its minimum (for $k>0$) occurs at $u=k/2$ and equals $-(k/2)^{2}=-k^{2}/4$. Given this is $-16$, we have $k^{2}/4=16$, so $k=8$ (a negative minimum needs $k>0$). Now $x^{2}-kx+8=x^{2}-8x+8$ has minimum at $x=4$ equal to $16-32+8=-8$. In general, for the fixed $k=8$ found, the minimum of $x^{2}-8x+8$ is $-8$; but the question fixes $k=8$ from the first sentence, so we instead vary the second quadratic with this $k$: its minimum is $8-k^{2}/4$. We need $8-k^{2}/4<-8$, i.e. $k^{2}/4>16$, i.e. $k>8$. With $k=8$ already determined by the first condition, reinterpret: the first sentence determines $k=8$, and we then ask for how many positive integers $k\\le 20$ (independently) the second minimum $8-k^{2}/4<-8$. This holds for $k>8$, i.e. $k=9,10,\\dots,20$: that is $12$ values. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: TMUA-2021-P1-Q12 (TMUA P1 Q12). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q11",
+      "sourceType": "TMUA",
+      "stem": "Arrange the three numbers $\\log_{2}3,\\qquad \\log_{3}5,\\qquad \\log_{5}8$ in increasing order.",
+      "options": [
+        "$\\log_{5}8 < \\log_{3}5 < \\log_{2}3$",
+        "$\\log_{2}3 < \\log_{3}5 < \\log_{5}8$",
+        "$\\log_{3}5 < \\log_{2}3 < \\log_{5}8$",
+        "$\\log_{5}8 < \\log_{2}3 < \\log_{3}5$",
+        "$\\log_{3}5 < \\log_{5}8 < \\log_{2}3$"
+      ],
+      "answer": "$\\log_{5}8 < \\log_{3}5 < \\log_{2}3$",
+      "solution": "All three numbers exceed $1$. Compare $\\log_{2}3$ and $\\log_{3}5$: $\\log_{2}3>\\log_{3}5\\iff \\frac{\\ln3}{\\ln2}>\\frac{\\ln5}{\\ln3}\\iff (\\ln3)^{2}>\\ln2\\,\\ln5.$ Since $(\\ln3)^{2}\\approx(1.099)^{2}=1.207$ and $\\ln2\\,\\ln5\\approx0.693\\times1.609=1.115$, the inequality holds, so $\\log_{2}3>\\log_{3}5$. Compare $\\log_{3}5$ and $\\log_{5}8$: $(\\ln5)^{2}\\approx(1.609)^{2}=2.589$ and $\\ln3\\,\\ln8=1.099\\times2.079=2.286$, so $\\log_{3}5>\\log_{5}8$. Hence $\\log_{5}8<\\log_{3}5<\\log_{2}3$. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q9). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q12",
+      "sourceType": "TMUA",
+      "stem": "Two circles are tangent: one has centre $(2,-3)$ and radius $5$, the other has centre $(-6,1)$ and radius $r>0$. The two positive values of $r$ for which tangency occurs are $r_{1}$ and $r_{2}$. Find $r_{1}r_{2}$.",
+      "options": [
+        "$55$",
+        "$10$",
+        "$80$",
+        "$25$",
+        "$5$"
+      ],
+      "answer": "$55$",
+      "solution": "Centre of the first circle is $C_{1}=(2,-3)$ with radius $r_{1}=5$; centre of the second is $C_{2}=(-6,1)$ with radius $r$. The distance between centres is $d=\\sqrt{(2+6)^{2}+(-3-1)^{2}}=\\sqrt{64+16}=\\sqrt{80}=4\\sqrt5.$ Exactly one common point means the circles are tangent, so either externally or internally tangent: $r_{1}+r=4\\sqrt5\\quad\\text{or}\\quad |r_{1}-r|=4\\sqrt5.$ Thus $r=4\\sqrt5-5$ or $r=4\\sqrt5+5$ (both positive). Their product is $(4\\sqrt5+5)(4\\sqrt5-5)=(4\\sqrt5)^{2}-5^{2}=80-25=55.$ A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: TMUA-2019-P1-Q6 (TMUA P1 Q6). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q13",
+      "sourceType": "TMUA",
+      "stem": "For how many integers $n$ with $1\\le n\\le 10$ is $\\sum_{k=0}^{n}\\left(\\frac{1}{2}\\right)^{k} > 1.9\\,?$",
+      "options": [
+        "$7$",
+        "$6$",
+        "$8$",
+        "$5$",
+        "$10$"
+      ],
+      "answer": "$7$",
+      "solution": "This is a finite geometric series with first term $1$ and ratio $\\\\frac12$. Its sum is $S_n=\\frac{1-(\\\\frac12)^{\\,n+1}}{1-\\\\frac12}=2\\left(1-\\\\frac{1}{2^{\\,n+1}}\\right).$ The inequality $S_n>1.9$ becomes $2(1-2^{-(n+1)})>1.9$, i.e. $1-2^{-(n+1)}>0.95$, i.e. $2^{-(n+1)}<0.05$, i.e. $2^{\\,n+1}>20$. Since $2^{4}=16<20$ and $2^{5}=32>20$, we need $n+1\\ge 5$, i.e. $n\\ge 4$. With $1\\le n\\le 10$, the admissible integers are $n=4,5,\\dots,10$: that is $7$ values.",
+      "srcNote": "Source: TMUA-2023-P1-Q4 (TMUA P1 Q4). Difficulty 4, mid."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q14",
+      "sourceType": "TMUA",
+      "stem": "Given a real constant $c$, the equation $x^{4}=(x-c)^{2}$ has exactly two distinct real solutions. Which condition on $c$ makes this happen?",
+      "options": [
+        "$|c|>\\frac14$",
+        "$|c|\\ge \\frac14$",
+        "$|c|<\\frac14$",
+        "$c=0\\text{ only}$",
+        "$-\\frac14<c<\\frac14$"
+      ],
+      "answer": "$|c|>\\frac14$",
+      "solution": "Taking square roots gives two quadratics: $x^{2}=x-c$ (i.e. $x^{2}-x+c=0$, call it $Q_{1}$) and $x^{2}=-(x-c)$ (i.e. $x^{2}+x-c=0$, call it $Q_{2}$). Their discriminants are $D_{1}=1-4c$ and $D_{2}=1+4c$. Exactly two distinct real solutions overall occurs in two symmetric regimes: (i) $c>\\frac14$: then $D_{1}<0$ (so $Q_{1}$ has no real root) while $D_{2}>0$ (so $Q_{2}$ contributes two distinct roots) $\\\\Rightarrow$ exactly two distinct real solutions. (ii) $c<-\\frac14$: then $D_{2}<0$ and $D_{1}>0$ $\\\\Rightarrow$ exactly two distinct real solutions. At $c=\\pm\\frac14$ one discriminant is $0$ and the other positive, giving three distinct roots; for $-\\frac14<c<\\frac14$ both discriminants are positive (up to four roots, collapsing to three only at $c=0$). Hence exactly two distinct real solutions precisely when $|c|>\\frac14$. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q23). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q15",
+      "sourceType": "TMUA",
+      "stem": "The equation $9^{x}-3^{x+1}=k$ has exactly one real solution for exactly how many integers $k$ with $-3\\le k\\le 3$?",
+      "options": [
+        "$4$",
+        "$3$",
+        "$5$",
+        "$7$",
+        "$0$"
+      ],
+      "answer": "$4$",
+      "solution": "Let $t=3^{x}>0$. Then $9^{x}=t^{2}$ and $3^{x+1}=3t$, so the equation becomes $t^{2}-3t-k=0$. Its roots are $t=\\frac{3\\pm\\sqrt{9+4k}}{2}$. A real $x$ exists exactly when there is a positive root $t$. Note $t_{+}=\\frac{3+\\sqrt{9+4k}}{2}>0$ always (when real), while $t_{-}=\\frac{3-\\sqrt{9+4k}}{2}$. Exactly one positive root occurs when $t_{-}\\le0$, i.e. $\\sqrt{9+4k}\\ge3$, i.e. $9+4k\\ge9$, i.e. $k\\ge0$. For $k<0$ (but $k\\ge-9/4$ for real roots) both roots are positive $\\\\Rightarrow$ two solutions; for $k<-9/4$ no real root. So exactly-one-solution holds for $k\\ge0$. In $[-3,3]$ the integers $k=0,1,2,3$ satisfy this: that is $4$ values. A sketch of the situation confirms the geometric picture before the algebra closes.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q18). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q16",
+      "sourceType": "TMUA",
+      "stem": "For a real number $a$, define the polynomial $P_a(x)=(x-a)(x^{2}-ax+a)$ and let $N(a)$ be the number of distinct real roots of the equation $P_a(x)=0$.\nFor how many integers $a$ with $-5\\le a\\le 5$ is $N(a)\\le 2$?",
+      "options": [
+        "$5$",
+        "$4$",
+        "$6$",
+        "$3$",
+        "$7$"
+      ],
+      "answer": "$5$",
+      "solution": "$P_a(x)=0$ always has the root $x=a$, and the quadratic factor $x^{2}-ax+a=0$ contributes roots according to its discriminant $\\Delta=a^{2}-4a=a(a-4)$.\n- If $0\\lt a\\lt 4$ then $\\Delta\\lt 0$, so the quadratic has no real root and the only real root is $x=a$; hence $N(a)=1$.\n- If $a=0$ then $P_0(x)=x\\cdot x^{2}=x^{3}$, which has the single real root $x=0$ (a triple root), so $N(0)=1$, NOT $2$ -- this is the key trap.\n- If $a=4$ then the quadratic is $(x-2)^{2}$, giving real roots $2$ and $4$, so $N(4)=2$.\n- If $a\\lt 0$ or $a\\gt 4$ then $\\Delta\\gt 0$ and the quadratic has two distinct real roots. A root of the quadratic equals $a$ only when $a^{2}-a^{2}+a=0$, i.e. $a=0$, so for these $a$ the three real roots are distinct and $N(a)=3$.\nTherefore $N(a)\\le 2$ precisely for $a=0,1,2,3,4$, a total of $5$ integers in $[-5,5]$.",
+      "srcNote": "Source: TMUA-2020-P1-Q20 (TMUA P1 Q20). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q17",
+      "sourceType": "TMUA",
+      "stem": "For $k>0$ the curve $C_k$ has equation $y=(x-k)^{2}+\\tfrac{4}{k}$ and lowest point $\\bigl(k,\\tfrac{4}{k}\\bigr)$. For each $k$, let $\\ell_k$ be the line through this lowest point with gradient $k$, and let $m(k)$ be the number of real intersection points of $\\ell_k$ with $C_k$.\nFor how many integers $k$ with $1\\le k\\le 10$ is $m(k)=2$?",
+      "options": [
+        "$9$",
+        "$8$",
+        "$10$",
+        "$7$",
+        "$6$"
+      ],
+      "answer": "$9$",
+      "solution": "The line $\\ell_k$ has equation $y-\\tfrac4k=k(x-k)$, i.e. $y=kx-k^{2}$. Intersecting with $C_k$: $(x-k)^{2}+\\tfrac4k=kx-k^{2}$. Expanding $(x-k)^{2}=x^{2}-2kx+k^{2}$ gives $x^{2}-2kx+k^{2}+\\tfrac4k=kx-k^{2}$, so $x^{2}-4kx+2k^{2}+\\tfrac4k=0$. The discriminant is $\\Delta=(4k)^{2}-4\\bigl(2k^{2}+\\tfrac4k\\bigr)=16k^{2}-8k^{2}-\\tfrac{16}{k}=8k^{2}-\\tfrac{16}{k}=\\tfrac{8(k^{3}-2)}{k}$. Two real intersections occur exactly when $\\Delta>0$, i.e. $k^{3}>2$, i.e. $k>\\sqrt[3]{2}\\approx1.26$. For integers $k\\ge1$ this holds for $k=2,3,\\dots,10$, which is $9$ values. A sketch of the upward parabola $C_k$ and the line of gradient $k$ through its vertex shows the line cuts the curve twice once it is steep enough (for $k=1$ it lies inside, giving no real intersection).",
+      "srcNote": "Source: TMUA-2022-P1-Q12 (TMUA P1 Q12). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q18",
+      "sourceType": "TMUA",
+      "stem": "The equation $2x^{2}-x=0$ has $\\sin\\theta$ and $\\sin\\phi$ as (possibly equal) roots, for some angles $\\theta,\\phi$ with $0\\le\\theta,\\phi\\le\\pi$.\nWhich monic quadratic equation has $\\tan^{2}\\theta$ and $\\tan^{2}\\phi$ as its roots?",
+      "options": [
+        "$3t^{2}-t=0$",
+        "$4t^{2}-7t+3=0$",
+        "$4t^{2}-t=0$",
+        "$t^{2}- \\frac{1}{3}t=0$",
+        "$3t^{2}+t=0$"
+      ],
+      "answer": "$3t^{2}-t=0$",
+      "solution": "The roots of $2x^{2}-x=0$ are $\\sin\\theta,\\sin\\phi\\in\\{0,\\tfrac12\\}$. Using $\\cos^{2}\\alpha=1-\\sin^{2}\\alpha$, $\\tan^{2}\\alpha=\\tfrac{\\sin^{2}\\alpha}{\\cos^{2}\\alpha}=\\tfrac{\\sin^{2}\\alpha}{1-\\sin^{2}\\alpha}$. For $\\sin\\alpha=0$ this gives $0$; for $\\sin\\alpha=\\tfrac12$ it gives $\\tfrac{1/4}{3/4}=\\tfrac13$. Thus the two values are $0$ and $\\tfrac13$, so the monic quadratic is $(t-0)(t-\\tfrac13)=t^{2}-\\tfrac13 t=0$, i.e. $3t^{2}-t=0$.",
+      "srcNote": "Source: TMUA-2022-P1-Q18 (TMUA P1 Q18). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q19",
+      "sourceType": "TMUA",
+      "stem": "For a real number $a$, define the function\n$g_a(\\theta)=\\bigl(1+3\\cos(3\\theta)-a\\bigr)^{2}.$\nFor a given integer $a$ with $-3\\le a\\le 3$, let $N(a)$ be the number of solutions $\\theta\\in[0,\\tfrac{\\pi}{2})$ to $g_a(\\theta)=0$.\nFor how many such integers $a$ is $N(a)=1$?",
+      "options": [
+        "$4$",
+        "$3$",
+        "$5$",
+        "$2$",
+        "$6$"
+      ],
+      "answer": "$4$",
+      "solution": "$g_a(\\theta)=0$ means $1+3\\cos(3\\theta)-a=0$, i.e. $\\cos(3\\theta)=\\tfrac{a-1}{3}$. With $\\theta\\in[0,\\tfrac{\\pi}{2})$ we have $3\\theta\\in[0,\\tfrac{3\\pi}{2})$. On this half-open interval, $\\cos\\alpha=c$ has: one solution when $c=1$ (at $\\alpha=0$), one when $c=-1$ (at $\\alpha=\\pi$), one when $0<c<1$ (only the first branch, since the second lies beyond $\\tfrac{3\\pi}{2}$), but TWO when $-1<c<0$ (both $\\arccos c$ and $2\\pi-\\arccos c$ lie in the interval), and none when $|c|>1$. For $a=-3,-2,-1,0,1,2,3$ the values of $c=\\tfrac{a-1}{3}$ are $-\\tfrac43,-1,-\\tfrac23,-\\tfrac13,0,\\tfrac13,\\tfrac23$, giving $N(a)=0,1,2,2,1,1,1$. Thus $N(a)=1$ for $a=-2,1,2,3$, a total of $4$. A sketch of $y=\\cos(3\\theta)$ over $[0,\\pi/2)$ with the horizontal lines $y=c$ makes the sign-dependent count immediate.",
+      "srcNote": "Source: TMUA-2023-P1-Q12 (TMUA P1 Q12). Difficulty 5, late."
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "M1",
+      "topicIds": [
+        "M1"
+      ],
+      "difficulty": 5,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK8-Q20",
+      "sourceType": "TMUA",
+      "stem": "A sequence is defined by $a_{1}=2$ and\n$a_{n+1}=\\frac{2a_{n}}{a_{n}+1}\\quad(n\\ge 1).$\nLet $S_n=a_{1}+a_{2}+\\cdots+a_{n}$.\nFor how many integers $n$ with $1\\le n\\le 10$ is $S_n>4$?",
+      "options": [
+        "$8$",
+        "$7$",
+        "$9$",
+        "$6$",
+        "$10$"
+      ],
+      "answer": "$8$",
+      "solution": "Taking reciprocals, $\\tfrac1{a_{n+1}}=\\tfrac{a_n+1}{2a_n}=\\tfrac12+\\tfrac1{2a_n}$, so $\\tfrac1{a_{n+1}}-\\tfrac12=\\tfrac12\\bigl(\\tfrac1{a_n}-\\tfrac12\\bigr)$; thus $\\tfrac1{a_n}-\\tfrac12=(\\tfrac12)^{n}$ and $a_n=\\tfrac{1}{\\tfrac12+(\\tfrac12)^{n}}=\\tfrac{2^{n}}{2^{n}-1}=1+\\tfrac1{2^{n}-1}$. Hence $S_n=n+\\sum_{k=1}^{n}\\tfrac1{2^{k}-1}$. We have $S_1=2<4$, $S_2=2+\\tfrac43=\\tfrac{10}{3}<4$, and $S_3=2+\\tfrac43+\\tfrac87=\\tfrac{94}{21}>4$. Since each $a_n>1$, $S_n$ is strictly increasing, so $S_n>4$ for every $n\\ge 3$. In the range $1\\le n\\le 10$ this gives $n=3,4,\\dots,10$, i.e. $8$ values.",
+      "srcNote": "Source: MAT-2007-2023 (MAT MAT Q6). Difficulty 5, late."
+    }
+  ]
+}
