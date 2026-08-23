@@ -1,0 +1,576 @@
+{
+  "paper": {
+    "title": "TMUA P1 逻辑推理专练 20 题 A",
+    "subject": "数学",
+    "sourceType": "TMUA",
+    "source": "TMUA-P1-DIALOGUE-LOGIC",
+    "origin": "AUTO_SET",
+    "kind": "mock",
+    "status": "READY",
+    "sourceKey": "数学::P1::TMUA-P1-DIALOGUE-LOGIC",
+    "questionIds": [
+      "__Q0__",
+      "__Q1__",
+      "__Q2__",
+      "__Q3__",
+      "__Q4__",
+      "__Q5__",
+      "__Q6__",
+      "__Q7__",
+      "__Q8__",
+      "__Q9__",
+      "__Q10__",
+      "__Q11__",
+      "__Q12__",
+      "__Q13__",
+      "__Q14__",
+      "__Q15__",
+      "__Q16__",
+      "__Q17__",
+      "__Q18__",
+      "__Q19__"
+    ]
+  },
+  "questions": [
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q1",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (3 speakers)\n\nAlice says: “Charlie and Bob are both lying”\nBob says: “Charlie is telling the truth”\nCharlie says: “Alice is lying or Bob is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Alice is telling the truth; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Alice is lying; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is lying; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is lying; Charlie is lying (and exactly 1 statements are false)."
+      ],
+      "answer": "Alice is lying; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 8 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Alice is lying; Bob is telling the truth; Charlie is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q2",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (3 speakers)\n\nAlice says: “Alice is telling the truth”\nBob says: “at least one of Bob and Alice is lying”\nCharlie says: “Charlie is lying or Bob is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Alice is lying; Bob is lying; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false).",
+        "Alice is lying; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is lying; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false)."
+      ],
+      "answer": "Alice is lying; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 8 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Alice is lying; Bob is telling the truth; Charlie is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q3",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (4 speakers)\n\nAnn says: “Dan is lying”\nBen says: “Carol is telling the truth”\nCarol says: “Ann is lying”\nDan says: “Ann is lying or Dan is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is lying; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is telling the truth; Ben is telling the truth; Carol is lying; Dan is lying (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Ann is telling the truth; Ben is lying; Carol is lying; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is lying; Carol is telling the truth; Dan is lying (and exactly 1 statements are false)."
+      ],
+      "answer": "Ann is lying; Ben is telling the truth; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 16 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Ann is lying; Ben is telling the truth; Carol is telling the truth; Dan is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q4",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (3 speakers)\n\nAlice says: “Bob is lying or Charlie is telling the truth”\nBob says: “exactly one of Bob and Charlie is telling the truth”\nCharlie says: “Alice and Charlie are both lying”\nExactly 2 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Alice is lying; Bob is telling the truth; Charlie is telling the truth (and exactly 2 statements are false).",
+        "Alice is telling the truth; Bob is lying; Charlie is lying (and exactly 2 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is telling the truth (and exactly 2 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Alice is telling the truth; Bob is lying; Charlie is telling the truth (and exactly 2 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is telling the truth (and exactly 2 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is lying (and exactly 2 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is lying (and exactly 2 statements are false)."
+      ],
+      "answer": "Alice is telling the truth; Bob is lying; Charlie is lying (and exactly 2 statements are false).",
+      "solution": "Solution: Checking all 8 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 2 are false, the only consistent pattern is: Alice is telling the truth; Bob is lying; Charlie is lying.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q5",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (4 speakers)\n\nAnn says: “Dan is lying or Ann is telling the truth”\nBen says: “Dan is lying”\nCarol says: “Carol is telling the truth iff Ben is lying”\nDan says: “exactly one of Ben and Carol is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Ann is telling the truth; Ben is telling the truth; Carol is telling the truth; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is lying; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is lying; Ben is lying; Carol is telling the truth; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is lying; Carol is lying; Dan is telling the truth (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Ann is telling the truth; Ben is telling the truth; Carol is lying; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is telling the truth; Dan is lying (and exactly 1 statements are false).",
+        "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false)."
+      ],
+      "answer": "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 16 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q6",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (5 speakers)\n\nAmy says: “Ben is telling the truth iff Cara is lying”\nBen says: “exactly one of Eve and Cara is telling the truth”\nCara says: “exactly one of Amy and Ben is telling the truth”\nDale says: “at least one of Cara and Amy is lying”\nEve says: “at least one of Amy and Ben is lying”\nExactly 2 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Amy is lying; Ben is lying; Cara is telling the truth; Dale is telling the truth; Eve is telling the truth (and exactly 2 statements are false).",
+        "Amy is lying; Ben is telling the truth; Cara is lying; Dale is lying; Eve is telling the truth (and exactly 2 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Amy is lying; Ben is telling the truth; Cara is telling the truth; Dale is telling the truth; Eve is lying (and exactly 2 statements are false).",
+        "Amy is telling the truth; Ben is telling the truth; Cara is telling the truth; Dale is telling the truth; Eve is lying (and exactly 2 statements are false).",
+        "Amy is telling the truth; Ben is lying; Cara is telling the truth; Dale is lying; Eve is telling the truth (and exactly 2 statements are false).",
+        "Amy is lying; Ben is telling the truth; Cara is lying; Dale is telling the truth; Eve is lying (and exactly 2 statements are false).",
+        "Amy is telling the truth; Ben is lying; Cara is telling the truth; Dale is telling the truth; Eve is lying (and exactly 2 statements are false)."
+      ],
+      "answer": "Amy is telling the truth; Ben is lying; Cara is telling the truth; Dale is lying; Eve is telling the truth (and exactly 2 statements are false).",
+      "solution": "Solution: Checking all 32 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 2 are false, the only consistent pattern is: Amy is telling the truth; Ben is lying; Cara is telling the truth; Dale is lying; Eve is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q7",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (4 speakers)\n\nAnn says: “exactly one of Ann and Ben is telling the truth”\nBen says: “Ben and Ann are both lying”\nCarol says: “Ben is telling the truth iff Dan is lying”\nDan says: “exactly one of Ann and Ben is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is telling the truth; Ben is lying; Carol is lying; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Ann is lying; Ben is telling the truth; Carol is lying; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is lying; Dan is lying (and exactly 1 statements are false).",
+        "Ann is lying; Ben is lying; Carol is lying; Dan is telling the truth (and exactly 1 statements are false).",
+        "Ann is telling the truth; Ben is telling the truth; Carol is lying; Dan is lying (and exactly 1 statements are false)."
+      ],
+      "answer": "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 16 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth.\nWhy the distractors fail\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q8",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (3 speakers)\n\nAlice says: “Bob is telling the truth iff Charlie is lying”\nBob says: “Bob is telling the truth”\nCharlie says: “Charlie is lying or Alice is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Alice is telling the truth; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Alice is lying; Bob is telling the truth; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is lying; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is lying; Bob is lying; Charlie is lying (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false).",
+        "Alice is telling the truth; Bob is telling the truth; Charlie is telling the truth (and exactly 1 statements are false)."
+      ],
+      "answer": "Alice is telling the truth; Bob is lying; Charlie is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 8 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Alice is telling the truth; Bob is lying; Charlie is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q9",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (4 speakers)\n\nAnn says: “Ben is telling the truth”\nBen says: “exactly one of Ann and Ben is telling the truth”\nCarol says: “Carol is telling the truth”\nDan says: “Ben is telling the truth only if Ann is telling the truth”\nExactly 2 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Ann is lying; Ben is lying; Carol is telling the truth; Dan is lying (and exactly 2 statements are false).",
+        "Ann is telling the truth; Ben is lying; Carol is lying; Dan is lying (and exactly 2 statements are false).",
+        "Ann is lying; Ben is lying; Carol is lying; Dan is telling the truth (and exactly 2 statements are false).",
+        "Ann is lying; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 2 statements are false).",
+        "Ann is telling the truth; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 2 statements are false).",
+        "Ann is lying; Ben is telling the truth; Carol is lying; Dan is lying (and exactly 2 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Ann is lying; Ben is telling the truth; Carol is lying; Dan is telling the truth (and exactly 2 statements are false)."
+      ],
+      "answer": "Ann is lying; Ben is lying; Carol is telling the truth; Dan is telling the truth (and exactly 2 statements are false).",
+      "solution": "Solution: Checking all 16 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 2 are false, the only consistent pattern is: Ann is lying; Ben is lying; Carol is telling the truth; Dan is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nH — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q10",
+      "sourceType": "TMUA",
+      "stem": "Truth-tellers & liars (5 speakers)\n\nAmy says: “exactly one of Eve and Ben is telling the truth”\nBen says: “exactly one of Amy and Cara is telling the truth”\nCara says: “Ben is telling the truth”\nDale says: “Eve is telling the truth”\nEve says: “Dale is telling the truth”\nExactly 1 of these statements is false. Who is telling the truth and who is lying?",
+      "options": [
+        "Amy is lying; Ben is lying; Cara is telling the truth; Dale is telling the truth; Eve is lying (and exactly 1 statements are false).",
+        "Amy is telling the truth; Ben is lying; Cara is telling the truth; Dale is telling the truth; Eve is lying (and exactly 1 statements are false).",
+        "Amy is lying; Ben is lying; Cara is telling the truth; Dale is telling the truth; Eve is telling the truth (and exactly 1 statements are false).",
+        "Amy is lying; Ben is lying; Cara is lying; Dale is lying; Eve is telling the truth (and exactly 1 statements are false).",
+        "Amy is telling the truth; Ben is telling the truth; Cara is lying; Dale is telling the truth; Eve is telling the truth (and exactly 1 statements are false).",
+        "Amy is lying; Ben is telling the truth; Cara is lying; Dale is lying; Eve is lying (and exactly 1 statements are false).",
+        "No unique assignment can be determined; more than one pattern fits.",
+        "Amy is lying; Ben is telling the truth; Cara is telling the truth; Dale is telling the truth; Eve is telling the truth (and exactly 1 statements are false)."
+      ],
+      "answer": "Amy is lying; Ben is telling the truth; Cara is telling the truth; Dale is telling the truth; Eve is telling the truth (and exactly 1 statements are false).",
+      "solution": "Solution: Checking all 32 truth-assignments against the rule that each person's statement must match their own truth-status and exactly 1 are false, the only consistent pattern is: Amy is lying; Ben is telling the truth; Cara is telling the truth; Dale is telling the truth; Eve is telling the truth.\nWhy the distractors fail\nA — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nB — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nC — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nD — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nE — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nF — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.\nG — This pattern either makes some statement contradict the speaker's truth-status, or gives the wrong number of false statements.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q11",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy says: “Dale is telling the truth only if Cara is telling the truth”\nBen says: “Eve is lying or Ben is telling the truth”\nCara says: “Dale is lying”\nDale * says: “exactly one of Dale and Cara is telling the truth”\nEve says: “at least one of Ben and Eve is telling the truth”\nConstraint: at least 2 of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Cara may be lying in some consistent cases but not in others.",
+        "Dale may be lying in some consistent cases but not in others.",
+        "Dale must be lying, regardless of which consistent case occurs.",
+        "Amy must be lying, regardless of which consistent case occurs.",
+        "Eve must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Amy may be telling the truth in some consistent cases but not in others.",
+        "Cara must be lying, regardless of which consistent case occurs."
+      ],
+      "answer": "Eve must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 3 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Eve, who is always truthful. Hence Eve must be telling the truth.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q12",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “Dale is lying”\nBen says: “Dale is lying or Ben is telling the truth”\nCara * says: “at least one of Eve and Cara is telling the truth”\nDale says: “Cara is telling the truth only if Ben is telling the truth”\nEve * says: “Dale is lying or Amy is telling the truth”\nConstraint: at least 2 of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Cara may be telling the truth in some consistent cases but not in others.",
+        "Eve must be lying, regardless of which consistent case occurs.",
+        "Dale must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Cara may be lying in some consistent cases but not in others.",
+        "Ben must be lying, regardless of which consistent case occurs.",
+        "Amy must be telling the truth, regardless of which consistent case occurs.",
+        "Cara must be lying, regardless of which consistent case occurs.",
+        "Eve may be telling the truth in some consistent cases but not in others."
+      ],
+      "answer": "Dale must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 8 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Dale, who is always truthful. Hence Dale must be telling the truth.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q13",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (4 speakers) *\n\nAnn says: “Carol and Ann are both telling the truth”\nBen * says: “Ben is lying or Dan is telling the truth”\nCarol * says: “Carol is lying”\nDan says: “Ben is lying or Dan is telling the truth”\nConstraint: at least 2 of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Carol must be telling the truth, regardless of which consistent case occurs.",
+        "Ann must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Ben may be lying in some consistent cases but not in others.",
+        "Dan must be lying, regardless of which consistent case occurs.",
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Dan may be lying in some consistent cases but not in others.",
+        "Ben may be telling the truth in some consistent cases but not in others.",
+        "Dan may be telling the truth in some consistent cases but not in others."
+      ],
+      "answer": "Ann must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 5 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Ann, who is always lying. Hence Ann must be lying.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q14",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “at least one of Ben and Amy is telling the truth”\nBen says: “Cara is lying or Dale is telling the truth”\nCara * says: “Eve is lying or Dale is telling the truth”\nDale says: “Ben is lying or Cara is telling the truth”\nEve * says: “at least one of Amy and Dale is lying”\nConstraint: an even number of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Ben must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Dale must be telling the truth, regardless of which consistent case occurs.",
+        "Dale may be telling the truth in some consistent cases but not in others.",
+        "Eve must be telling the truth, regardless of which consistent case occurs.",
+        "Eve may be telling the truth in some consistent cases but not in others.",
+        "Cara must be telling the truth, regardless of which consistent case occurs.",
+        "Cara may be lying in some consistent cases but not in others.",
+        "Amy must be telling the truth, regardless of which consistent case occurs."
+      ],
+      "answer": "Ben must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that an even number of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 4 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Ben, who is always truthful. Hence Ben must be telling the truth.\nWhy the distractors fail\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q15",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “at least one of Eve and Dale is lying”\nBen says: “Cara is lying or Ben is telling the truth”\nCara says: “exactly one of Cara and Amy is telling the truth”\nDale * says: “at least one of Cara and Dale is telling the truth”\nEve * says: “exactly one of Cara and Amy is telling the truth”\nConstraint: an even number of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Dale must be lying, regardless of which consistent case occurs.",
+        "Cara may be lying in some consistent cases but not in others.",
+        "Cara must be telling the truth, regardless of which consistent case occurs.",
+        "Amy must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Eve may be lying in some consistent cases but not in others.",
+        "Eve must be lying, regardless of which consistent case occurs.",
+        "Ben may be lying in some consistent cases but not in others."
+      ],
+      "answer": "Amy must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that an even number of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 6 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Amy, who is always lying. Hence Amy must be lying.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q16",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (4 speakers) *\n\nAnn says: “Dan is lying”\nBen says: “Carol and Ben are both telling the truth”\nCarol * says: “Dan is lying or Ben is telling the truth”\nDan says: “exactly one of Carol and Ann is telling the truth”\nConstraint: at least 2 of the statements are true. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Carol must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Ann may be lying in some consistent cases but not in others.",
+        "Ben may be lying in some consistent cases but not in others.",
+        "Ben must be lying, regardless of which consistent case occurs.",
+        "Dan must be telling the truth, regardless of which consistent case occurs.",
+        "Dan may be lying in some consistent cases but not in others.",
+        "Ann must be telling the truth, regardless of which consistent case occurs.",
+        "Dan may be telling the truth in some consistent cases but not in others."
+      ],
+      "answer": "Carol must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are true, and treating strict speakers as consistent and *-speakers as free, there are 4 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Carol, who is always truthful. Hence Carol must be telling the truth.\nWhy the distractors fail\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q17",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “exactly one of Ben and Eve is telling the truth”\nBen says: “Cara is telling the truth”\nCara * says: “Dale is lying”\nDale says: “Cara is lying or Amy is telling the truth”\nEve says: “at least one of Cara and Amy is telling the truth”\nConstraint: at least 2 of the statements are true. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Dale must be lying, regardless of which consistent case occurs.",
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Amy may be lying in some consistent cases but not in others.",
+        "Cara may be telling the truth in some consistent cases but not in others.",
+        "Cara must be lying, regardless of which consistent case occurs.",
+        "Amy must be telling the truth, regardless of which consistent case occurs.",
+        "Eve must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Ben may be telling the truth in some consistent cases but not in others."
+      ],
+      "answer": "Eve must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are true, and treating strict speakers as consistent and *-speakers as free, there are 3 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Eve, who is always truthful. Hence Eve must be telling the truth.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q18",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (4 speakers) *\n\nAnn * says: “Ann is lying or Dan is telling the truth”\nBen says: “Ben and Dan are both telling the truth”\nCarol says: “Carol is telling the truth”\nDan * says: “Ann is lying or Carol is telling the truth”\nConstraint: exactly 1 of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Carol may be lying in some consistent cases but not in others.",
+        "Ann must be telling the truth, regardless of which consistent case occurs.",
+        "Ben may be telling the truth in some consistent cases but not in others.",
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Carol must be telling the truth, regardless of which consistent case occurs.",
+        "Ben may be lying in some consistent cases but not in others.",
+        "Dan must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Carol may be telling the truth in some consistent cases but not in others."
+      ],
+      "answer": "Dan must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that exactly 1 of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 3 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Dan, who is always truthful. Hence Dan must be telling the truth.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q19",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “Dale and Ben are both telling the truth”\nBen says: “exactly one of Cara and Dale is telling the truth”\nCara says: “at least one of Dale and Ben is telling the truth”\nDale says: “Dale and Ben are both telling the truth”\nEve * says: “Cara is lying”\nConstraint: an odd number of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Ben must be telling the truth, regardless of which consistent case occurs.",
+        "Amy may be telling the truth in some consistent cases but not in others.",
+        "Dale must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+        "Ben may be lying in some consistent cases but not in others.",
+        "Cara must be telling the truth, regardless of which consistent case occurs.",
+        "Amy must be telling the truth, regardless of which consistent case occurs.",
+        "Eve may be lying in some consistent cases but not in others.",
+        "Eve must be telling the truth, regardless of which consistent case occurs."
+      ],
+      "answer": "Dale must be lying, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that an odd number of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 4 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Dale, who is always lying. Hence Dale must be lying.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.\nH — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Logic",
+      "topicIds": [
+        "Logic"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-DIALOGUE-LOGIC-Q20",
+      "sourceType": "TMUA",
+      "stem": "Case-analysis puzzle (5 speakers) *\n\nAmy * says: “exactly one of Eve and Cara is telling the truth”\nBen says: “exactly one of Cara and Dale is telling the truth”\nCara says: “Dale is telling the truth only if Amy is telling the truth”\nDale * says: “Ben is telling the truth”\nEve says: “exactly one of Ben and Cara is telling the truth”\nConstraint: at least 2 of the statements are false. (Speakers marked * are not bound to be truthful or lying — each may tell the truth or lie.) Which of the following must be true?",
+      "options": [
+        "Dale must be lying, regardless of which consistent case occurs.",
+        "Cara may be telling the truth in some consistent cases but not in others.",
+        "Amy may be lying in some consistent cases but not in others.",
+        "Cara must be lying, regardless of which consistent case occurs.",
+        "Amy must be lying, regardless of which consistent case occurs.",
+        "Eve may be telling the truth in some consistent cases but not in others.",
+        "Eve must be lying, regardless of which consistent case occurs.",
+        "Ben must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases."
+      ],
+      "answer": "Ben must be telling the truth, regardless of which truth-assignments are actually realised among the consistent cases.",
+      "solution": "Solution: With the constraint that at least 2 of the statements are false, and treating strict speakers as consistent and *-speakers as free, there are 3 consistent truth-assignments. Across all of them, the only speaker whose status never changes is Ben, who is always truthful. Hence Ben must be telling the truth.\nWhy the distractors fail\nA — This 'must' claim fails in at least one consistent case, so it is not forced.\nB — This 'must' claim fails in at least one consistent case, so it is not forced.\nC — This 'must' claim fails in at least one consistent case, so it is not forced.\nD — This 'must' claim fails in at least one consistent case, so it is not forced.\nE — This 'must' claim fails in at least one consistent case, so it is not forced.\nF — This 'must' claim fails in at least one consistent case, so it is not forced.\nG — This 'must' claim fails in at least one consistent case, so it is not forced.",
+      "srcNote": "TMUA P1 逻辑推理专练"
+    }
+  ]
+}
