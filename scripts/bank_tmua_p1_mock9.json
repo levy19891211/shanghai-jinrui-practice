@@ -268,52 +268,52 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Exponentials and Logarithms",
+      "topic": "Quadratics",
       "topicIds": [
-        "M7"
+        "M4"
       ],
       "difficulty": 4,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-MATQ47",
+      "source": "TMUA-P1-MOCK9-MATQ14",
       "sourceType": "TMUA",
-      "stem": "The number of positive values $x$ satisfying\n$$x = 8^{\\log_2 x} - 9^{\\log_3 x} - 4^{\\log_2 x} + \\log_{0.5} 0.25$$\nis",
+      "stem": "Let $P(x)=1+3x+5x^2+7x^3+\\dots+99x^{49}$, i.e. the polynomial whose $k$-th term (for $k=1,\\dots,50$) is $(2k-1)x^{k-1}$. When $P(x)$ is divided by $x^2-1$, the remainder is $ax+b$ for some constants $a,b$. What is $b$?",
       "options": [
-        "0",
-        "1",
-        "2",
-        "3",
-        "4"
+        "1200",
+        "1225",
+        "1250",
+        "1275",
+        "1300"
       ],
-      "answer": "2",
-      "solution": "Use $a^{\\log_a x}=x$ and $b^{\\log_a x}=x^{\\log_a b}$: $8^{\\log_2 x}=x^3$, $9^{\\log_3 x}=x^2$, $4^{\\log_2 x}=x^2$.\nAlso $\\log_{0.5}0.25 = \\log_{1/2}(1/4)=2$. The equation becomes $x = x^3-x^2-x^2+2 = x^3-2x^2+2$.\nSo $x^3-2x^2-x+2=0$. Factor by grouping: $x^2(x-2)-1(x-2)=(x-2)(x^2-1)=(x-2)(x-1)(x+1)=0$.\nRoots $x=2,1,-1$; positive roots are $1,2$: **2 values**.",
+      "answer": "1225",
+      "solution": "By the remainder theorem for division by $x^2-1$, the remainder $R(x)=ax+b$ satisfies $R(1)=P(1)$ and $R(-1)=P(-1)$.\n$P(1)=1+3+5+\\dots+99=$ sum of the first 50 odd numbers $=50^2=2500$.\n$P(-1)=1-3+5-7+\\dots+97-99$; pairing consecutive terms gives 25 pairs each equal to $-2$, so $P(-1)=-50$.\nThus $a+b=2500$ and $-a+b=-50$. Adding the two equations: $2b=2450\\implies b=1225$.",
       "distractors_rationale": {
-        "0": "Sign error in simplification (e.g. drops the +2).",
-        "1": "Counts only x=2, missing x=1.",
-        "3": "Counts all three roots including the negative one.",
-        "4": "Double-counts or mis-factors."
+        "1200": "Uses $P(-1)=-100$ (wrong pairing) in $(P(1)+P(-1))/2$.",
+        "1250": "Takes half of $P(1)$ only, ignoring $P(-1)$.",
+        "1275": "This is $a$, the coefficient of $x$, not the constant term $b$.",
+        "1300": "An arithmetic/sign slip."
       },
       "source_reference": {
         "paper_id": "MAT-2007-2023",
         "exam": "MAT",
         "paper": "MAT",
         "year": 2007,
-        "question_no": 47,
-        "original_stem_excerpt": "The number of positive values $x$ which satisfy the equation $x = 8^{\\log_2 x} - 9^{\\log_3 x} - 4^{\\log_2 x} + \\log_{0.5} 0.25$ is",
+        "question_no": 14,
+        "original_stem_excerpt": "When $1 + 3x + 5x^2 + 7x^3 + \\dots + 99x^{49}$ is divided by $x - 1$ the remainder is",
         "original_topic_codes": [
-          "Exponentials and Logarithms"
+          "Quadratics"
         ]
       },
       "adaptation_report": {
-        "summary": "Kept MAT Q47's log-exponent simplification chain; the core method (a^{log_a x}=x and base-change) is preserved verbatim.",
-        "technique_added": "Chain+computation: kept the simplification core, the added difficulty is the multi-step factorisation and the positive-root filter.",
+        "summary": "Changed MAT Q14's remainder on division by $(x-1)$ into a remainder on division by $(x^2-1)$, forcing evaluation at both $x=1$ and $x=-1$ and solving for the constant term $b$.",
+        "technique_added": "Chain+computation: kept the arithmetic-coefficient polynomial, added the $x^2-1$ divisor (two-point remainder theorem) and a 2x2 solve for $a,b$.",
         "knowledge_points_added": [
-          "M7"
+          "M4"
         ],
-        "difficulty_shift": "Reference identical core; difficulty maintained via the 3-term factorisation.",
+        "difficulty_shift": "Reference asked a single value $P(1)$; adaptation requires both $P(1)$ and $P(-1)$ and isolates $b$.",
         "stem_diff": [
-          "题干改写：Kept MAT Q47's log-exponent simplification chain; the core method (a^{log_a x}=x and base-change) is preserved verbatim.",
-          "结构加法：Chain+computation: kept the simplification core, the added difficulty is the multi-step factorisation and the positive-root filter."
+          "题干把'除以 x-1 的余数'改为'除以 x^2-1 的余式常数项 b'，需分别在 x=1 与 x=-1 求值并解线性方程组。",
+          "结构加法：Chain+computation，保留等差系数多项式，新增 x^2-1 除法的两点余式定理与联立求解。"
         ]
       },
       "scope_check": {
@@ -442,52 +442,110 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Sequences and Series",
+      "topic": "Differentiation",
       "topicIds": [
-        "M5"
+        "MM7"
       ],
       "difficulty": 4,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-MATQ37",
+      "source": "TMUA-P1-MOCK9-MATQ62",
       "sourceType": "TMUA",
-      "stem": "A function $f$ on positive integers satisfies $f(1)=1$ and\n$$f(2n)=2f(n),\\qquad f(2n+1)=4f(n)$$\nfor all $n\\ge 1$. How many positive integers $n\\le 31$ satisfy $f(n)=16$?",
+      "stem": "The functions $f,g,h$ satisfy $f'(x)=g(2x)$, $g'(x)=h(x^2)$, and $h(t)=3t$ for all real $t$. What is $f''(1)$?",
       "options": [
+        "12",
+        "18",
+        "24",
+        "36",
+        "48"
+      ],
+      "answer": "24",
+      "solution": "Differentiate $f'(x)=g(2x)$ by the chain rule: $f''(x)=g'(2x)\\cdot 2 = 2\\,g'(2x)$.\nNow $g'(u)=h(u^2)$, so $g'(2x)=h((2x)^2)=h(4x^2)=3\\cdot 4x^2=12x^2$.\nHence $f''(x)=2\\cdot 12x^2=24x^2$, and $f''(1)=24$.",
+      "distractors_rationale": {
+        "12": "Forgets to multiply by $2$ from the chain rule on $g(2x)$.",
+        "18": "Uses $h(2x)$ instead of $h((2x)^2)$ for the inner derivative.",
+        "36": "Doubles $18$ from a wrong inner derivative.",
+        "48": "Applies an extra spurious factor of $2$."
+      },
+      "source_reference": {
+        "paper_id": "MAT-2007-2023",
+        "exam": "MAT",
+        "paper": "MAT",
+        "year": 2007,
+        "question_no": 62,
+        "original_stem_excerpt": "The functions $f,g$ and $h$ are related by $f'(x) = g(x+1),\\quad g'(x) = h(x-1)$. It follows that $f''(2x)$ equals",
+        "original_topic_codes": [
+          "Differentiation"
+        ]
+      },
+      "adaptation_report": {
+        "summary": "Generalised MAT Q62's derivative-composition chain to $f'(x)=g(2x)$, $g'(x)=h(x^2)$ with an explicit $h(t)=3t$, then evaluated the numeric $f''(1)$.",
+        "technique_added": "Abstract+chain: kept the $f$-$g$-$h$ derivative linkage, added inner-function composition ($2x$ and $x^2$) and a concrete $h$.",
+        "knowledge_points_added": [
+          "MM7"
+        ],
+        "difficulty_shift": "Reference gave a symbolic $f''(2x)$; adaptation pins $h$ explicitly and asks for a numeric $f''(1)$, requiring careful chain-rule factors.",
+        "stem_diff": [
+          "题干把 f'(x)=g(x+1),g'(x)=h(x-1) 改为 f'(x)=g(2x),g'(x)=h(x^2) 并给定 h(t)=3t，求数值 f''(1)。",
+          "结构加法：Abstract+chain，保留 f-g-h 导数链，新增内层 2x 与 x^2 复合及具体 h 函数。"
+        ]
+      },
+      "scope_check": {
+        "topics_in_whitelist": true,
+        "hits_blacklist": false,
+        "trig_unit_ok": true,
+        "logic_only_in_tmua_p2": true
+      }
+    },
+    {
+      "subject": "数学",
+      "paper": "P1",
+      "topic": "Coordinate Geometry",
+      "topicIds": [
+        "M3"
+      ],
+      "difficulty": 4,
+      "type": "SINGLE_CHOICE",
+      "status": "PUBLISHED",
+      "source": "TMUA-P1-MOCK9-MATQ4",
+      "sourceType": "TMUA",
+      "stem": "The circle $C_1$ has equation $(x-5)^2+(y-4)^2=4$ and the circle $C_2$ has equation $(x-1)^2+(y-1)^2=1$. What is the minimum possible distance between a point on $C_1$ and a point on $C_2$?",
+      "options": [
+        "0",
+        "1",
         "2",
         "3",
-        "4",
-        "5",
-        "6"
+        "4"
       ],
-      "answer": "5",
-      "solution": "$f(n)$ is determined by the binary expansion of $n$. Reading bits after the leading 1, each '0' (step 2n) multiplies by 2, each '1' (step 2n+1) multiplies by 4.\nWe need $f(n)=16=2^4$. Start $f(1)=1$. For $n$ with $a$ subsequent zeros and $b$ subsequent ones, $f(n)=2^{a}\\cdot4^{b}=2^{a+2b}=2^4$, so $a+2b=4$.\nNon-negative solutions: (a,b)=(4,0),(2,1),(0,2). Number of bit-strings = $\\binom{a+b}{a}$:\n(4,0): $\\binom{4}{4}=1$; (2,1): $\\binom{3}{2}=3$; (0,2): $\\binom{2}{0}=1$. Total $=1+3+1=5$ strings.\nBound $n\\le31=2^5-1$ allows up to 5 bits; all five strings have length $\\le5$ (largest $10000_2=16$), so all are valid. **5 values**.",
+      "answer": "2",
+      "solution": "$C_1$ has centre $O_1=(5,4)$ and radius $r_1=2$; $C_2$ has centre $O_2=(1,1)$ and radius $r_2=1$.\nDistance between centres $d=\\sqrt{(5-1)^2+(4-1)^2}=\\sqrt{16+9}=5$.\nSince $d=5>r_1+r_2=3$, the circles are disjoint and external to each other. The minimum distance between a point on $C_1$ and a point on $C_2$ is the gap along the line of centres: $d-r_1-r_2=5-2-1=2$.",
       "distractors_rationale": {
-        "2": "Counts only the two extreme patterns.",
-        "3": "Counts only the (2,1) family.",
-        "4": "Off-by-one, misses one pattern.",
-        "6": "Double counts or invents an extra pattern."
+        "0": "Assumes the circles intersect or touch.",
+        "1": "Subtracts only one radius from the centre distance.",
+        "3": "Subtracts only $r_1$ (or confuses with a tangent-length idea).",
+        "4": "Forgets to subtract both radii."
       },
       "source_reference": {
         "paper_id": "MAT-2007-2023",
         "exam": "MAT",
         "paper": "MAT",
         "year": 2007,
-        "question_no": 37,
-        "original_stem_excerpt": "The function $f$, defined for whole positive numbers, satisfies $f(1) = 1$ and also the rules $f(2n) = 2f(n),f(2n+1) = 4f(n)$",
+        "question_no": 4,
+        "original_stem_excerpt": "The point on the circle $(x - 5)^2 + (y - 4)^2 = 4$ which is closest to the circle $(x - 1)^2 + (y - 1)^2 = 1$ is",
         "original_topic_codes": [
-          "Algebra and Functions"
+          "Coordinate Geometry"
         ]
       },
       "adaptation_report": {
-        "summary": "Kept MAT Q37's binary-recurrence core; added an upper bound n≤31 and asked for the count, forcing bit-pattern enumeration.",
-        "technique_added": "Abstract+chain: kept the recurrence, added binary-expansion interpretation and a bounded enumeration (a+2b=4).",
+        "summary": "Turned MAT Q4's 'closest point on one circle to the other circle' into the minimum distance between the two circles (gap along the line of centres).",
+        "technique_added": "Chain+computation: kept the two-circle setup, added centre-distance vs sum-of-radii comparison and the external-gap formula.",
         "knowledge_points_added": [
-          "M5"
+          "M3"
         ],
-        "difficulty_shift": "Reference asked unbounded count; adaptation adds a finite bound and pattern counting.",
+        "difficulty_shift": "Reference asked for a coordinate point; adaptation asks for the minimal separation, testing the $d-r_1-r_2$ reasoning.",
         "stem_diff": [
-          "题干改写：Kept MAT Q37's binary-recurrence core; added an upper bound n≤31 and asked for the count, forcing bit-pattern enumeration.",
-          "结构加法：Abstract+chain: kept the recurrence, added binary-expansion interpretation and a bounded enumeration (a+2b=4)."
+          "题干把'求一圆上离另一圆最近的点'改为'求两圆上点之间的最小距离'。",
+          "结构加法：Chain+computation，保留两圆设定，新增圆心距与半径和比较及外离间隙公式。"
         ]
       },
       "scope_check": {
@@ -500,111 +558,54 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Numbers and Sets",
+      "topic": "Integration",
       "topicIds": [
-        "M1"
+        "M7",
+        "MM7"
       ],
       "difficulty": 4,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-MATQ49",
+      "source": "TMUA-P1-MOCK9-MATQ21",
       "sourceType": "TMUA",
-      "stem": "A function $f$ on positive integers satisfies $f(1)=1$, $f(2n)=f(n)$, $f(2n+1)=(f(n))^2-2$.\nHow many of the values $f(1), f(2), \\dots, f(16)$ are equal to $-1$?",
+      "stem": "For a real parameter $a$, let $I(a)=\\displaystyle\\int_0^1 (x^3-ax)^2\\,\\mathrm{d}x$. For which value of $a$ is $I(a)$ as small as possible?",
       "options": [
-        "9",
-        "10",
-        "11",
-        "12",
-        "13"
+        "$\\frac13$",
+        "$\\frac25$",
+        "$\\frac35$",
+        "$\\frac12$",
+        "$\\frac34$"
       ],
-      "answer": "11",
-      "solution": "Build the tree to $n=16$ (powers of two bound the recursion):\nf(1)=1.\nf(2)=f(1)=1; f(3)=f(1)²-2=-1.\nf(4)=f(2)=1; f(5)=f(2)²-2=-1; f(6)=f(3)=-1; f(7)=f(3)²-2=(-1)²-2=-1.\nf(8)=f(4)=1; f(9)=f(4)²-2=-1; f(10)=f(5)=-1; f(11)=f(5)²-2=-1; f(12)=f(6)=-1; f(13)=f(6)²-2=-1; f(14)=f(7)=-1; f(15)=f(7)²-2=-1.\nf(16)=f(8)=1.\nValues equal to −1 occur at n = 3,5,6,7,9,10,11,12,13,14,15 — that is **11** of the 16 terms. (The remaining five are 1.)",
+      "answer": "$\\frac35$",
+      "solution": "Expand: $(x^3-ax)^2=x^6-2ax^4+a^2x^2$, so\n$I(a)=\\int_0^1 x^6\\,\\mathrm{d}x-2a\\int_0^1 x^4\\,\\mathrm{d}x+a^2\\int_0^1 x^2\\,\\mathrm{d}x=\\frac17-\\frac{2a}{5}+\\frac{a^2}{3}$.\nThis is a quadratic in $a$ with positive leading coefficient, so its minimum occurs where $\\frac{\\mathrm{d}I}{\\mathrm{d}a}=0$:\n$\\frac{\\mathrm{d}I}{\\mathrm{d}a}=-\\frac25+\\frac{2a}{3}=0\\implies \\frac{2a}{3}=\\frac25\\implies a=\\frac35$.",
       "distractors_rationale": {
-        "9": "Drops two of the −1 terms in the n=9..15 block.",
-        "10": "Misses one −1 in the deeper levels.",
-        "12": "Double-counts or mislabels an f(n)=1 term as −1.",
-        "13": "Off by two."
+        "$\\frac13$": "Sets the derivative of the unexpanded form incorrectly (e.g. treats it like the $x^2-a$ case).",
+        "$\\frac25$": "Uses the coefficient of $a$ as the answer without dividing by the $a^2$ coefficient.",
+        "$\\frac12$": "A rough midpoint guess.",
+        "$\\frac34$": "An off-by-arithmetic slip."
       },
       "source_reference": {
         "paper_id": "MAT-2007-2023",
         "exam": "MAT",
         "paper": "MAT",
         "year": 2007,
-        "question_no": 49,
-        "original_stem_excerpt": "The function $f(n)$ is defined for positive integers $n$ according to the rules $f(1)=1, f(2n)=f(n), f(2n+1)=(f(n))^2-2$. The value of $f(1)+f(2)+\\dots+f(100)$ is",
+        "question_no": 21,
+        "original_stem_excerpt": "The smallest value of $I(a) = \\int_0^1 (x^2 - a)^2 \\, dx,$ as $a$ varies, is",
         "original_topic_codes": [
-          "Numbers and Sets"
+          "Integration"
         ]
       },
       "adaptation_report": {
-        "summary": "Kept MAT Q49's squaring recurrence but replaced the open sum-to-100 with a bounded occurrence-count over n=1..16, forcing full structural tracing of the recursion tree.",
-        "technique_added": "Chain+abstraction: kept the recurrence, added a value-occurrence count (not a mechanical sum) so the student must analyse the self-similar tree rather than just add.",
+        "summary": "Changed MAT Q21's 'smallest value of I(a)' into 'the value of a minimising I(a)', with a different integrand $(x^3-ax)^2$.",
+        "technique_added": "Chain+computation: kept the integral-as-function-of-a idea, added expansion of $(x^3-ax)^2$ and differentiation to find the minimiser.",
         "knowledge_points_added": [
-          "M1"
+          "M7",
+          "MM7"
         ],
-        "difficulty_shift": "Reference asked for a sum to 100 (mechanical once pattern seen); adaptation asks how many terms equal −1, demanding the actual tree structure.",
+        "difficulty_shift": "Reference asked for the minimum value $4/45$; adaptation asks for the minimising parameter $a$, requiring expansion and $\\mathrm{d}I/\\mathrm{d}a=0$.",
         "stem_diff": [
-          "题干把 '求 f(1)+...+f(100) 的和' 改为 '在 n=1..16 中统计等于 -1 的项数'，迫使追踪递归树结构而非机械求和。",
-          "上界由 100 收紧为 16（2 的幂）以暴露自相似边界；保留原递推式 f(2n+1)=(f(n))²-2。"
-        ]
-      },
-      "scope_check": {
-        "topics_in_whitelist": true,
-        "hits_blacklist": false,
-        "trig_unit_ok": true,
-        "logic_only_in_tmua_p2": true
-      }
-    },
-    {
-      "subject": "数学",
-      "paper": "P1",
-      "topic": "Numbers and Sets",
-      "topicIds": [
-        "M1"
-      ],
-      "difficulty": 4,
-      "type": "SINGLE_CHOICE",
-      "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-MATQ68",
-      "sourceType": "TMUA",
-      "stem": "Define $F(1)=1$, $F(2)=1$, $F(3)=-1$ and for $k\\ge 2$:\n$$F(2k)=F(k),\\qquad F(2k+1)=-F(k).$$\nHow many of $F(1), F(2), \\dots, F(31)$ are equal to $1$?",
-      "options": [
-        "14",
-        "15",
-        "16",
-        "17",
-        "18"
-      ],
-      "answer": "16",
-      "solution": "The rule $F(2k)=F(k),\\;F(2k+1)=-F(k)$ extends to $k\\ge1$ (check: $F(2)=F(1)=1$, $F(3)=-F(1)=-1$, matching the seeds).\nEnumerate by level (powers of two bound it):\nn=1,2 → 1,1; n=3 → −1.\nn=4,5 → F(2),−F(2) = 1,−1; n=6,7 → F(3),−F(3) = −1,1.\nn=8..15 → F(4..7), −F(4..7) = 1,−1,−1,1, 1,−1,−1,1.\nn=16..31 → F(8..15), −F(8..15) = 1,−1,−1,1,1,−1,−1,1, −1,1,1,−1,1,−1,−1,1.\nCounting the 1's: n=1,2,4,7,8,11,13,14,16,19,21,22,25,26,28,31 — that is **16** terms.",
-      "distractors_rationale": {
-        "14": "Drops two 1's in the n=16..31 block.",
-        "15": "Misses one 1 in the deep levels.",
-        "17": "Mislabels an F(n)=−1 term as 1.",
-        "18": "Off by two."
-      },
-      "source_reference": {
-        "paper_id": "MAT-2007-2023",
-        "exam": "MAT",
-        "paper": "MAT",
-        "year": 2007,
-        "question_no": 68,
-        "original_stem_excerpt": "The function $F(k)$ is defined for positive integers by $F(1) = 1,F(2) = 1,F(3) = -1$ and by the identities $F(2k) = F(k), F(2k+1) = F(k)$ for $k \\ge 2$. The sum $F(1)+F(2)+\\dots+F(100)$ equals",
-        "original_topic_codes": [
-          "Numbers and Sets"
-        ]
-      },
-      "adaptation_report": {
-        "summary": "Kept MAT Q68's dyadic definition but flipped the odd-branch sign to -F(k), and replaced the open sum-to-100 with a bounded occurrence-count over n=1..31.",
-        "technique_added": "Abstract+chain: kept the dyadic recurrence, added a sign flip (so values become signed) plus a value-occurrence count that requires full tree analysis, not a telescoping shortcut.",
-        "knowledge_points_added": [
-          "M1"
-        ],
-        "difficulty_shift": "Reference summed a non-cancelling sequence; adaptation's sign flip destroys the trivial sum, forcing structural counting.",
-        "stem_diff": [
-          "题干把原 '求 F(1)+...+F(100) 的和' 改为 '在 n=1..31 中统计等于 1 的项数'。",
-          "奇支规则由 F(2k+1)=F(k) 改为 F(2k+1)=-F(k)（符号翻转），破坏原题的求和捷径，迫使分析整棵递归树。",
-          "上界由 100 收紧为 31（接近 2 的幂），暴露自相似结构。"
+          "题干把'求 I(a) 的最小值'改为'求使 I(a) 最小的 a'，并把被积函数换成 (x^3-ax)^2。",
+          "结构加法：Chain+computation，保留含参积分思想，新增 (x^3-ax)^2 展开与对 a 求导求极小点。"
         ]
       },
       "scope_check": {
@@ -702,7 +703,7 @@
         "6": "Over-counts."
       },
       "source_reference": {
-        "paper_id": "MAT-2007-2023",
+        "paper_id": "TMUA-2016-P1-Q4",
         "exam": "TMUA",
         "paper": "P1",
         "year": 2016,
@@ -819,7 +820,7 @@
         "-2": "Sign error."
       },
       "source_reference": {
-        "paper_id": "MAT-2007-2023",
+        "paper_id": "TMUA-2016-P1-Q6",
         "exam": "TMUA",
         "paper": "P1",
         "year": 2016,
