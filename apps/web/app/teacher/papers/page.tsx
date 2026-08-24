@@ -18,7 +18,7 @@ interface Facets {
 
 const SUBJECT_OPTIONS = ["数学", "物理", "化学", "生物"];
 // 手动组卷可选的题源(TMUA/ESAT/NSAA...);可多选,不选 = 全部题源
-const SOURCE_TYPE_OPTIONS = ["TMUA", "ESAT", "NSAA", "SMC"];
+const SOURCE_TYPE_OPTIONS = ["TMUA", "ESAT"];
 const DIFF_LABEL: Record<number, string> = { 1: "入门", 2: "基础", 3: "中等", 4: "较难", 5: "困难" };
 
 const PAPER_STATUS_LABEL: Record<string, string> = {
@@ -85,6 +85,8 @@ export default function TeacherPapersPage() {
   const [subjectFilter, setSubjectFilter] = useState("");
   // 套题类型筛选(空 = 全部):OFFICIAL 官方原版套题 / CUSTOM 组卷套题(手动组卷或自编导入)
   const [kindFilter, setKindFilter] = useState("");
+  // 题源筛选(点选多选,空 = 全部):TMUA / ESAT
+  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
   // 列表排序:createdDesc(最新在前,默认) / nameAsc(名称字母·数字升序) / nameDesc(降序)
   const [sortBy, setSortBy] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
 
@@ -159,6 +161,10 @@ export default function TeacherPapersPage() {
     if (filter === "ALL") arr = list;
     else if (filter === "AUTO_SET") arr = list.filter((p) => p.origin === "AUTO_SET");
     else arr = list.filter((p) => (p.status ?? "READY") === filter);
+    // 题源点选筛选(多选,空 = 全部):TMUA / ESAT
+    if (sourceFilter.length > 0) {
+      arr = arr.filter((p) => p.sourceType != null && sourceFilter.includes(p.sourceType));
+    }
     if (sortBy === "nameAsc" || sortBy === "nameDesc") {
       const dir = sortBy === "nameAsc" ? 1 : -1;
       // localeCompare + numeric:true 让 "Paper 2" 排在 "Paper 10" 前,按字母/数字自然序
@@ -166,7 +172,7 @@ export default function TeacherPapersPage() {
     }
     // createdDesc 为默认(后端已按创建时间倒序返回,这里保持原序)
     return arr;
-  }, [list, filter, sortBy]);
+  }, [list, filter, sortBy, sourceFilter]);
 
   const counts = useMemo(() => {
     const c = { ALL: list.length, READY: 0, DRAFT: 0, ARCHIVED: 0, AUTO_SET: 0 };
@@ -649,6 +655,27 @@ export default function TeacherPapersPage() {
             {t.l}
           </button>
         ))}
+        {/* 题源筛选:点选多选,TMUA / ESAT,空 = 全部 */}
+        <span className="mx-1 self-center text-xs text-slate-300">|</span>
+        {SOURCE_TYPE_OPTIONS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setSourceFilter((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))}
+            className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+              sourceFilter.includes(t) ? "bg-violet-600 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+        {sourceFilter.length > 0 && (
+          <button
+            onClick={() => setSourceFilter([])}
+            className="ml-1 rounded-lg px-2.5 py-1.5 text-xs text-indigo-600 hover:underline"
+          >
+            清空({sourceFilter.length})
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
