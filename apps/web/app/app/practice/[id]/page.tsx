@@ -64,6 +64,10 @@ export default function PracticePage() {
   const timeMapRef = useRef<Record<string, number>>({});
   const currentQidRef = useRef<string | null>(null);
   const answersRef = useRef<Record<string, string>>({});
+  // 暂停状态标记:页面隐藏/卸载期间为 true,回到前台时由 resumeNow 复位。
+  const pausedRef = useRef(false);
+  // 挂载时刻:区分开发模式 StrictMode 双挂载与真实卸载,避免误触发暂停上报。
+  const mountedAtRef = useRef(Date.now());
   // 手写批注层(半透明叠在题目上方;浏览模式下可正常答题/切题)
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchInteractive, setScratchInteractive] = useState(false);
@@ -72,6 +76,34 @@ export default function PracticePage() {
   const [favBusy, setFavBusy] = useState<string | null>(null);
 
   const isExam = !!deadline;
+  // 把 isExam 同步到 ref,供卸载副作用读取最新值(卸载时闭包可能捕获旧值)。
+  const isExamRef = useRef(false);
+  isExamRef.current = isExam;
+
+  // 向服务端上报暂停/恢复(keepalive 保证页面关闭时也能发出):
+  // 暂停 = 清空绝对截止时间、仅留剩余秒数(真冻结);恢复 = 重建绝对截止时间为 now + 剩余(离线时长不计入)。
+  const reportPause = (rem: number) => {
+    const token = (window.localStorage.getItem("wb_token") || "").trim();
+    try {
+      fetch(`/api/sessions/${id}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ remaining: rem }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  };
+  const reportResume = (rem: number) => {
+    const token = (window.localStorage.getItem("wb_token") || "").trim();
+    try {
+      fetch(`/api/sessions/${id}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ remaining: rem }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  };
 
   // 初始化:读缓存题目;并向后端确认会话信息(时限/是否已提交)
   useEffect(() => {
@@ -110,10 +142,18 @@ export default function PracticePage() {
           return;
         }
         if (d.deadlineAt) {
-          // 考试:优先用服务端持久化的截止时间(含中途暂停补偿),使续做时计时从剩余时间起算
+          // 考试进行中:用服务端持久化的绝对截止时间(含中途暂停后恢复的绝对时刻)
           const dl = new Date(d.deadlineAt).getTime();
           setDeadline(dl);
           setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
+        } else if (d.pausedRemaining != null) {
+          // 中途退出过(暂停):服务端 deadlineAt 已清空,仅保留剩余秒数。
+          // 按 now + pausedRemaining 重建绝对截止时间,使续做时从剩余时间起算,
+          // 退出/离线的时长不计入考试。同时通知后端恢复(把绝对截止时间重新写回)。
+          const dl = Date.now() + d.pausedRemaining * 1000;
+          setDeadline(dl);
+          setRemaining(d.pausedRemaining);
+          reportResume(d.pausedRemaining);
         } else if (d.durationMin && d.startedAt) {
           const dl = new Date(d.startedAt).getTime() + d.durationMin * 60000;
           setDeadline(dl);
@@ -222,6 +262,8 @@ export default function PracticePage() {
     if (deadline === null) return;
     let t: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
+      // 已暂停(页面隐藏/卸载):停止本地倒计时,避免后台误触发自动交卷;恢复后续做正常计时。
+      if (pausedRef.current) return;
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       remainingRef.current = left;
       setRemaining(left);
@@ -235,38 +277,33 @@ export default function PracticePage() {
     return () => { if (t) clearTimeout(t); };
   }, [deadline, detail, result, submit]);
 
-  // 考试中途退出 → 暂停计时:页面被隐藏(切后台/关标签)或卸载时,用 keepalive 上报剩余秒数,
-  // 服务端将 deadlineAt 改写为 now + 剩余,续做时从剩余时间起算。keepalive 保证请求在页面关闭时仍能发出。
+  // 考试中途退出/回到前台 → 暂停或恢复计时:
+  // - 页面被隐藏(切后台/关标签)→ 暂停(真冻结:上报剩余秒数,服务端清空 deadlineAt)。
+  // - 页面回到前台 → 恢复(按 now + 剩余重建绝对截止时间,离线时长不计入)。
+  // 本地倒计时在已暂停期间停止(见上方 countdown effect 的 pausedRef 守卫),避免后台误触发自动交卷。
   useEffect(() => {
     if (!isExam) return;
     const pauseNow = () => {
       if (submittedRef.current || detail?.submittedAt || result) return;
       const rem = remainingRef.current;
       if (rem == null || rem <= 0) return;
-      // 与服务端 /pause 改写 deadlineAt 保持一致:把本地 deadline 也延后 remaining,
-      // 否则“服务端已延长、本地 deadline 仍旧”会让 expired(剩余<=0)提前为真,
-      // 表现为“倒计时还在走却点不了选项”。
-      setDeadline(Date.now() + rem * 1000);
+      pausedRef.current = true;
+      reportPause(rem);
+    };
+    const resumeNow = () => {
+      if (submittedRef.current || detail?.submittedAt || result) return;
+      if (!pausedRef.current) return;
+      const rem = remainingRef.current;
+      if (rem == null || rem <= 0) return;
+      pausedRef.current = false;
+      const dl = Date.now() + rem * 1000;
+      setDeadline(dl);
       setRemaining(rem);
-      const token = (window.localStorage.getItem("wb_token") || "").trim();
-      try {
-        fetch(`/api/sessions/${id}/pause`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ remaining: rem }),
-          keepalive: true,
-        }).catch(() => {});
-      } catch {
-        /* ignore */
-      }
+      reportResume(rem);
     };
     const onVis = () => {
-      if (document.hidden) {
-        pauseNow();
-      } else if (deadline !== null) {
-        // 从后台切回:立即按 deadline 重新对齐剩余秒数(修正节流导致的短暂滞后)
-        setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-      }
+      if (document.hidden) pauseNow();
+      else resumeNow();
     };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", pauseNow);
@@ -274,7 +311,21 @@ export default function PracticePage() {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", pauseNow);
     };
-  }, [isExam, id, detail, result, deadline]);
+  }, [isExam, id, detail, result]);
+
+  // SPA 路由跳走(如浏览器后退/点其它链接离开本页)时组件卸载,但不触发 pagehide/visibilitychange,
+  // 故单独用卸载副作用兜底:卸载时若仍在考试中则上报暂停,避免退出期间计时继续走。
+  // 跳过开发模式 StrictMode 双挂载(挂载 <1s 即卸载)误触发;已交卷/不限时则不暂停。
+  useEffect(() => {
+    const onUnmount = () => {
+      if (Date.now() - mountedAtRef.current < 1000) return; // 跳过 StrictMode 双挂载
+      if (!isExamRef.current || submittedRef.current) return;
+      const rem = remainingRef.current;
+      if (rem == null || rem <= 0) return;
+      reportPause(rem);
+    };
+    return onUnmount;
+  }, [id]);
 
   // 键盘导航:←/→ 切题(批注书写时禁用,浏览模式可切)
   useEffect(() => {
@@ -710,7 +761,7 @@ export default function PracticePage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-white opacity-0 transition peer-checked:opacity-100" />
                     </span>
                     <span className="font-bold text-[#00467F]">{LETTERS[j]}.</span>
-                    <span className="leading-relaxed">{renderRich(opt)}</span>
+                    <span className="leading-relaxed">{renderRich(opt, { smart: false })}</span>
                   </label>
                 );
               })}

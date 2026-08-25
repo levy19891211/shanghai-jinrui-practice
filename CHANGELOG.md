@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.4.81 (2026-08-25) — 模拟考中途退出计时暂停/续时
+- 需求：学生端模考试卷点开后中途退出（关标签、切后台、SPA 路由跳走），计时应暂停；再次打开时从剩余时间继续，退出/离线期间的时长不计入。
+- 根因（旧实现为墙钟 no-op）：`POST /api/sessions/:id/pause` 把 `deadlineAt` 改写为 `now + remaining`，而 `remaining = 原 deadline − now`，代数上 `now + remaining = 原 deadline`，等于没冻结，重新打开仍按原绝对截止时间算，离线时间被照常扣除；且 SPA 路由跳转（`router.push`）不触发 `pagehide`/`visibilitychange`，暂停从未在「返回首页/后退」时触发。
+- 修复：
+  - 后端 `pause` 改为清空 `deadlineAt`、仅存 `pausedRemaining`（真冻结）；新增 `POST /api/sessions/:id/resume` 重建绝对截止时间为 `now + remaining`；`deadlineOf` 在 `deadlineAt` 为空但 `pausedRemaining` 有值时按 `now + 剩余` 推算（避免按 startedAt 全时长误判超时）。`POST /sessions` 创建 EXAM 时一并初始化 `pausedRemaining`。
+  - 前端：重新打开检测到 `pausedRemaining` 即从 `now + 剩余` 重建截止时间并调用 `resume`；`visibilitychange` 隐藏→暂停、回到前台→恢复；新增卸载副作用兜底 SPA 路由跳走；倒计时在 `pausedRef` 为真时停止 tick，避免后台误触发自动交卷。
+
 ## V2.4.80 (2026-08-25) — 修复学生端 TMUA/ESAT 随机组卷题库为空
 - 根因：学生端「科目」下拉选择 TMUA/ESAT 时，后端 `/api/sessions`、`/api/papers/student` 直接按 `subject = "TMUA"` 查询，但规范数据库存储为 `subject = "数学"/"物理"` + `sourceType = "TMUA"/"ESAT"`，导致匹配不到题目。
 - 修复：新增 `apps/api/src/lib/subject-filter.js`，统一把 TMUA/ESAT 映射为 `sourceType + 兼容 subject` 的 Prisma where；并同步应用到会话组卷、学生自建卷、题库列表查询。

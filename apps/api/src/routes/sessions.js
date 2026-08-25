@@ -127,8 +127,10 @@ router.post(
         assignmentId,
         mode,
         durationMin,
-        // EXAM 模式:记录绝对截止时间,中途退出暂停时可改写(见 /pause)
+        // EXAM 模式:记录绝对截止时间;中途退出暂停时由 /pause 清空 deadlineAt 并写入 pausedRemaining,
+        // 重新打开时由 /resume 重建绝对截止时间(now + 剩余),使离线时长不计入。
         deadlineAt: mode === "EXAM" && durationMin ? new Date(Date.now() + durationMin * 60000) : null,
+        pausedRemaining: mode === "EXAM" && durationMin ? durationMin * 60 : null,
         questionIds: JSON.stringify(questionIds),
         total: questionIds.length,
       },
@@ -181,10 +183,13 @@ function orderQuestions(rawList, ids) {
 }
 
 // 计算会话截止时间(EXAM)
-// 优先用持久化的 deadlineAt(已包含中途暂停的补偿);没有则按 startedAt + 时长推算。
+// 优先用持久化的绝对 deadlineAt(已含中途暂停后的补偿);
+// 若已暂停(deadlineAt 为空但 pausedRemaining 有值),按"现在 + 剩余秒数"推算(避免按 startedAt 全时长误判超时);
+// 都没有则按 startedAt + 时长推算。
 function deadlineOf(session) {
   if (session.mode !== "EXAM") return null;
   if (session.deadlineAt) return new Date(session.deadlineAt);
+  if (session.pausedRemaining != null) return new Date(Date.now() + session.pausedRemaining * 1000);
   if (!session.durationMin) return null;
   return new Date(session.startedAt.getTime() + session.durationMin * 60000);
 }
@@ -217,9 +222,11 @@ router.post(
   })
 );
 
-// POST /api/sessions/:id/pause — 模拟考中途退出时暂停计时
-// 前端通过 fetch({keepalive:true}) 在页面隐藏/卸载时上报当前剩余秒数;
-// 服务端把 deadlineAt 改写为 now + remaining,使计时暂停(继续做题时从剩余时间起算)。
+// POST /api/sessions/:id/pause — 模拟考中途退出时暂停计时(真冻结)
+// 前端在页面隐藏/卸载(SPA 路由跳走、关标签、切后台)时上报当前剩余秒数;
+// 服务端清空绝对截止时间 deadlineAt 并仅记录 pausedRemaining,使墙钟时间停止流逝。
+// 重新打开/回到前台时由 /resume 用 now + pausedRemaining 重建 deadlineAt,
+// 因此中途退出期间的离线时长不计入考试。
 router.post(
   "/:id/pause",
   requireAuth,
@@ -230,12 +237,33 @@ router.post(
     if (session.mode !== "EXAM") return fail(res, 400, "仅模拟考支持暂停计时");
     let remaining = Number(req.body?.remaining);
     if (!Number.isFinite(remaining) || remaining < 0) remaining = 0;
-    const deadlineAt = remaining > 0 ? new Date(Date.now() + remaining * 1000) : new Date(Date.now());
+    // 真冻结:清空绝对截止时间,只保留剩余秒数。下次 /resume 重建时从"现在"起算剩余时长。
     await prisma.session.update({
       where: { id: session.id },
-      data: { deadlineAt, pausedRemaining: Math.round(remaining) },
+      data: { deadlineAt: null, pausedRemaining: Math.round(remaining) },
     });
     ok(res, null, "已暂停计时");
+  })
+);
+
+// POST /api/sessions/:id/resume — 模拟考重新打开/回到前台时恢复计时
+// 前端在会话续做(检测到 pausedRemaining)或从后台切回前台时调用,
+// 重建绝对截止时间为 now + remaining,使退出/离线期间的时长不计入考试。
+router.post(
+  "/:id/resume",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    if (session.submittedAt) return fail(res, 400, "会话已提交");
+    if (session.mode !== "EXAM") return fail(res, 400, "仅模拟考支持暂停计时");
+    let remaining = Number(req.body?.remaining);
+    if (!Number.isFinite(remaining) || remaining < 0) remaining = 0;
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { deadlineAt: new Date(Date.now() + remaining * 1000), pausedRemaining: null },
+    });
+    ok(res, null, "已恢复计时");
   })
 );
 
