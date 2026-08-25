@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { syncAutoPaperSets, recalcPapersOfQuestion, parseIds } from "../lib/paper-set.js";
 import { planAutoFix } from "../lib/autofix.js";
 import { KNOWLEDGE_RULES } from "../lib/knowledge-rules.js";
+import { buildSubjectFilter } from "../lib/subject-filter.js";
 import { cleanUnits } from "../lib/text-normalize.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
@@ -661,7 +662,7 @@ router.get(
 // 列表查询公共逻辑
 function buildWhere(query, user) {
   const where = {};
-  if (query.subject) where.subject = query.subject;
+  Object.assign(where, buildSubjectFilter(query.subject));
   // 多学科过滤(subjects=a,b,c),用于学科 Tab(如数学 tab 包含 TMUA)
   if (query.subjects) {
     const subs = String(query.subjects).split(",").map((s) => s.trim()).filter(Boolean);

@@ -1,5 +1,9 @@
 # 版本历史
 
+## V2.4.80 (2026-08-25) — 修复学生端 TMUA/ESAT 随机组卷题库为空
+- 根因：学生端「科目」下拉选择 TMUA/ESAT 时，后端 `/api/sessions`、`/api/papers/student` 直接按 `subject = "TMUA"` 查询，但规范数据库存储为 `subject = "数学"/"物理"` + `sourceType = "TMUA"/"ESAT"`，导致匹配不到题目。
+- 修复：新增 `apps/api/src/lib/subject-filter.js`，统一把 TMUA/ESAT 映射为 `sourceType + 兼容 subject` 的 Prisma where；并同步应用到会话组卷、学生自建卷、题库列表查询。
+
 ## V2.4.79 (2026-08-24) — 试卷管理新增 TMUA/ESAT 题源筛选
 - 教师端「试卷管理」顶部筛选栏新增「题源筛选」:点选多选 TMUA / ESAT,仅显示 sourceType 匹配的试卷;未设置题源的试卷不受影响,可正常显示。
 

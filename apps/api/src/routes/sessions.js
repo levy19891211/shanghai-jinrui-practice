@@ -3,6 +3,7 @@ import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { grade } from "../lib/grading.js";
 import { requireAuth } from "../middleware/auth.js";
+import { buildSubjectFilter } from "../lib/subject-filter.js";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ async function resolveQuestionIds(body) {
   }
   // 默认:从已发布题目中随机抽取 10 道(支持 subject/subjects/difficulty/knowledgePointId 过滤)
   const where = { status: "PUBLISHED" };
-  if (body.subject) where.subject = body.subject;
+  Object.assign(where, buildSubjectFilter(body.subject));
   if (body.subjects) {
     const subs = String(body.subjects).split(",").map((s) => s.trim()).filter(Boolean);
     if (subs.length) where.subject = { in: subs };
@@ -114,7 +115,8 @@ router.post(
     let existing = await prisma.session.findFirst({ where: reuseWhere, orderBy: { startedAt: "desc" } });
     if (existing) {
       const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
-      const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
+      // 按 paper 的 questionIds 顺序返回,保持与题库/原卷一致(避免 Prisma in 查询打乱顺序)
+      const questions = orderQuestions(questionsRaw, questionIds);
       return ok(res, { sessionId: existing.id, mode: existing.mode, durationMin: existing.durationMin, questions, resumed: true }, "已恢复上次进度");
     }
 
@@ -140,8 +142,9 @@ router.post(
       });
     }
     const questionsRaw = await prisma.question.findMany({ where: { id: { in: questionIds } }, select: QUIZ_FIELDS });
-    // 统一将 options 从 JSON 字符串解析为数组,避免前端 q.options.map 报错
-    const questions = questionsRaw.map((q) => ({ ...q, options: safeParseOptions(q.options) }));
+    // 统一将 options 从 JSON 字符串解析为数组,并按 paper 的 questionIds 顺序返回,
+    // 保持与题库/原卷一致(避免 Prisma in 查询打乱顺序)
+    const questions = orderQuestions(questionsRaw, questionIds);
     ok(res, { sessionId: session.id, mode, durationMin, questions }, "会话已创建");
   })
 );
@@ -156,6 +159,25 @@ function safeParseOptions(value) {
   } catch {
     return [];
   }
+}
+
+// 按 paper 的 questionIds 顺序重组题目列表。
+// 注意:Prisma 的 findMany({ where: { id: { in: [...] } } }) 不保证返回顺序与数组一致,
+// 会按数据库默认顺序返回,导致学生端题目顺序被打乱。这里显式按 questionIds 重排,
+// 使模考/作业交付顺序与题库、原卷保持一致。
+function orderQuestions(rawList, ids) {
+  const qMap = new Map(rawList.map((q) => [q.id, q]));
+  const seen = new Set();
+  return ids
+    .filter((qid) => {
+      const s = String(qid);
+      if (seen.has(s)) return false;
+      seen.add(s);
+      return true;
+    })
+    .map((qid) => qMap.get(qid))
+    .filter(Boolean)
+    .map((q) => ({ ...q, options: safeParseOptions(q.options) }));
 }
 
 // 计算会话截止时间(EXAM)

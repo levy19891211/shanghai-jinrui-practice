@@ -3,6 +3,7 @@ import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { parseIds, recalcPaper } from "../lib/paper-set.js";
+import { buildSubjectFilter } from "../lib/subject-filter.js";
 
 const router = Router();
 
@@ -44,7 +45,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { title, subject, sourceTypes, topics, difficulties, count } = req.body || {};
     if (!title || !subject) return fail(res, 400, "title、subject 必填");
-    const where = { status: "PUBLISHED", subject };
+    const where = { status: "PUBLISHED" };
+    Object.assign(where, buildSubjectFilter(subject));
     // 题源多选:sourceTypes 数组非空时限定题目题源
     if (Array.isArray(sourceTypes) && sourceTypes.length) {
       const sts = sourceTypes.map((s) => String(s).trim()).filter(Boolean);
@@ -292,9 +294,9 @@ router.post(
       const n = Number(count);
       picked = (n && n > 0 ? list.sort(() => Math.random() - 0.5).slice(0, n) : list).map((q) => q.id);
     } else {
-      // 随机组卷:已发布题目 + 筛选
+      // 随机组卷:已发布题目 + 筛选(TMUA/ESAT 按 sourceType 过滤)
       const where = { status: "PUBLISHED" };
-      if (subject) where.subject = subject;
+      Object.assign(where, buildSubjectFilter(subject));
       if (knowledgePointId) where.topicIds = { contains: String(knowledgePointId) };
       if (difficulty) where.difficulty = Number(difficulty);
       const all = await prisma.question.findMany({ where, select: { id: true } });
