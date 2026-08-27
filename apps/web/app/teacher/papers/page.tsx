@@ -65,6 +65,19 @@ function ProgressBar({ stats }: { stats: PaperStats }) {
   );
 }
 
+/** 页码窗口:总页数≤7 时全显示;否则显示 首页 + 当前页前后各2 + 尾页,中间用 … 省略 */
+function getPageWindow(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out: (number | "...")[] = [1];
+  const start = Math.max(2, current - 2);
+  const end = Math.min(total - 1, current + 2);
+  if (start > 2) out.push("...");
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < total - 1) out.push("...");
+  out.push(total);
+  return out;
+}
+
 export default function TeacherPapersPage() {
   const [list, setList] = useState<PaperRow[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -83,12 +96,15 @@ export default function TeacherPapersPage() {
   const [filter, setFilter] = useState<"ALL" | "READY" | "DRAFT" | "ARCHIVED" | "AUTO_SET">("ALL");
   // 学科筛选(空 = 全部,与题库的学科 Tab 一致)
   const [subjectFilter, setSubjectFilter] = useState("");
-  // 套题类型筛选(空 = 全部):OFFICIAL 官方原版套题 / CUSTOM 组卷套题(手动组卷或自编导入)
-  const [kindFilter, setKindFilter] = useState("");
+  // 套题类型筛选(空 = 全部):OFFICIAL 官方原版套题 / CUSTOM 组卷套题(手动组卷或自编导入) / mock 模考套题
+  const [kindFilter, setKindFilter] = useState<"" | "OFFICIAL" | "CUSTOM" | "mock">("");
   // 题源筛选(点选多选,空 = 全部):TMUA / ESAT
   const [sourceFilter, setSourceFilter] = useState<string[]>([]);
   // 列表排序:createdDesc(最新在前,默认) / nameAsc(名称字母·数字升序) / nameDesc(降序)
   const [sortBy, setSortBy] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
+  // 试卷列表分页(前端基于已筛选的 shown 切片;筛选条件变化时页码归 1)
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // 试卷详情抽屉
   const [detail, setDetail] = useState<PaperManageDetail | null>(null);
@@ -131,6 +147,11 @@ export default function TeacherPapersPage() {
     load().catch((e) => setError(e.message));
   }, [load]);
 
+  // 任一筛选/排序条件变化都把页码归 1,避免停留在已无数据的页
+  useEffect(() => {
+    setPage(1);
+  }, [subjectFilter, kindFilter, filter, sourceFilter, sortBy, pageSize]);
+
   // 切换科目时重新拉取可选项,并清空已选的知识点/难度(避免残留旧科目的值导致筛不到题)
   useEffect(() => {
     setTopics([]);
@@ -161,6 +182,14 @@ export default function TeacherPapersPage() {
     if (filter === "ALL") arr = list;
     else if (filter === "AUTO_SET") arr = list.filter((p) => p.origin === "AUTO_SET");
     else arr = list.filter((p) => (p.status ?? "READY") === filter);
+    // 学科筛选(空 = 全部)
+    if (subjectFilter) {
+      arr = arr.filter((p) => p.subject === subjectFilter);
+    }
+    // 套题类型筛选(空 = 全部):OFFICIAL / CUSTOM / mock
+    if (kindFilter) {
+      arr = arr.filter((p) => p.kind === kindFilter);
+    }
     // 题源点选筛选(多选,空 = 全部):TMUA / ESAT
     if (sourceFilter.length > 0) {
       arr = arr.filter((p) => p.sourceType != null && sourceFilter.includes(p.sourceType));
@@ -172,7 +201,7 @@ export default function TeacherPapersPage() {
     }
     // createdDesc 为默认(后端已按创建时间倒序返回,这里保持原序)
     return arr;
-  }, [list, filter, sortBy, sourceFilter]);
+  }, [list, filter, subjectFilter, kindFilter, sortBy, sourceFilter]);
 
   const counts = useMemo(() => {
     const c = { ALL: list.length, READY: 0, DRAFT: 0, ARCHIVED: 0, AUTO_SET: 0 };
@@ -183,6 +212,13 @@ export default function TeacherPapersPage() {
     }
     return c;
   }, [list]);
+
+  // 当前筛选+排序后的总数与分页信息(基于前端已筛选的 shown,与 Tab/题源/学科筛选天然叠加)
+  const totalItems = shown.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  // 当删除导致总页数变少时,把当前页夹在合法范围内,避免停在空页
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function toggleTopic(t: string) {
     setTopics((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -442,6 +478,10 @@ export default function TeacherPapersPage() {
   const chipBase = "rounded-full border px-3 py-1 text-xs transition select-none cursor-pointer";
   const chipOn = "border-indigo-500 bg-indigo-50 text-indigo-700 font-medium";
   const chipOff = "border-slate-300 bg-white text-slate-600 hover:border-slate-400";
+  // 翻页按钮样式
+  const pgBase = "h-8 min-w-[2rem] rounded-lg px-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40";
+  const pgBtn = `${pgBase} border border-slate-200 bg-white text-slate-600 hover:bg-slate-100`;
+  const pgOn = `${pgBase} border border-indigo-500 bg-indigo-600 text-white`;
 
   const noPublished = facets !== null && facets.total === 0;
   const filteredEmpty = !noPublished && available === 0;
@@ -642,9 +682,9 @@ export default function TeacherPapersPage() {
             {t.l}
           </button>
         ))}
-        {/* 套题类型筛选:官方原版套题 / 组卷套题 */}
+        {/* 套题类型筛选:官方原版套题 / 组卷套题 / 模考套题 */}
         <span className="mx-1 self-center text-xs text-slate-300">|</span>
-        {[{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "CUSTOM", l: "组卷套题" }].map((t) => (
+        {([{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "CUSTOM", l: "组卷套题" }, { v: "mock", l: "模考套题" }] as const).map((t) => (
           <button
             key={t.v}
             onClick={() => setKindFilter(t.v)}
@@ -704,11 +744,12 @@ export default function TeacherPapersPage() {
           </select>
         </div>
 
-        {shown.length === 0 ? (
+        {totalItems === 0 ? (
           <p className="mt-6 text-sm text-slate-400">
             {list.length === 0 ? "还没有试卷。可以手动组卷,或在「题库管理」按套题批量导入,系统会自动成卷。" : "该分类下暂无试卷。"}
           </p>
         ) : (
+          <>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[920px] text-sm">
               <thead>
@@ -723,7 +764,7 @@ export default function TeacherPapersPage() {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p) => {
+                {pageItems.map((p) => {
                   const st = (p.status ?? "READY") as string;
                   const s = p.stats;
                   const notReady = s ? s.total - s.published : 0;
@@ -827,6 +868,44 @@ export default function TeacherPapersPage() {
               </tbody>
             </table>
           </div>
+
+          {/* 翻页控件:首页 / 上一页 / 页码窗口 / 下一页 / 尾页 + 每页条数 */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <span>
+                  共 {totalItems} 张试卷 · 第 {currentPage}/{totalPages} 页
+                </span>
+                <span className="flex items-center gap-1">
+                  每页
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="h-7 rounded-lg border border-slate-200 bg-white px-1.5 text-xs outline-none focus:border-indigo-500 ui-select"
+                  >
+                    {[10, 20, 50].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                  条
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <button onClick={() => setPage(1)} disabled={currentPage === 1} className={pgBtn} title="首页">«</button>
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={pgBtn}>‹ 上一页</button>
+                {getPageWindow(currentPage, totalPages).map((pn, i) =>
+                  pn === "..." ? (
+                    <span key={`e${i}`} className="px-1.5 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button key={pn} onClick={() => setPage(pn)} className={pn === currentPage ? pgOn : pgBtn}>{pn}</button>
+                  )
+                )}
+                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={pgBtn}>下一页 ›</button>
+                <button onClick={() => setPage(totalPages)} disabled={currentPage === totalPages} className={pgBtn} title="尾页">»</button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
 

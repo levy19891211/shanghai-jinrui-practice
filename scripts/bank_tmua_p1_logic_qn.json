@@ -5,7 +5,7 @@
     "sourceType": "TMUA",
     "source": "TMUA-P1-LOGIC-QN",
     "origin": "AUTO_SET",
-    "kind": "mock",
+    "kind": "CUSTOM",
     "status": "READY",
     "sourceKey": "数学::P1::TMUA-P1-LOGIC-QN",
     "questionIds": [
@@ -210,7 +210,7 @@
       "options": [
         "For every pair of distinct elements a and b drawn from S, the value gcd(a,b) is equal to 1, so all such pairs are coprime without exception.",
         "There exists at least one element a in S such that, for every other element b different from a, the greatest common divisor gcd(a,b) turns out to be exactly 1.",
-        "No two distinct elements of S have a greatest common divisor that exceeds 1; in other words, every distinct pair is coprime.",
+        "No two distinct elements of S have a greatest common divisor that exceeds 1.",
         "For all elements a and b in S, whether distinct or not, the quantity gcd(a,b) is less than or equal to 1.",
         "There can be found two distinct elements a and b belonging to S for which the greatest common divisor gcd(a,b) is equal to 1.",
         "There exists an element a in S and there also exists an element b in S, with a different from b, such that the greatest common divisor of the two, gcd(a,b), is equal to 1 — that is, at least one distinct pair is coprime.",
@@ -240,11 +240,11 @@
         "There exist real numbers x and y for which the values f(x) and f(y) are not equal to each other.",
         "There exist real numbers x and y for which x is equal to y yet f(x) is not equal to f(y).",
         "For all real numbers x and y, the equality f(x) = f(y) implies that x is different from y.",
-        "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y (so two distinct inputs collapse to the same output, which is exactly the failure of injectivity).",
-        "There exists a real number x such that, for every real number y, the value f(x) is equal to f(y); that is, one input maps to everything.",
+        "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y.",
+        "There exists a real number x such that, for every real number y, the value f(x) is equal to f(y).",
         "The function f is not defined for at least one pair of real numbers x and y, so injectivity cannot even be discussed."
       ],
-      "answer": "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y (so two distinct inputs collapse to the same output, which is exactly the failure of injectivity).",
+      "answer": "There exist real numbers x and y such that f(x) is equal to f(y) and, at the same time, x is different from y.",
       "solution": "Solution: Definition: ∀x,y ( f(x)=f(y) → x=y ). The negation of an implication is the premise true AND the conclusion false: ∃x,y ( f(x)=f(y) ∧ x≠y ). Hence f is not separating exactly when two distinct inputs share an output. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -263,15 +263,15 @@
       "stem": "Let M be a family (that is, a collection) of square matrices, not necessarily all of the same size. We say that the family M is nondegenerate precisely when the following requirement is satisfied: for every single matrix A that belongs to M, the determinant of A, written det A, is not equal to zero. Equivalently, each and every matrix in the family is invertible, and no singular matrix is permitted to appear among its members. The moment a single singular matrix creeps into the collection, the family loses the nondegenerate status.\n\nNow suppose it is announced that a certain family M is NOT nondegenerate, so the condition just stated does not hold for M because at least one of its matrices fails to be invertible. Which of the following eight statements is true if and only if M fails to be nondegenerate, being careful to distinguish the claim that some matrix is singular from the much stronger claim that every matrix is singular?",
       "options": [
         "For every matrix A that belongs to M, the determinant det A is equal to zero.",
-        "No matrix in the family M has a determinant that is different from zero; equivalently, all of them are singular.",
+        "No matrix in the family M has a determinant that is different from zero.",
         "For all matrices A in M, the determinant det A is strictly greater than zero.",
         "There exists at least one matrix A belonging to M for which the determinant det A is equal to zero.",
         "There exists at least one matrix A belonging to M for which the determinant det A is not equal to zero.",
-        "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero (so the family contains at least one singular matrix, which is exactly what makes it fail to be nondegenerate).",
+        "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero.",
         "Every singular matrix, no matter where it comes from in the world, is automatically a member of the family M.",
         "For at least one matrix A in M, the determinant det A is undefined or fails to exist."
       ],
-      "answer": "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero (so the family contains at least one singular matrix, which is exactly what makes it fail to be nondegenerate).",
+      "answer": "There exists a matrix A in M such that the value of its determinant, det A, is equal to zero.",
       "solution": "Solution: Definition: ∀A∈M (det A ≠ 0). Negation: ∃A∈M (det A = 0). The family fails to be nondegenerate exactly when it contains at least one singular matrix. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -294,11 +294,11 @@
         "There exists an event E in the collection whose probability P(E) is not equal to 1.",
         "There exists an event E in the collection whose probability P(E) is equal to 0.",
         "For every event E in the collection, the probability P(E) is less than or equal to 1.",
-        "There exists an event E in the collection such that the probability P(E) is strictly less than 1 (which, since probabilities lie in [0,1], is equivalent to saying P(E) is not equal to 1, and this is exactly the failure of almost sure).",
-        "No event in the collection has a probability that is equal to 1; in other words, every event has probability strictly below 1.",
+        "There exists an event E in the collection such that the probability P(E) is strictly less than 1.",
+        "No event in the collection has a probability that is equal to 1.",
         "There exists an event E in the collection whose probability P(E) is strictly greater than 1."
       ],
-      "answer": "There exists an event E in the collection such that the probability P(E) is strictly less than 1 (which, since probabilities lie in [0,1], is equivalent to saying P(E) is not equal to 1, and this is exactly the failure of almost sure).",
+      "answer": "There exists an event E in the collection such that the probability P(E) is strictly less than 1.",
       "solution": "Solution: Definition: ∀E (P(E)=1). Negation: ∃E (P(E)≠1). Because probabilities are confined to the interval [0,1], the condition P(E)≠1 is exactly equivalent to P(E)<1. Hence the collection is not almost sure precisely when at least one event has probability below 1. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -320,12 +320,12 @@
         "There exists a vertex v and there also exists another vertex u such that u and v are not adjacent.",
         "For every vertex v, there is some other vertex u that is adjacent to v.",
         "For every vertex v and for every other vertex u, the vertices u and v are not adjacent.",
-        "No vertex of G has any neighbour at all; every vertex is isolated.",
-        "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent (so each vertex has at least one non-neighbour, which is exactly the negation of having one universal neighbour).",
+        "No vertex of G has any neighbour at all.",
+        "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent.",
         "There exists a vertex v such that, for every other vertex u not adjacent to v, some further vertex is also not adjacent to v.",
         "Every vertex of G has degree at least 1, meaning no vertex is isolated."
       ],
-      "answer": "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent (so each vertex has at least one non-neighbour, which is exactly the negation of having one universal neighbour).",
+      "answer": "For every vertex v of G, there exists another vertex u of G such that u and v are not adjacent.",
       "solution": "Solution: Definition: ∃v ∀u≠v (adj(u,v)). Negation flips both quantifiers: ∀v ∃u≠v (¬adj(u,v)). Thus G is not dominated exactly when every vertex has at least one non-neighbour. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -347,12 +347,12 @@
         "There exists a real number R such that, for all x with |x| > R, the polynomial p(x) is equal to zero.",
         "For every real number R, there exists a real number x with |x| > R and also p(x) equal to zero.",
         "There exists a real number R and there exists an x with |x| > R such that p(x) is equal to zero.",
-        "The polynomial p has no real root at all; it never vanishes anywhere on the real line.",
-        "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero (so a larger root can always be found beyond any threshold, making p have infinitely many real roots).",
+        "The polynomial p has no real root at all.",
+        "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero.",
         "The polynomial p has only finitely many real roots in total.",
         "For some real number R, the equation p(x) = 0 holds for infinitely many x with |x| > R."
       ],
-      "answer": "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero (so a larger root can always be found beyond any threshold, making p have infinitely many real roots).",
+      "answer": "For every real number R, no matter how large a bound one is prepared to tolerate, there exists a real number x with |x| > R such that the value p(x) is equal to zero.",
       "solution": "Solution: Definition: ∃R ∀|x|>R (p(x)≠0). Negation: ∀R ∃|x|>R (p(x)=0). The polynomial is not tame exactly when, no matter how large a bound R is selected, one can always find a root beyond it — equivalently, p has infinitely many real roots. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -375,11 +375,11 @@
         "There exists an ε > 0 such that, for every positive integer N, the inequality |x_m − x_n| ≥ ε holds for all integers m and n with m,n > N.",
         "There exists an ε > 0 together with a positive integer N such that, for all integers m and n with m,n > N, the inequality |x_m − x_n| ≥ ε holds.",
         "For every ε > 0, and for every positive integer N, there exist integers m and n with m,n > N such that |x_m − x_n| < ε.",
-        "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds (so some tail always contains a pair at least ε apart, which is exactly the failure of the Cauchy criterion).",
+        "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds.",
         "There exists an ε > 0 such that there exists a positive integer N for which, for all integers m and n with m,n > N, the inequality |x_m − x_n| < ε holds.",
         "The sequence (x_n) is not convergent to any real limit whatsoever."
       ],
-      "answer": "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds (so some tail always contains a pair at least ε apart, which is exactly the failure of the Cauchy criterion).",
+      "answer": "There exists a real number ε > 0 such that, for every positive integer N, there exist integers m and n with m,n > N for which the inequality |x_m − x_n| ≥ ε holds.",
       "solution": "Solution: Original: ∀ε>0 ∃N ∀m,n>N (|x_m−x_n|<ε). The negation flips every one of the four quantifier levels and reverses the strict inequality: ∃ε>0 ∀N ∃m,n>N (|x_m−x_n|≥ε). This says that some positive tolerance ε can never be achieved — no matter how far out one goes, a pair at least ε apart can be found. That is option F, the standard 'sequence is not Cauchy' form.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -402,11 +402,11 @@
         "There exists an element a in S such that, for every element b different from a in S, the sum a + b is an element of S.",
         "There exists an element a in S and also an element b different from a such that the sum a + b is not an element of S.",
         "For all elements a and b in S with a different from b, the sum a + b is not an element of S.",
-        "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S (so this one element's sum with every other element escapes the set, which is exactly the negation).",
-        "There exists an element a in S for which at least one element b different from a satisfies that a + b is not in S (merely one bad partner).",
+        "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S.",
+        "There exists an element a in S for which at least one element b different from a satisfies that a + b is not in S.",
         "No two distinct elements of S have their sum belonging to S."
       ],
-      "answer": "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S (so this one element's sum with every other element escapes the set, which is exactly the negation).",
+      "answer": "There exists an element a in S such that, for every element b in S with b different from a, the sum a + b is not an element of S.",
       "solution": "Solution: Definition: ∀a∈S ∃b≠a (a+b∈S). Negation: ∃a∈S ∀b≠a (a+b∉S). The set fails to be sum-rich exactly when some element's sum with EVERY other element falls outside S. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -429,11 +429,11 @@
         "For every real number T > 0, there exists a real number x with f(x + T) ≠ f(x).",
         "There exists a real number T > 0 and there exists a real number x with f(x + T) ≠ f(x).",
         "For all real numbers T > 0, the inequality f(x + T) ≠ f(x) holds for every real x.",
-        "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds (so no positive candidate period survives unbroken, which is exactly the negation of having one universal period).",
+        "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds.",
         "There exists a real number T > 0 such that, for every real x, the statement f(x + T) = f(x) fails for some x.",
         "The function f is constant on the whole real line, taking the same value everywhere."
       ],
-      "answer": "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds (so no positive candidate period survives unbroken, which is exactly the negation of having one universal period).",
+      "answer": "For every real number T > 0, there exists a real number x such that the inequality f(x + T) ≠ f(x) holds.",
       "solution": "Solution: Definition: ∃T>0 ∀x (f(x+T)=f(x)). Negation: ∀T>0 ∃x (f(x+T)≠f(x)). The function is not repetitive exactly when every positive candidate period is broken by at least one point. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -455,7 +455,7 @@
         "There exist elements a and b in X with (a R b) and (b is not R a), a symmetry failure.",
         "For every a, b, c in X, the conjunction (a R b) and (b R c) never holds simultaneously, so no chain ever exists.",
         "There exist elements a, b, c in X such that (a is not R b) or (b is not R c) or (a R c), a loose disjunction.",
-        "No triple a, b, c of elements of X satisfies both (a R b) and (b R c); the set of chains is empty.",
+        "No triple a, b, c of elements of X satisfies both (a R b) and (b R c).",
         "There exist elements a, b, c in X such that (a R b) and (b R c) both hold, but (a is not R c) — a single broken chain, which is exactly the negation of transitivity with the inner conjunction preserved.",
         "There exists an element a in X such that, for all b and c, the conditions (a R b) and (b R c) imply that (a is not R c).",
         "The relation R is symmetric, meaning (a R b) implies (b R a) for all a, b in X."
@@ -479,15 +479,15 @@
       "stem": "Let F be a family of functions each defined on the closed interval [0,1] (that is, on all real numbers x with 0 ≤ x ≤ 1). We say that F is integrable-bounded exactly when the following holds: for every function f that belongs to F, there exists a real number M such that the inequality |f(x)| ≤ M is satisfied for all x lying in the interval [0,1]. Thus each function is bounded in absolute value across the whole interval by some constant of its own; the bounding constant is allowed to vary from one function to another, but every function must have some bound. If even one function in the family is unbounded on [0,1], the family fails to be integrable-bounded.\n\nSuppose it is announced that a family F is NOT integrable-bounded, so the condition fails because at least one member escapes every bound. Which of the following eight statements is true if and only if F is not integrable-bounded, being careful to flip the function quantifier and to turn the single bound into a universally defeated one?",
       "options": [
         "For every function f in F, there exists a real number M with |f(x)| ≤ M for all x in [0,1].",
-        "No function in F is bounded on the interval [0,1]; each one is unbounded there.",
+        "No function in F is bounded on the interval [0,1].",
         "There exists a function f in F and there exists a real number M such that |f(x)| > M for at least one x in [0,1].",
         "For every function f in F and for every real number M, there is some x in [0,1] with |f(x)| > M.",
         "There exists a function f in F such that, for all real numbers M, the inequality |f(x)| ≤ M holds for all x in [0,1].",
-        "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M (so this one function is unbounded on the interval, which is exactly the negation).",
-        "There exists a function f in F for which, for some real number M, the inequality |f(x)| ≤ M fails to hold at at least one point of [0,1] (merely one overshoot for one M).",
+        "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M.",
+        "There exists a function f in F for which, for some real number M, the inequality |f(x)| ≤ M fails to hold at at least one point of [0,1].",
         "Every function in F is bounded on [0,1] by the very same constant M, shared across the whole family."
       ],
-      "answer": "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M (so this one function is unbounded on the interval, which is exactly the negation).",
+      "answer": "There exists a function f in F such that, for every real number M without exception, there exists some x in [0,1] with |f(x)| > M.",
       "solution": "Solution: Definition: ∀f∈F ∃M ∀x∈[0,1] (|f(x)|≤M). Negation: ∃f∈F ∀M ∃x∈[0,1] (|f(x)|>M). The family fails to be integrable-bounded exactly when at least one function is unbounded on [0,1]. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -510,11 +510,11 @@
         "There exists an element a in S such that no prime factor of a divides any other element of S.",
         "There exists an element a in S for which every prime factor of a divides at least one other element of S.",
         "There exists an element a in S together with a prime factor of a that divides no other element of S.",
-        "For every element a in S, every prime factor of a divides at least one other element of S (so no element retains any private prime factor, which is exactly the negation).",
+        "For every element a in S, every prime factor of a divides at least one other element of S.",
         "There exists an element a in S such that at least one prime factor of a divides some other element of S.",
         "Every element of S shares a prime factor with every other element of S, a doubly strong universal claim."
       ],
-      "answer": "For every element a in S, every prime factor of a divides at least one other element of S (so no element retains any private prime factor, which is exactly the negation).",
+      "answer": "For every element a in S, every prime factor of a divides at least one other element of S.",
       "solution": "Solution: Definition: ∀a∈S ∃p|a ∀b≠a (p∤b). Negation: ∃a∈S ∀p|a ∃b≠a (p|b). The set is not prime-fed exactly when some element has EVERY one of its prime factors shared with another element. That is option F. (Notice this is precisely the prime-covered definition, confirming the two concepts are negations of each other.)",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -537,11 +537,11 @@
         "For every nonzero vector v, every vector w in V is a scalar multiple of v.",
         "For every nonzero vector v and for every vector w in V, the vector w is not a scalar multiple of v.",
         "No two vectors in V are scalar multiples of each other, so the family is totally non-collinear.",
-        "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative (so every candidate direction is defeated by some vector, which is exactly the negation with the inner AND turned into OR).",
+        "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative.",
         "There exists a nonzero vector v such that, for every vector w in V not a multiple of v, some other vector is also not a multiple of v.",
         "The family V contains at least two linearly independent vectors, a consequence but not the exact negation."
       ],
-      "answer": "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative (so every candidate direction is defeated by some vector, which is exactly the negation with the inner AND turned into OR).",
+      "answer": "For every nonzero vector v, there exists a vector w in V such that either w is not a scalar multiple of v, or else the scalar involved is negative.",
       "solution": "Solution: Definition: ∃v≠0 ∀w∈V ( (w∥v) ∧ (scalar≥0) ). Negation: ∀v≠0 ∃w∈V ( (w∦v) ∨ (scalar<0) ). The inner AND becomes OR with the direction reversed; the quantifiers flip. V is not aligned exactly when, for every candidate direction, some vector either fails to be collinear or points the opposite way. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     },
@@ -564,11 +564,11 @@
         "There exist real numbers x and y with x < y and also f(x) ≠ f(y).",
         "There exist real numbers x and y with f(x) > f(y).",
         "For all real numbers x and y with x different from y, the inequality f(x) ≤ f(y) fails to hold.",
-        "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y) (so some distinct pair is reversed in order, which is exactly the negation with the inner OR preserved).",
+        "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y).",
         "There exists a pair x < y such that f(x) = f(y), a flat pair under the function.",
         "The function f is strictly decreasing on the whole real line, reversing all pairs everywhere."
       ],
-      "answer": "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y) (so some distinct pair is reversed in order, which is exactly the negation with the inner OR preserved).",
+      "answer": "There exist real numbers x and y such that (x < y) or (y < x) holds, and at the same time f(x) > f(y).",
       "solution": "Solution: Definition: ∀x,y ( ((xf(y)) ). Thus f is not order-preserving exactly when some distinct pair reverses order. That is option F.",
       "srcNote": "TMUA P1 逻辑专练·量词否定"
     }
