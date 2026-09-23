@@ -60,6 +60,8 @@
 - [x] `[WB]` 批量导入 API(Excel / CSV / JSON)
 - [x] `[WB]` 组卷功能(按知识点/难度/数量生成试卷)
 - [x] `[VC]` 导入与组卷界面(WorkBuddy 代做,详见 commit 987feec)
+- [x] `[WB]` **ESAT 物理 补充习题(186 题)导入部署**:`extra question.pdf` → `bank_esat_physics_supplement.json`(186 题 / 57 带图);矢量图元隔离裁剪 57 张 PNG 入服务器 `/var/www/uploads/`;`import_esat_physics_supplement.mjs` 入库,Questions=`PENDING_REVIEW`(学生不可见)、Paper=`DRAFT`(不可作答)、`topicIds` 按物理 19 知识点名解析 cuid;答案留空(占位 options[0])待老师后台补全(用户决策"先导入,答案留空待补");DB 复核 0 异常、`/uploads/*.png` 公网可达
+- [x] `[WB]` **公式显示异常修复(186 题)**:诊断 PDF 纯文本提取导致 186/186 题无数学定界、上下标/单位/希腊字母损坏;改用 `pymupdf` 从源 PDF 整题渲染为高清 PNG,**每道题以单图呈现**(含题干+图表+所有选项),自动处理跨页题与页码裁剪;Options 置为 `["A","B",...]` 字母值,与前端 MC 字母按钮兼容、 grading 以 letter 比较;重新上传 186 张图覆盖 `/var/www/uploads/`,DB 复核 stem 全为图片、`options` 长度 4/5、answer∈options、0 异常
 - [ ] `[WB]` 2016-2023 正卷录入(需 OCR 或人工,公式校对成本高,建议优先用批量导入接口)
 
 ## 阶段八:质量与交付
@@ -72,6 +74,16 @@
 ---
 
 ## 进行中
+
+- [x] `[BOTH]` **考情明细「时间分配甘特图」**（用户 2026-09-23 需求：查看明细里每个学生的时间统计表下方，加一个像甘特图一样记录整场考试时间分配、能看出"哪段时间在做哪道题"的统计图）— **V2.4.87 已上线；V2.4.88 改口径；V2.4.89「一题多段」**
+  - `[WB]` `apps/api/src/routes/exams.js`：`GET /:id/student/:studentId` 的 `perQuestion[]` 新增 `answeredAt`（该题首次作答时刻，ISO 8601）；契约同步 `docs/API.md` §6.2（纯新增字段，向后兼容）
+  - `[WB]` 新增 `apps/web/components/ExamTimeGantt.tsx`（纯手写 SVG，零新依赖）；`StudentExamDetail.tsx` 折线图下方接入
+  - 说明：**本轮由 WB 代改 `apps/web/` 两个文件**（VC 所有权），未触碰其它前端文件；若 VC 同期在改同一文件请先沟通。
+  - [x] `[WB]` **V2.4.88 改口径**（用户 2026-09-23：「请将中途退出/暂停造成的空白消除掉 保证显示的所有都是连续的」）：横轴由墙钟改为**累计作答时间轴**（各题 `timeSpent` 按首次作答先后首尾相接、整段剔除空白）⇒ 条带连续无缝、长度即真实停留，原「左端夹紧 + 斜纹压缩」机制整体删除。**仅改 `apps/web/components/{ExamTimeGantt,StudentExamDetail}.tsx`，api 未动**（`answeredAt` 字段继续沿用）。验证：7 场景离线 harness + 像素级测量 `maxGapPx=0 / mergedSegments=1`；上线四道关（md5 三处对齐 / grep 计数 / 构建指纹 / **实抓运行中进程的 served chunk**）全绿，web pid 2580817→2581665。
+  - [x] `[WB]` **V2.4.89「一题多段」**（用户 2026-09-23：「如果学生在一道题上思考了几分钟没有作答、过了一段时间又回到这道题，图上应该有两段时间条」；范围限定：「过去的反推不出分段就算了 请后续学生所做的题目成'一题多段'的形式」）：因 `timeSpent` 是**累计标量**、`createdAt` 是**首次保存时刻** ⇒ 同一题的多次停留已被加总，**分段数学上无法反推**，故本特性**必须新增采集端**而非只改渲染。
+    - `[WB]` 自有目录：`schema.prisma` 的 `AnswerRecord` 新增 `visits String?`（JSON `[[startEpochSec,durSec],…]`）；`sessions.js` 新增 `POST /api/sessions/:id/visits`（**整份数组覆盖、幂等**；⭐**只写 `visits`，绝不触碰 `selected/isCorrect/timeSpent`** ⇒ 保住全站「未作答」哨兵，且这类记录被既有查询自然过滤、各处统计不可见）；`exams.js` 的 `perQuestion[]` 新增 `visits`。
+    - `[WB 代改 apps/web/]`（VC 所有权，**只动 3 个文件**）：`app/app/practice/[id]/page.tsx` 采集（切题 / `visibilitychange` / `pagehide` / SPA 卸载 / 交卷前结算 + 服务端时钟校准 + 毛刺 `MIN_VISIT_SEC=2` + `sessionStorage` 防丢 + 交卷先 await 作答再发分段）；`components/ExamTimeGantt.tsx` 渲染（同题多段 ⇒ 同行多条条带 + 同题相邻段白线 `data-split`；老数据回退合成单段）；`components/StudentExamDetail.tsx` 图注补「共 N 段（M 题回看过）」。若 VC 同期在改这 3 个文件请先沟通。
+    - 验证：离线 harness（合成 7 场景 + **线上真实响应 47 段 / 13 多段题**、逐段 `from/to/seg/segTotal` 精确对齐）+ **本地真实浏览器 E2E 14 项 FAILS=0**（副本库快照 + 本地 api/web，零生产风险）+ 路由负向探针 5 组 + 线上体检（232 行 `visits` / **26% 真多段** / 0 毛刺 / 0 同题重叠 / `score === correctCount` 0 违规）。上线四道关全绿：api pid **2580296→2585221**、web pid **2581665→2585688**，BUILD_ID `_GIGIBPcsgyrE2XMTrYiO`。真实世界边界（段起点可落在会话墙钟区间外、`Σ段时长 ≠ timeSpent`）已作为口径补进 `docs/API.md`。
 
 - [ ] `[BOTH]` 推送到远程仓库(等待用户提供远程地址)
 - [x] `[WB]` M1 后端:数据库接入(SQLite + Prisma schema 已落地)

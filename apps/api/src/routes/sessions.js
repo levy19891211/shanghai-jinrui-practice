@@ -222,6 +222,83 @@ router.post(
   })
 );
 
+// ——— 「一题多段」分段停留上报 ———
+// 背景:学生在一道题上可能分多次进入(想了几分钟没作答 → 离开 → 过一阵子又回到这道题再作答)。
+// 旧的 timeSpent 只是「累计停留秒数」这一个标量,信息有损,事后无法反推分段;
+// 因此自 2026-09-23 起由前端在每次离开题目时上报该题完整的停留分段,服务端全量覆盖保存。
+// 铁则:本端点只写 AnswerRecord.visits,绝不触碰 selected / isCorrect / timeSpent ——
+// 全站统计与「未作答」判定都依赖 isCorrect/selected/timeSpent 的既有语义(见 docs/API.md §6.2)。
+const MAX_SEGMENTS_PER_QUESTION = 200; // 单题保留上限(超出时保留最晚的 N 段)
+const MAX_SEGMENTS_PER_REQUEST = 1000; // 单次请求载荷上限(超出判为异常载荷直接拒绝)
+
+// 解析并校验 visits 载荷 [[startEpochSec, durSec], ...] → { segments, truncated }
+function parseVisits(raw) {
+  if (!Array.isArray(raw)) return { error: "visits 必须是数组" };
+  if (raw.length > MAX_SEGMENTS_PER_REQUEST) {
+    return { error: `visits 段数过多(最多 ${MAX_SEGMENTS_PER_REQUEST} 段)` };
+  }
+  const segments = [];
+  for (const item of raw) {
+    // 每项必须是长度 2 的数组:[startEpochSec, durationSec]
+    if (!Array.isArray(item) || item.length !== 2) continue;
+    const start = Number(item[0]);
+    const dur = Number(item[1]);
+    // 非法项直接跳过(丢一两条埋点好过整批失败,不影响作答数据)
+    if (!Number.isFinite(start) || !Number.isFinite(dur)) continue;
+    if (start <= 0 || dur < 0) continue;
+    segments.push([Math.round(start), Math.round(dur)]);
+  }
+  // 按开始时刻升序,便于下游直接按全局时间铺轴;截断时保留最晚的 N 段(近期行为更有诊断价值)
+  segments.sort((a, b) => a[0] - b[0]);
+  const truncated = segments.length > MAX_SEGMENTS_PER_QUESTION;
+  return { segments: truncated ? segments.slice(-MAX_SEGMENTS_PER_QUESTION) : segments, truncated };
+}
+
+// POST /api/sessions/:id/visits — 上报某题的分段停留(全量覆盖,幂等)
+router.post(
+  "/:id/visits",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return fail(res, 404, "会话不存在");
+    // 已交卷即冻结:交卷瞬间的最后一次 flush 由前端保证在 submit 之前发出
+    if (session.submittedAt) return fail(res, 400, "会话已提交,无法再上报停留");
+    // 注:此处刻意不做「考试超时」拦截 —— visits 属埋点数据而非作答,超时瞬间的收尾上报不应丢失。
+
+    const { questionId, visits } = req.body || {};
+    if (!questionId) return fail(res, 400, "questionId 必填");
+    const parsed = parseVisits(visits);
+    if (parsed.error) return fail(res, 400, parsed.error);
+
+    // 该题必须属于本会话,否则拒绝(防止前端 bug 或构造请求写出垃圾记录)
+    let sessionQids = [];
+    try {
+      const rawIds = session.questionIds ? JSON.parse(session.questionIds) : null;
+      if (Array.isArray(rawIds)) sessionQids = [...new Set(rawIds.map(String))];
+    } catch {
+      /* ignore */
+    }
+    if (sessionQids.length > 0 && !sessionQids.includes(String(questionId))) {
+      return fail(res, 400, "该题目不属于本会话");
+    }
+
+    const question = await prisma.question.findUnique({ where: { id: questionId } });
+    if (!question) return fail(res, 404, "题目不存在");
+
+    // 全空分段存 null(而非 "[]"),让下游用同一套「null ⇒ 无采集数据」判断
+    const payload = parsed.segments.length ? JSON.stringify(parsed.segments) : null;
+    // 若该题尚无作答记录(学生只是看过、没选答案),这里会建一条
+    // selected/isCorrect/timeSpent 全为 null 的记录 —— 与交卷时对未作答题 createMany 补的形态完全一致,
+    // 且全站统计均以 isCorrect/selected != null 过滤,故不会污染任何既有指标。
+    await prisma.answerRecord.upsert({
+      where: { sessionId_questionId: { sessionId: session.id, questionId } },
+      create: { sessionId: session.id, questionId, visits: payload },
+      update: { visits: payload },
+    });
+    ok(res, { questionId, segments: parsed.segments.length, truncated: parsed.truncated }, "已保存停留分段");
+  })
+);
+
 // POST /api/sessions/:id/pause — 模拟考中途退出时暂停计时(真冻结)
 // 前端在页面隐藏/卸载(SPA 路由跳走、关标签、切后台)时上报当前剩余秒数;
 // 服务端清空绝对截止时间 deadlineAt 并仅记录 pausedRemaining,使墙钟时间停止流逝。
@@ -467,6 +544,8 @@ router.get(
     }
     ok(res, {
       id: session.id,
+      // 服务端当前时间(epoch ms),供前端校准本机时钟偏移,避免设备时钟比服务器快时提前禁答
+      serverTime: Date.now(),
       mode: session.mode,
       durationMin: session.durationMin,
       deadlineAt: session.deadlineAt,

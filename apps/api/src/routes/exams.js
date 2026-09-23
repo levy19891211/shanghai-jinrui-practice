@@ -9,6 +9,20 @@ import { llmConfigured, chatComplete } from "../lib/llm.js";
 const router = Router();
 router.use(requireAuth, requireRole("TEACHER", "ADMIN"));
 
+// options 字段是 JSON 数组字符串;解析为字符串数组(容错:非法 JSON 原样包一层数组)
+const parseOptions = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw) {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v : [raw];
+    } catch {
+      return [raw];
+    }
+  }
+  return [];
+};
+
 // ——— 考情分析核心:一次算完 每考生结果 + 每题统计 + 整体 + 规则建议 ———
 async function analyzeExam(assignmentId) {
   const exam = await prisma.assignment.findUnique({
@@ -238,6 +252,142 @@ router.get(
     const exam = await prisma.assignment.findUnique({ where: { id: req.params.id } });
     if (!exam || exam.teacherId !== req.user.id) return fail(res, 404, "考试不存在");
     ok(res, analysis);
+  })
+);
+
+// GET /api/exams/:id/student/:studentId — 单个学生考情明细(每题用时 + 错题)
+router.get(
+  "/:id/student/:studentId",
+  asyncHandler(async (req, res) => {
+    const exam = await prisma.assignment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        paper: { select: { id: true, title: true, subject: true, sourceType: true, questionIds: true } },
+        targets: { include: { student: { select: { id: true, name: true, email: true } } } },
+      },
+    });
+    if (!exam || exam.teacherId !== req.user.id || exam.mode !== "EXAM" || !exam.paperId) {
+      return fail(res, 404, "考试不存在");
+    }
+    const target = exam.targets.find((t) => t.studentId === req.params.studentId);
+    if (!target) return fail(res, 404, "该考试不包含此学生");
+
+    const session = await prisma.session.findFirst({
+      where: { assignmentId: exam.id, studentId: req.params.studentId },
+      select: { id: true, score: true, total: true, correctCount: true, startedAt: true, submittedAt: true },
+    });
+
+    const qids = parseIds(exam.paper);
+    const [questions, records] = await Promise.all([
+      qids.length
+        ? prisma.question.findMany({
+            where: { id: { in: qids } },
+            select: { id: true, stem: true, options: true, answer: true, solution: true, topic: true, difficulty: true },
+          })
+        : [],
+      session
+        ? prisma.answerRecord.findMany({
+            where: { sessionId: session.id },
+            select: { questionId: true, selected: true, isCorrect: true, timeSpent: true, createdAt: true, visits: true },
+          })
+        : [],
+    ]);
+    const qById = new Map(questions.map((q) => [q.id, q]));
+    const recByQ = new Map(records.map((r) => [r.questionId, r]));
+
+    // answeredAt = 该题「首次保存作答」的服务端时刻(AnswerRecord.createdAt)。
+    // 语义依据: POST /sessions/:id/answer 用 upsert,仅 create 分支写 createdAt,
+    // 后续改答案走 update 分支不会刷新它;交卷时对未作答题 createMany 只写 questionId/timeSpent,
+    // 故未作答题的 answeredAt 会等于交卷时刻且 timeSpent 为 null(前端据此识别为「未作答」)。
+    // 配合 timeSpent(该题累计停留秒数)可还原每题作答区间 ≈ [answeredAt - timeSpent, answeredAt]。
+    const toIso = (v) => {
+      if (!v) return null;
+      const d = v instanceof Date ? v : new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    };
+
+    // visits = 该题的分段停留(「一题多段」)。AnswerRecord.visits 存 [[startEpochSec, durSec], ...]
+    // (由 POST /api/sessions/:id/visits 全量覆盖写入),此处换算为 ISO 8601 便于前端直接铺轴。
+    // 无采集数据(2026-09-23 之前的老会话、或从未上报)返回 null ⇒ 前端回退到
+    // 「answeredAt - timeSpent」合成单段,渲染结果与旧版甘特图一致。
+    const toVisits = (raw) => {
+      if (!raw) return null;
+      let arr;
+      try {
+        arr = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const out = [];
+      for (const item of arr) {
+        if (!Array.isArray(item) || item.length !== 2) continue;
+        const startSec = Number(item[0]);
+        const durSec = Number(item[1]);
+        if (!Number.isFinite(startSec) || !Number.isFinite(durSec)) continue;
+        const startMs = Math.round(startSec) * 1000;
+        const start = new Date(startMs);
+        if (Number.isNaN(start.getTime())) continue;
+        const seconds = Math.max(0, Math.round(durSec));
+        out.push({
+          start: start.toISOString(),
+          end: new Date(startMs + seconds * 1000).toISOString(),
+          seconds,
+        });
+      }
+      return out.length ? out : null;
+    };
+
+    const perQuestion = qids.map((id, i) => {
+      const q = qById.get(id);
+      const r = recByQ.get(id);
+      return {
+        index: i + 1,
+        questionId: id,
+        timeSpent: r?.timeSpent ?? null,
+        isCorrect: r?.isCorrect ?? null,
+        selected: r?.selected ?? null,
+        answeredAt: toIso(r?.createdAt),
+        visits: toVisits(r?.visits),
+        topic: q?.topic || "",
+        difficulty: q?.difficulty ?? null,
+      };
+    });
+
+    const wrongQuestions = [];
+    qids.forEach((id, i) => {
+      const q = qById.get(id);
+      const r = recByQ.get(id);
+      if (q && r && r.isCorrect === false) {
+        wrongQuestions.push({
+          index: i + 1,
+          questionId: id,
+          stem: q.stem,
+          options: parseOptions(q.options),
+          answer: q.answer,
+          solution: q.solution,
+          topic: q.topic || "",
+          difficulty: q?.difficulty ?? null,
+          selected: r.selected ?? null,
+          timeSpent: r.timeSpent ?? null,
+        });
+      }
+    });
+
+    ok(res, {
+      student: {
+        studentId: target.studentId,
+        name: target.student.name,
+        email: target.student.email,
+        score: session?.score ?? null,
+        total: session?.total ?? null,
+        correctCount: session?.correctCount ?? null,
+        startedAt: session?.startedAt ?? null,
+        submittedAt: session?.submittedAt ?? null,
+      },
+      perQuestion,
+      wrongQuestions,
+    });
   })
 );
 

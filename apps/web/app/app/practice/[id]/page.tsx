@@ -12,6 +12,16 @@ import type { GradeResult, QuizQuestion, SessionDetail } from "@/lib/types";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
+// 每题计时累加状态的持久化 key(与 answers-${id}/session-${id} 同机制)
+const TIMING_KEY = (sid: string) => `timing-${sid}`;
+
+// 「一题多段」分段停留:学生在同一道题上可能分多次进入(想几分钟没作答 → 离开 → 过一阵子又回来作答)。
+// 旧的 timeSpent 只是「累计停留秒数」一个标量,信息有损、事后无法反推分段,
+// 故自本版起在采集端按「进入/离开题目」切段,每次离开即把该题完整的分段列表全量上报后端
+// (POST /api/sessions/:id/visits),供教师端考情明细的甘特图展示同题多段时间条。
+// 小于该秒数的停留段视为毛刺(误触切换、开发模式双挂载)直接丢弃,避免甘特图被碎条淹没。
+const MIN_VISIT_SEC = 2;
+
 // 知识点 → 标签配色(试卷风格)
 const TOPIC_COLORS: Record<string, string> = {
   代数: "#2e6f40", 函数: "#2e6f40", "代数方程组": "#2e6f40", 不等式: "#2e6f40",
@@ -44,7 +54,17 @@ export default function PracticePage() {
   const router = useRouter();
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [current, setCurrent] = useState(0);
+  const [current, setCurrent] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    try {
+      const raw = sessionStorage.getItem(TIMING_KEY(id));
+      if (raw) {
+        const t = JSON.parse(raw);
+        if (typeof t.current === "number" && t.current >= 0) return t.current;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  });
   const [result, setResult] = useState<GradeResult | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   // 答题明细弹窗:点击某行查看该题题干/选项/答案/解析
@@ -63,6 +83,11 @@ export default function PracticePage() {
   const enterAtRef = useRef<number>(Date.now());
   const timeMapRef = useRef<Record<string, number>>({});
   const currentQidRef = useRef<string | null>(null);
+  // 「一题多段」分段停留:visitsRef=每题的分段列表 [[startEpochSec, durSec], ...](同一题多次进入即多段);
+  // visitStartRef=当前正在进行的这一段的开始时刻(serverNow 口径,epoch ms),null 表示当前未在计时。
+  // 与 timeMapRef 并行互不干扰:timeSpent 仍是累计值(老口径),visits 只负责记录分段落点。
+  const visitsRef = useRef<Record<string, [number, number][]>>({});
+  const visitStartRef = useRef<number | null>(null);
   const answersRef = useRef<Record<string, string>>({});
   // 暂停状态标记:页面隐藏/卸载期间为 true,回到前台时由 resumeNow 复位。
   const pausedRef = useRef(false);
@@ -79,6 +104,10 @@ export default function PracticePage() {
   // 把 isExam 同步到 ref,供卸载副作用读取最新值(卸载时闭包可能捕获旧值)。
   const isExamRef = useRef(false);
   isExamRef.current = isExam;
+  // 客户端-服务器时钟偏移:加载会话时以服务端下发时间(epoch ms)为锚,校准本机时钟,
+  // 避免学生设备时钟比服务器快几秒时,前端提前判定"超时"而禁答(模考最后几秒点不了选项)。
+  const clockOffsetRef = useRef(0);
+  const serverNow = () => Date.now() + clockOffsetRef.current;
 
   // 向服务端上报暂停/恢复(keepalive 保证页面关闭时也能发出):
   // 暂停 = 清空绝对截止时间、仅留剩余秒数(真冻结);恢复 = 重建绝对截止时间为 now + 剩余(离线时长不计入)。
@@ -105,8 +134,94 @@ export default function PracticePage() {
     } catch { /* ignore */ }
   };
 
+  // ——— 「一题多段」分段停留采集 ———
+  // 上报某题的分段停留(后端按「全量覆盖」处理,故重复提交同一份数据是幂等的)。
+  // 返回 fetch Promise,供「交卷前必须落库」的场景 await;keepalive=true 让页面关闭/切后台时请求也能发出。
+  // 注意:该端点只写 visits,不触碰 selected/isCorrect/timeSpent,因此不会影响既有的「未作答」判定。
+  const sendVisits = useCallback((qid: string, list: [number, number][], keepalive = false): Promise<unknown> | null => {
+    if (!qid || !list?.length) return null;
+    if (submittedRef.current) return null; // 已交卷:后端会拒绝写入,本地也无需再采集
+    const token = (window.localStorage.getItem("wb_token") || "").trim();
+    try {
+      return fetch(`/api/sessions/${id}/visits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ questionId: qid, visits: list }),
+        keepalive,
+      }).catch(() => {});
+    } catch {
+      return null;
+    }
+  }, [id]);
+
+  // 即发即忘版(切题/隐藏等不阻塞 UI 的场景)
+  const pushVisits = useCallback((qid: string, list: [number, number][], keepalive = false) => {
+    void sendVisits(qid, list, keepalive);
+  }, [sendVisits]);
+
+  // 收尾当前正在进行的停留段并落进 visitsRef,返回该题更新后的分段列表。
+  // 若本次并没有真正收尾任何一段(visitStartRef 已为 null),返回 null ⇒ 调用方据此决定是否真的上报。
+  // 幂等:收尾后立即把 visitStartRef 置 null,故 pagehide 与组件卸载双触发也不会重复记账。
+  const closeVisit = useCallback((qid: string | null): [number, number][] | null => {
+    if (!qid) return null;
+    const startedAt = visitStartRef.current;
+    if (startedAt === null) return null;
+    visitStartRef.current = null;
+    const dur = Math.max(0, Math.round((serverNow() - startedAt) / 1000));
+    if (dur < MIN_VISIT_SEC) return null; // 毛刺段:丢弃(计时已停止)
+    const list = visitsRef.current[qid] || [];
+    list.push([Math.round(startedAt / 1000), dur]);
+    visitsRef.current[qid] = list;
+    return list;
+  }, []);
+
+  // 开始记录当前题的一段停留(serverNow 口径,与考情的 startedAt/submittedAt 同一时钟)
+  const startVisit = useCallback((qid: string | null) => {
+    visitStartRef.current = qid ? serverNow() : null;
+  }, []);
+
+  // 持久化每题累计用时 + 当前题号 + 已采集的分段到 sessionStorage,使重挂载(刷新/关页/路由返回)后不丢计时。
+  // enterAt 不持久化绝对时间戳(否则离线/隐藏时长会被误计入当前题);重挂载时由 init effect 重置为 now。
+  const persistTiming = useCallback(() => {
+    try {
+      sessionStorage.setItem(TIMING_KEY(id), JSON.stringify({
+        timeMap: timeMapRef.current,
+        currentQid: currentQidRef.current,
+        current,
+        visits: visitsRef.current,
+      }));
+    } catch { /* ignore */ }
+  }, [id, current]);
+
+  // 结算当前题已停留时间并持久化(用于卸载/隐藏/关闭前的兜底,确保最后片段不丢)
+  const flushTiming = useCallback(() => {
+    if (currentQidRef.current) {
+      const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
+      timeMapRef.current[currentQidRef.current] = (timeMapRef.current[currentQidRef.current] || 0) + dt;
+      enterAtRef.current = Date.now();
+      // 同时收尾当前题的停留段并以 keepalive 上报,保证页面关闭/切后台时最后一段不丢
+      const qid = currentQidRef.current;
+      const list = closeVisit(qid);
+      if (list) pushVisits(qid, list, true);
+    }
+    persistTiming();
+  }, [id, current, persistTiming, closeVisit, pushVisits]);
+
   // 初始化:读缓存题目;并向后端确认会话信息(时限/是否已提交)
   useEffect(() => {
+    // 恢复计时累加状态:重挂载(刷新/关页/SPA 路由返回)后不丢每题累计用时与当前题号
+    try {
+      const raw = sessionStorage.getItem(TIMING_KEY(id));
+      if (raw) {
+        const t = JSON.parse(raw);
+        if (t.timeMap && typeof t.timeMap === "object") timeMapRef.current = t.timeMap;
+        if (typeof t.currentQid === "string") currentQidRef.current = t.currentQid;
+        // 恢复已采集的分段停留,使刷新/关页重挂载后不丢「一题多段」
+        if (t.visits && typeof t.visits === "object") visitsRef.current = t.visits;
+      }
+    } catch { /* ignore */ }
+    enterAtRef.current = Date.now();
+
     let cached: string | null = null;
     try {
       cached = sessionStorage.getItem(`session-${id}`);
@@ -122,6 +237,7 @@ export default function PracticePage() {
                 : [],
           }));
           setQuestions(norm);
+          setCurrent((c) => Math.min(c, norm.length - 1));
         }
       }
     } catch {
@@ -136,7 +252,16 @@ export default function PracticePage() {
 
     api.get<SessionDetail>(`/sessions/${id}`)
       .then((d) => {
+        if (typeof d.serverTime === "number") {
+          const nextOffset = d.serverTime - Date.now();
+          // 时钟校正量到手后,同步平移「正在进行中的停留段」的起点:
+          // 避免学生设备时钟本身有偏差时(修正前已开始计时),把分段锚到错误的绝对时刻。
+          if (visitStartRef.current !== null) visitStartRef.current += nextOffset - clockOffsetRef.current;
+          clockOffsetRef.current = nextOffset;
+        }
         if (d.submittedAt) {
+          // 查看已交卷成绩:停止一切计时与分段采集(后端也会拒绝写入)
+          submittedRef.current = true;
           setDetail(d);
           setResult({ score: d.score ?? 0, total: d.total ?? 0, correctCount: d.correctCount ?? 0, details: [] });
           return;
@@ -145,25 +270,26 @@ export default function PracticePage() {
           // 考试进行中:用服务端持久化的绝对截止时间(含中途暂停后恢复的绝对时刻)
           const dl = new Date(d.deadlineAt).getTime();
           setDeadline(dl);
-          setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
+          setRemaining(Math.max(0, Math.floor((dl - serverNow()) / 1000)));
         } else if (d.pausedRemaining != null) {
           // 中途退出过(暂停):服务端 deadlineAt 已清空,仅保留剩余秒数。
           // 按 now + pausedRemaining 重建绝对截止时间,使续做时从剩余时间起算,
           // 退出/离线的时长不计入考试。同时通知后端恢复(把绝对截止时间重新写回)。
-          const dl = Date.now() + d.pausedRemaining * 1000;
+          const dl = serverNow() + d.pausedRemaining * 1000;
           setDeadline(dl);
           setRemaining(d.pausedRemaining);
           reportResume(d.pausedRemaining);
         } else if (d.durationMin && d.startedAt) {
           const dl = new Date(d.startedAt).getTime() + d.durationMin * 60000;
           setDeadline(dl);
-          setRemaining(Math.max(0, Math.floor((dl - Date.now()) / 1000)));
+          setRemaining(Math.max(0, Math.floor((dl - serverNow()) / 1000)));
         }
         if (!cached && d.details?.length) {
           setQuestions(d.details.map((x) => ({
             id: x.questionId, stem: x.stem, options: x.options, topic: x.topic,
             type: "SINGLE_CHOICE", subject: "", difficulty: 0,
           })));
+          setCurrent((c) => Math.min(c, (d.details?.length ?? 1) - 1));
         }
         // 从后端恢复已保存的作答(中途退出后再进入本会话可继续):后端 selected 为权威,
         // 与本地 sessionStorage 缓存合并(本地最新优先),保证答案不丢失。
@@ -197,16 +323,23 @@ export default function PracticePage() {
   // 同步最新答案到 ref(供交卷时读取),避免闭包取到旧值
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
-  // 每题停留计时:切换到新题时,把上一题的停留秒数累加到 timeMap
+  // 每题停留计时:切换到新题时,把上一题的停留秒数累加到 timeMap,
+  // 并按「一题多段」收尾上一题的停留段(离开即切段)后上报,随后开始记录新题的一段停留。
   useEffect(() => {
     const q = questions[current];
     if (currentQidRef.current) {
       const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
       timeMapRef.current[currentQidRef.current] = (timeMapRef.current[currentQidRef.current] || 0) + dt;
+      // 离开上一题:收尾该题的当前停留段并全量上报(同一题若再次进入会另起一段)
+      const leaving = currentQidRef.current;
+      const list = closeVisit(leaving);
+      if (list) pushVisits(leaving, list);
     }
     currentQidRef.current = q?.id ?? null;
     enterAtRef.current = Date.now();
-  }, [current, questions]);
+    startVisit(currentQidRef.current);
+    persistTiming();
+  }, [current, questions, persistTiming, closeVisit, startVisit, pushVisits]);
 
   const saveAnswer = useCallback((qid: string, selected: string) => {
     // 真实记录该题累计停留时间(秒),随作答一并上报
@@ -214,10 +347,11 @@ export default function PracticePage() {
     const acc = (timeMapRef.current[qid] || 0) + dt;
     timeMapRef.current[qid] = acc;
     enterAtRef.current = Date.now();
+    persistTiming();
     api.post(`/sessions/${id}/answer`, { questionId: qid, selected, timeSpent: acc })
       .then(() => setSavedAt(Date.now()))
       .catch(() => {});
-  }, [id]);
+  }, [id, persistTiming]);
 
   const submit = useCallback(async (auto = false) => {
     if (submittedRef.current) return;
@@ -227,15 +361,29 @@ export default function PracticePage() {
       const dt = Math.max(0, Math.round((Date.now() - enterAtRef.current) / 1000));
       timeMapRef.current[currentQidRef.current] = (timeMapRef.current[currentQidRef.current] || 0) + dt;
       enterAtRef.current = Date.now();
+      closeVisit(currentQidRef.current); // 收尾当前停留段(下面统一全量上报)
     }
     // 上报所有已作答题的最终用时(确保服务端 timeSpent 为真实累计值)
-    await Promise.all(
-      Object.keys(answersRef.current)
-        .filter((qid) => qid in timeMapRef.current)
-        .map((qid) =>
-          api.post(`/sessions/${id}/answer`, { questionId: qid, selected: answersRef.current[qid], timeSpent: timeMapRef.current[qid] }).catch(() => {})
-        )
-    );
+    const answerPosts = Object.keys(answersRef.current)
+      .filter((qid) => qid in timeMapRef.current)
+      .map((qid) =>
+        api.post(`/sessions/${id}/answer`, { questionId: qid, selected: answersRef.current[qid], timeSpent: timeMapRef.current[qid] }).catch(() => {})
+      );
+    // 先落作答、再落分段停留 —— 两者都是对同一行 AnswerRecord 的 upsert,
+    // 若并发发出,遇到「该题尚无记录」时会两边同时 create 而撞 (sessionId, questionId) 唯一键。
+    // 串行两批即可彻底避开该竞态,代价仅一次往返。
+    await Promise.all(answerPosts);
+    // 上报「一题多段」的分段停留 —— 必须在 /submit 之前发出(交卷后后端会拒绝写入)。
+    // 逐题全量上报,确保交卷后考情明细的甘特图能看到每题完整的分段。
+    const visitPosts: Promise<unknown>[] = [];
+    for (const qid of Object.keys(visitsRef.current)) {
+      const list = visitsRef.current[qid];
+      if (!Array.isArray(list) || list.length === 0) continue;
+      const p = sendVisits(qid, list);
+      if (p) visitPosts.push(p);
+    }
+    await Promise.all(visitPosts);
+    persistTiming();
     submittedRef.current = true;
     setSaving(true);
     setError("");
@@ -246,13 +394,14 @@ export default function PracticePage() {
       setDetail(d);
       sessionStorage.removeItem(`session-${id}`);
       sessionStorage.removeItem(`answers-${id}`);
+      sessionStorage.removeItem(TIMING_KEY(id));
     } catch (e) {
       submittedRef.current = false;
       setError(e instanceof Error ? e.message : "提交失败");
     } finally {
       setSaving(false);
     }
-  }, [id]);
+  }, [id, persistTiming, closeVisit, sendVisits]);
 
   // 倒计时:以服务端截止时间 deadline 为唯一时钟,每帧由真实时间推导剩余秒数,
   // 避免旧实现“自减计时器”与服务端时钟漂移(尤其切后台被节流)导致倒计时还在走、却已超时禁答。
@@ -264,7 +413,7 @@ export default function PracticePage() {
     const tick = () => {
       // 已暂停(页面隐藏/卸载):停止本地倒计时,避免后台误触发自动交卷;恢复后续做正常计时。
       if (pausedRef.current) return;
-      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      const left = Math.max(0, Math.ceil((deadline - serverNow()) / 1000));
       remainingRef.current = left;
       setRemaining(left);
       if (left <= 0) {
@@ -296,7 +445,7 @@ export default function PracticePage() {
       const rem = remainingRef.current;
       if (rem == null || rem <= 0) return;
       pausedRef.current = false;
-      const dl = Date.now() + rem * 1000;
+      const dl = serverNow() + rem * 1000;
       setDeadline(dl);
       setRemaining(rem);
       reportResume(rem);
@@ -313,19 +462,47 @@ export default function PracticePage() {
     };
   }, [isExam, id, detail, result]);
 
+  // 计时兜底:页面隐藏/关闭时结算并持久化当前题已停留时间(避免最后片段丢失);
+  // 回到前台时重置 enterAt,使离线/隐藏时长不计入当前题(练习与考试模式一致)。
+  // 与上方考试暂停/恢复互不冲突:考试模式由 pause/resume 处理倒计时时钟,此处只管每题用时累加。
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) flushTiming();
+      else {
+        enterAtRef.current = Date.now();
+        // 回到前台:为新的一段停留重新开始计时(分段停留因此在切后台处自然断开)
+        startVisit(currentQidRef.current);
+      }
+    };
+    const onHide = () => flushTiming();
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [flushTiming, startVisit]);
+
   // SPA 路由跳走(如浏览器后退/点其它链接离开本页)时组件卸载,但不触发 pagehide/visibilitychange,
   // 故单独用卸载副作用兜底:卸载时若仍在考试中则上报暂停,避免退出期间计时继续走。
   // 跳过开发模式 StrictMode 双挂载(挂载 <1s 即卸载)误触发;已交卷/不限时则不暂停。
   useEffect(() => {
     const onUnmount = () => {
       if (Date.now() - mountedAtRef.current < 1000) return; // 跳过 StrictMode 双挂载
+      // SPA 路由跳走(浏览器后退/点其它链接)不触发 pagehide/visibilitychange,
+      // 只能在此兜底收尾当前题的停留段并上报,否则最后一段「一题多段」会丢。
+      if (!submittedRef.current && currentQidRef.current) {
+        const qid = currentQidRef.current;
+        const list = closeVisit(qid);
+        if (list) pushVisits(qid, list, true);
+      }
       if (!isExamRef.current || submittedRef.current) return;
       const rem = remainingRef.current;
       if (rem == null || rem <= 0) return;
       reportPause(rem);
     };
     return onUnmount;
-  }, [id]);
+  }, [id, closeVisit, pushVisits]);
 
   // 键盘导航:←/→ 切题(批注书写时禁用,浏览模式可切)
   useEffect(() => {
@@ -360,7 +537,7 @@ export default function PracticePage() {
   }, [openItem]);
 
   function choose(selected: string) {
-    if (isExam && deadline !== null && Date.now() >= deadline) return; // 超时禁答
+    if (isExam && deadline !== null && serverNow() >= deadline) return; // 超时禁答(已按服务器时钟校准)
     if (questions.length === 0) return;
     const qid = questions[current].id;
     const next = { ...answers, [qid]: selected };
@@ -655,7 +832,7 @@ export default function PracticePage() {
               <h1 className="text-base font-bold tracking-wide">金瑞升学金鹰系统</h1>
               <p className="mt-0.5 text-xs opacity-90">
                 {modeLabel} · 共 {total} 题 · 每题 1 分
-                {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.max(1, Math.ceil((deadline - Date.now()) / 60000)) : ""} 分钟</span>}
+                {isExam && <span className="ml-2 rounded bg-white/15 px-2 py-0.5">限时 {deadline ? Math.max(1, Math.ceil((deadline - serverNow()) / 60000)) : ""} 分钟</span>}
               </p>
             </div>
             <div className="text-right">

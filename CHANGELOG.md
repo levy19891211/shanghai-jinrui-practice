@@ -1,5 +1,118 @@
 # 版本历史
 
+## V2.4.89 (2026-09-24) — 「一题多段」：分段停留采集（`visits`）+ 甘特图同一行多条时间条
+- 需求（用户原话）：「目前每一题都是显示一段时间条 我希望的是 如果学生在一道题上思考了几分钟 没有作答 过了一段时间又回到这道题 花了一些时间作答后 图上应该有两段时间条」；范围限定：「过去的反推不出分段就算了 请后续学生所做的题目成"一题多段"的形式」。
+- **为何必须先动采集端（关键，非显而易见）**：`timeSpent` 是**累计标量**、`createdAt` 是**首次保存时刻**，同一题的多次停留已被加总成一维 ⇒ **信息有损，数学上无法反推分段**。所以不是"只改渲染"，必须新增「每次进入/离开题目」的分段记录；历史会话**不追**，老数据走向后兼容回退。
+- 数据模型：`apps/api/prisma/schema.prisma` 的 `AnswerRecord` 新增 `visits String?`（JSON `[[startEpochSec, durSec], ...]`）。迁移后 16,359 行数据完整。
+- API：`apps/api/src/routes/sessions.js` 新增 `POST /api/sessions/:id/visits` —— 鉴权 → 会话归属 → 已交卷拒绝(400) → 题目归属校验 → `upsert` **整份数组覆盖**（非追加 ⇒ 重复提交结果一致、幂等）→ **只写 `visits`**（绝不触碰 `selected/isCorrect/timeSpent`，从而保住全站依赖的 `timeSpent == null`「未作答」哨兵；只写新字段的记录天然被既有统计查询过滤，不可见）。上限：单题 `MAX_SEGMENTS_PER_QUESTION = 200`（超出保留最晚 200 段 + `truncated`）、单请求 `MAX_SEGMENTS_PER_REQUEST = 1000`（超出 400）；`parseVisits` 严格校验，空数组存 `null`。
+- 导出：`apps/api/src/routes/exams.js` 的 `GET /:id/student/:studentId` 的 `perQuestion[]` 新增 `visits: [{start,end,seconds}] | null`（`toVisits()` 解析，纯新增字段，向后兼容）。
+- 采集：`apps/web/app/app/practice/[id]/page.tsx` —— `visitsRef` / `visitStartRef`；切题、`visibilitychange`、`pagehide`、SPA 卸载、交卷前均**结算当前段**；上报带 `keepalive: true`；`sessionStorage`（`TIMING_KEY(id)`）持久化 `visitsRef` 防刷新丢失；服务端时钟校准 `serverNow()`（加载会话时以 `d.serverTime` 锚定，并**平移进行中段的起点**）；毛刺过滤 `MIN_VISIT_SEC = 2`；交卷时**先串行 `await` 全部作答上报、再发分段上报**（避免 `upsert` 竞态）。
+- 渲染：`apps/web/components/ExamTimeGantt.tsx` —— 同一题按 `visits` 展开为**多条条带**，落在同一行的不同 x 位置（允许与其他题的条带交错）；同题相邻两段之间画白色细线（`data-split`）标记"离开又回来"；无 `visits` 的老数据**回退** `[answeredAt − timeSpent, answeredAt]` 合成单段（渲染与 V2.4.88 逐像素一致，回退段带 `synthesized` 标记）；已有分段数据的题**不再**走合成分支（`taken > 0 continue` 守卫）。横轴仍为「各段首尾相接的累计轴」⇒ 整体连续性不变量不变。`StudentExamDetail.tsx` 图注新增「共 N 段（M 题回看过）」。
+- **验证（四条线全绿）**：
+  - ① 离线渲染 harness：`_gantt_check/harness.tsx`（合成 7 场景）ALL_OK；新增 **`harness_online.tsx`（线上真实响应）** ⇒ `ONLINE_RENDER ALL_OK` —— 条带(rect) **47 == 期望段数 47**、多段题数 **13**、`data-split` **2 == 期望 2**、逐段 `q/seg/segTotal/from/to` **精确对齐**、首条起点 0 且 `maxGap = 0s`、并集右端 `reach = 2024 == Σ段时长 2024`；像素级 `mergedSegments:1 / maxGapPx:0 / overflow:[]`。
+  - ② 本地真实浏览器端到端（**零生产风险**：`sqlite3` 在线 backup API 抓生产库一致性快照 → 副本库 + 本地 API:4000 + 本地 web:3000 + playwright）**14 项断言 FAILS=0**；关键证据：`timeSpent=9` 恰等于两段 `4s+5s`，全局交错 `Q1seg1 < Q2seg1 < Q1seg2`（同一题两段真的分开了），`selected=null` 的题 `timeSpent` 仍为 `null`（哨兵未被污染）。
+  - ③ 路由负向分支探针（Python 自签 HS256 JWT 直打线上）：无 token → 401、bogus 会话 → 404、已交卷 → 400、`visits` 非数组 → 400、缺 `questionId` → 400、题目不属本会话 → 400、越权 → 404 ⇒ **FAILS=0**。
+  - ④ 线上真实数据体检（232 行有 `visits` / 14 会话 / 148 题）：段数分布 `{1:164, 2:38, 3:19, 4:7, 5:4}`（**26% 真多段**）、段时长 min/max = 2/498s、JSON 解析失败 0、负时长 0、毛刺段(<2s) 0、同题内重叠 0、`Session.score != correctCount` **0 行**、未作答哨兵完好（9 行 `selected=null` 且 `timeSpent` 全 `null`）。
+- **上线四道关全绿**：① 三处 md5 逐一对齐（本地 = 上传件 = 就位件）② grep 计数（新文案命中 / 旧文案 0）③ 构建指纹 BUILD_ID → **`_GIGIBPcsgyrE2XMTrYiO`**，`grep -rl 'data-split' apps/web/.next/static/chunks/` 命中 `473-87352816274ebf5a.js` ④ **实抓运行中进程服务的 chunk**（`/_next/static/chunks/473-….js` HTTP 200 且含新串）。api pid **2580296 → 2585221**、web pid **2581665 → 2585688**。覆盖前均先拉回服务器原件 `diff`，确认只差自己的预期改动（线上无第三方改动）。
+- **真实世界边界（非缺陷，已写进契约）**：体检发现 ① 10 行段的 `start` 落在会话墙钟区间 `[startedAt, submittedAt]` 之外（最多差数小时 —— 不限时练习会话学生隔天回来续做属正常）；② 8 行 `Σ段时长 ≠ timeSpent`（会话跨版本 / 跨标签页，旧版前端那部分停留从未被采集）。已核对渲染端**不依赖** `startedAt/submittedAt`（横轴 = Σ段时长），并把两条口径补进 `docs/API.md`（另注：需「该题净停留总时长」时一律以 `timeSpent` 为准，`visits` 只表达停留落点分布）。
+- 验收截图：`_gantt_check/g4_online.png`（线上真实数据；肉眼可见第 9 题一绿一红两段、第 12 题两条远隔绿条、第 13/14/16 题右侧回看短条）。
+- 观察项（未拍板，沿用 V2.4.87）：`apps/web/components/` 下仅 7 个文件纳入 git，`ExamTimeGantt.tsx` / `StudentExamDetail.tsx` 等**仍未受版本控制**（改动无法 diff / 回滚）。
+
+## V2.4.88 (2026-09-23) — 时间分配甘特图改口径：消除空白，横轴改为「累计作答时间轴」（连续无缝）
+- 需求（用户原话）：「请将中途退出/暂停造成的空白消除掉 保证显示的所有都是连续的」。
+- 根因（先算清真实数据才敢动）：真实样本（ESAT 数学1 模考8 / renjunyu / 27 题）考试跨度 1903s、Σ`timeSpent` = 1902s，但按旧口径算出的**作答区间并集只有 1593s**（缺口 310s）。原因是 `timeSpent` 为**累计**停留——学生回看会把时长累加到同一题，以「首次作答时刻」为锚反推区间会**同时制造重叠与空隙**（Σ停留 1902 > 并集 1593，309s 被重复计入）。故旧图的空白既来自真实闲置，也来自「左端夹紧」这个补丁本身 ⇒ **不能再以墙钟为横轴**。
+- 前端口径 v2（`apps/web/components/ExamTimeGantt.tsx` **重写**）：横轴改为**累计作答时间轴**——把各题 `timeSpent` 按「首次作答时刻」先后**首尾相接**铺满整条轴，中途退出/暂停等空白**整体剔除**。
+  - 条带**严格连续无缝**（相邻条带共用同一坐标换算 ⇒ 前一条右端恒等于后一条左端），**不存在任何空白列**；
+  - 条带长度 = 该题**真实**累计停留；原「夹紧 + 斜纹」补偿机制及 `gantt-capped` pattern 整体删除，V2.4.87 遗留的「13/27 条带被压缩」问题一并消失；
+  - 长时间暂停不再被挤成左侧一小撮（合成场景：跨度 3:00:00、作答 12:08 ⇒ 铺满整宽并标注「已剔除空白 167分52秒」）。
+  - 代价与补偿：横轴刻度含义由「开考后」变为「累计作答」⇒ 轴线左上角加「累计作答」字样、右下角同时给「考试跨度」作对照、悬停提示保留「首次作答：开考后 X」，信息不丢。
+  - 其他：新增 `data-bar`/`data-from`/`data-to` 数据属性（供离线验收精确断言）；`blankSec = max(0, 跨度 − 累计作答)` 仅在 ≥5s 时展示；新增 `MIN_BAR_W` 保底宽度。
+- 前端文案：`StudentExamDetail.tsx` 副标题改为「每道题占一条横向条带，按作答先后连续铺满整条时间轴（按对错着色）」。
+- 验证：`tsc --noEmit -p apps/web/tsconfig.json` 退出码 0；离线 harness **7 场景**（full / **paused（新增，本轮正主）** / nostart / single / dirty / empty / zero）**ALL_OK**；真实数据 harness 最大空隙 = **0s**、并集右端 = 1902 = Σ累计停留；像素级测量（720px 真实宽度，4 场景）`mergedSegments=1 / maxGapPx=0 / overflowing=[] / overlapRatio=1`。
+  - ⚠️ 断言口径同步升级：「连续无空隙」类断言**不能用「按左端排序 → 比较相邻」**（零时长题的保底宽度会造出同起点并列的退化区间 ⇒ 假报断点/假重叠），改为**一维区间并集（reach 推进）**；DOM 侧同样对 `[left,right]` 做区间合并。
+- 部署（web-only，api 未动）：覆盖前先拉回服务器原件 `diff`（`StudentExamDetail.tsx` **只差副标题一行**，证明线上无第三方改动）；三道关全绿 —— ① md5 三处对齐（`b2323e8a…` / `09333285…`）② grep 计数（新文案 ≥1、旧 `gantt-capped` = 0）③ 构建指纹 BUILD_ID `-XiZ92yf…` → **`qV-89luF6VGN98ISzofIlc`**，chunk 含新文案 =1、旧文案 =0；**④ 从运行中的 web 进程实抓 `/_next/static/chunks/473-8e13aa5007d9452c.js`（HTTP 200 / 45521 bytes）**，新文案 =1、「已剔除空白」=1、旧文案与旧斜纹 id 均 =0。web pid **2580817 → 2581665**（uptime 归零），api pid 2580296 未动；冒烟 `web_root=307 / web_login=200 / api_health=200`；备份 `/root/backups/gantt2-20260923-130406/`。
+- 交付物/验收截图：`_gantt_check/g2_real.png`（真实数据）、`g2_full.png`（含空白场景）、`g2_paused.png`（长暂停场景）、`g2_nostart.png`；验证脚本 `_gantt_check/{harness,harness_real}.tsx` + `{shot,measure}.mjs`。
+- 观察项（未拍板）：① `apps/web/components/` 下仅 7 个文件纳入 git，`StudentExamDetail.tsx` / `ExamTimeGantt.tsx` / `QuestionStatsTable.tsx` 等**未受版本控制**；② 累计作答轴按「首次作答时刻」排序定位条带，若后端另存「每题最后保存时刻」（`lastSavedAt` / `@updatedAt`）可进一步精确还原跨题穿插的真实区间。
+
+## V2.4.87 (2026-09-23) — 考情明细新增「整场考试时间分配」甘特图
+- 需求（用户原话）：「在考试管理的考情分析里的查看明细部分，每个学生的时间统计表下面再加一个统计图：像甘特图一样记录学生整个考试时间里的时间分配情况，哪段时间在做哪道题都能清晰显示出来」。
+- 口径推导（关键，非显而易见）：`AnswerRecord.createdAt` = 该题**首次保存作答**的服务端时刻（`POST /sessions/:id/answer` 用 `upsert`，仅 create 分支写 `createdAt`，改答案走 update 分支不刷新）；`AnswerRecord.timeSpent` = 该题**累计停留秒数**。故 **单题作答区间 ≈ [answeredAt − timeSpent, answeredAt]**，配合 `Session.startedAt/submittedAt` 即可还原整场时间分配。
+- 后端：`apps/api/src/routes/exams.js` 的 `GET /:id/student/:studentId` 中 `answerRecord` 查询补 `select createdAt`；`perQuestion[]` 新增 `answeredAt`（ISO 8601，无记录为 null）。纯新增字段，向后兼容。契约已同步 `docs/API.md` §6.2。
+- 前端：新增独立组件 `apps/web/components/ExamTimeGantt.tsx`（纯手写内联 SVG，**零新依赖**）；`StudentExamDetail.tsx` 在原「每道题做题用时」折线图下方接入。横轴＝开考→交卷，纵轴＝题号（与折线图同序），每条带按对错着色（绿=答对／红=答错／灰=未判分）。
+- 边界处理：
+  - 未作答题（交卷时 `createMany` 补记录，`timeSpent=null`）→ 不绘条带，行内标注「未作答」。
+  - 学生跨题回看导致停留时段重叠 → 按 `answeredAt` 升序排布并把左端夹紧到上一次作答时刻，条带叠**斜纹**表示「显示长度被压缩」（悬停可看真实累计停留）；保证任意两题不同时占用同一时段。
+  - `startedAt/submittedAt` 缺失 → 回退用条带极值作横轴；`timeSpent` 早于开考等脏数据 → 左端夹到开考时刻；零时长题 → 保底 1.6 单位可见宽度。
+- 验证：`tsc --noEmit` 通过；离线渲染 harness（`react-dom/server` + playwright）5 个场景 + 1 条断言全绿（无 NaN／负宽）；用**线上真实数据**（ESAT 数学1 模考8 / 学生 renjunyu / 27 题）渲染复核，横竖无溢出；带鉴权直打线上接口 `answeredAt` 字段核验 PASS（27/27 题同时具备 `answeredAt` 与 `timeSpent`）。
+- 部署：api `cp + pm2 restart api --update-env`（pid 2553391→2580296）；web `npm run build + pm2 restart web`（pid 2554859→2580817，BUILD_ID 含新 chunk 指纹 `gantt-capped`）；三处 md5 与本地一致、grep 计数复核通过、公网 `login=200 / api/health=200`。
+- 观察项（未拍板）：① `apps/web/components/StudentExamDetail.tsx` 等组件**未被 git 跟踪**（仅 7 个组件在版本控制内），建议择期 `git add` 收敛；② 真实数据中出现 13/27 条带被压缩，反映学生跨题回看频繁，若要更精确还原可考虑后端另存「每题最后保存时刻」。
+
+## V2.4.86 (2026-09-19) — 考情表悬停弹卡改为屏幕正中央
+- 需求:悬停弹卡从「贴题号下方」改为**屏幕正中央**,确保大部分内容可见且不被遮挡。
+- 实现:`QuestionStatsTable.tsx` 弹卡定位改为 `top:50% + transform:translateY(-50%)` 垂直居中、水平居中夹在视口内;`max-h` 70vh→80vh 留出更多正文;`z-50`→`z-[1000]` 防止被页面 sticky 头部遮挡;`shadow-xl`→`shadow-2xl` 更醒目。
+- 部署:web `npm run build` + `pm2 restart web`(pid 2406901),api 在线(2405866)。
+
+## V2.4.85 (2026-09-19) — 考试管理「每题整体考情」题号悬停弹出题目内容
+- 需求：教学管理 → 考试管理 → 某场考试考情页,「每题整体考情」表中鼠标放在**题号**上弹出该题内容卡片(题干+选项,高亮正确答案),移开即消失。
+- 实现:
+  - 后端 `exams.js` `analyzeExam` 的 `perQuestion` 增加 `stem/options/answer`(仅教师/管理员鉴权接口);`parseOptions` 提升为模块级与单生明细路由共用。
+  - 前端新增共享组件 `QuestionStatsTable.tsx`(表格 + 悬停弹卡),`ExamAnalysisView.tsx` 与 `ExamsPanel.tsx` 两处重复表格统一替换。弹卡用 `position:fixed` 贴题号下方、水平夹在视口内,`renderRich` 渲染数学公式,正确答案高亮并标注;120ms 延迟消隐防止跨间隙闪烁;`max-h-[70vh]` 内滚动防长题干溢出。
+- 部署:api `pm2 restart api`;web `npm run build` + `pm2 restart web`。
+
+## 数据修正 (2026-09-19) — 模考20 Q11/Q17 答案键修正后的历史作答重判
+- 背景:Q17 答案键 E→D 纠错上线后,已有作答记录的 `isCorrect` 仍按旧键存储;陈泓宇(mokuai EXAM session `cmu75irtv0…`)Q11/Q17 两条记录 `selected` 均与新键一致但 `isCorrect=0`。
+- 处理:定向重判(仅限本线程校验过的 Q11/Q17 两题;全库扫描出的 788 条「陈旧」多为图片/LaTeX/多陈述答案被离线匹配器误判,已排除不动)。线上核验:两记录 `isCorrect` 已 =1,session `correctCount=score=14/20`,重判状态正确。
+- 纵深防御写库脚本 `_db_recon/rescore_q11_q17.py`(双备份+md5 断言+键守卫+幂等+复核),备份 `/root/dbbackups/dev.db.pre-rescore-q11q17-20260919_215755`。
+
+## 数据修正 (2026-09-19) — TMUA P2 模考20 第11题 答案键核对（H→D 实为线上已正确，仅同步本地陈旧副本）
+- 来源：用户反馈「第11题好像也有问题」。核验后学生判断正确——正确键是 D（"I and II only"），H（"All three"）错。
+- 题面：Portia 三盒逻辑题，三个子问各给结论，判断 I(i答Gold)/II(ii答Lead)/III(iii答Gold) 哪些必真。
+- 数学核验（self-referential 真值枚举）：
+  - (i) 奖品盒 = Gold（Silver 含奖品时 Lead 消息自相矛盾，仅 Gold 自洽）→ I 真。
+  - (ii) 应选 Lead（Gold/Silver 含奖品均致 Lead 消息自相矛盾，仅 Lead 自洽）→ II 真。
+  - (iii) 应选 **Lead 非 Gold**：匕首在 Lead 时 G假 S真，L="至多1真" 自相矛盾（L真则共2真⇒假、L假则共1真⇒真，皆矛盾）→ Lead 不自洽排除；自洽情形仅 {Gold,Silver}，故 Lead 恒空、选 Lead 保证安全 → (iii) 答 Lead → **III 假**（原解析漏算 L 自身为真值，误判 Lead 情形"1 真"自洽并错答 Gold）。
+  - 正确组合 = I 真 + II 真 + III 假 = "I and II only" = 选项 D。
+- **关键发现**：重拉线上库核验，Q11 的 `answer` 早已 = `"I and II only"`（D）、解析 (iii) 段**已正确**（Lead 排除、答 Lead、结论 D），`updatedAt=1788316734777` 与导入时间一致——即**线上生产库本来就是对的**。错的只是本地陈旧副本：`scripts/tmua_p2_mock20_full.json` 与 `scripts/dump_tmua_p2_mock20.txt` 仍写着 H。
+- 处理：写库脚本守卫正确识别「answer 已是 D」并跳过（未改动线上库，零风险）。仅把本地 `source JSON` + `dump` 同步为线上正确版本（KEY=D、(iii)=Lead、结论 D），防未来重部署回退。无需 build/重启。
+
+## 数据修正 (2026-09-19) — TMUA P2 模考20 第17题 答案键纠错（E→D）
+- 来源：学生反馈「第17题应该选 D」。核验后学生正确。
+- 题面：`(n-2)!/(n-2k)! = k!·2^(k-1)`，判断 I(k=2 无解)/II(k=3 唯一解 n=7)/III(k≥4 无解)。
+- 数学核验：I 真（k=2: n²−5n+2=0, Δ=17 非平方，无整数解）；II **假**（k=3 方程唯一解是 n=6=24，n=7 得 120≠24，并非 n=7）；III 真（k≥4: LHS 最小 (2k−2)! 远超 k!·2^(k−1) 且随 n 单调增，无解）。正确组合 = I 真 + III 真 = "I and III only" = 选项 D。
+- 原错误：答案键误标 E("I and II only")，且解析结论自相矛盾写「答案为 E — I and III only」（E 实为 "I and II only"）。
+- 修复：answer `"I and II only"`→`"I and III only"`（选项 D）；解析结论 `答案为 E`→`答案为 D`。纵深防御写库（备份 `/root/dbbackups/dev.db.pre-q17fix-20260919_213419` + md5 一致 → 守卫当前为错误态 → 单事务 UPDATE → 重拉库核验）已上线。同步更新源题库 `scripts/tmua_p2_mock20_full.json`。
+- 纯数据层修正，无需 build/重启。学生端刷新即见新键与解析。
+
+## V2.4.84 (2026-09-19) — 速度分公式：中位 ≤ 考试基准封顶 80（不再满分）
+- 现象：沿用 V2.4.83 的 `normSpeed`（中位 ≤ 考试基准即 100 满分），因全班 EXAM 每题中位 `min=20/median=68/max=215` 普遍快于 TMUA 180s 基准，约 78% 学生速度分仍 = 100，区分度不足。
+- 修复：将速度满分锚点从 100 改为 80 —— `score = clamp(0..80, 80×baseline/median)`。即「中位 ≤ 基准 → 80 分」；「中位 > 基准」按 80×基准/中位 从 80 往下扣（最低 0）。后端 `teacher.js` 的 `speedScore` 与前端 `normSpeed` 兜底同步修改。
+- 验证（镜像库离线复算 + 线上签名 JWT 直打）：
+  - 离线：有速度分 32 人，新公式 `min=25/median=80/max=80`，=80 占比 78.1%（即原封顶 100 那批，现为 80），慢段 7 人 <80；classBaseline≈75。
+  - 线上：袁盛康（median 150≤180）→ 80；刘子瑶（median 215>180）→ 67；classBaseline.speedScore = 76（原 95）。`/api/health` ok。
+
+## 数据修正 (2026-09-19) — TMUA P2 模考20 第10题 LaTeX 显示缺陷
+- 现象：用户反馈「TMUA Paper 2 模考20 第10题显示有问题」。
+- 根因（数据层坏 LaTeX，非渲染层）：四个选项与解析存在① 函数名 `cos`/`sin` 落在 `$...$` 外（文本字体）而变量在数学（斜体）→ 字体不统一；② `$a^{ln b}$` 的 `ln` 未用 `\ln`；③ 文本/数学混排并夹 Unicode `−`/`≤`/`≥`/`θ`；④ **解析 `$2^{\ln 2}=e^{(\ln 2)^2} \> 1$` 中的 `\>` 是 KaTeX 未定义控制序列 → 该段数学渲染失败**（回退原文/红框）。
+- 修复：重写该题四选项与解析，统一进数学模式并规范命令（`$\cos(\sin\theta)=\sin(\cos\theta)$`、`a^{\ln b}`、`|P(x)-\cos x|\le10^{-6}`、`x^{-4}\ge5`），删 `\>`→`>`；同步更新源题库 `scripts/tmua_p2_mock20_full.json` 防回归。**纵深防御写库**（双备份 `/root/dbbackups/dev.db.pre-q10fix-20260919_084743`+`.copy2`、md5 一致 → 字段守卫 → 单事务 UPDATE → post-diff 复核）部署线上 PUBLISHED 试卷。
+- 验证：重拉线上库直检 Q10 —— 四选项/解析/answer 均为规范 LaTeX，无 `\>`、无 Unicode `−/≤/≥/θ`、文本模式无裸 `cos(`/`sin(`；本地 `fix_q10_mock20.py` 内容校验同过。
+- 登记：`docs/MATH_RENDERING_BUGS.md` 新增 **#33**（数据坏 LaTeX）+ 预防规则 #33 + #33 回归样本（题目数据入库前须过 KaTeX 严格校验、禁 `\>` 等未定义命令与 `$...$` 外裸函数名）。
+- 备注：本次为**数据层**修正，未改渲染层/业务代码，无需 `npm run build`/重启；但常规发布窗口应跑 `npm run verify:math` 全库回归确认无连带。
+
+## V2.4.83 (2026-09-19) — 修复「速度」维度被 PRACTICE 占位计时污染（袁盛康异常快）
+- 现象：用户反馈「袁盛康速度为什么这么快」。诊断其 speedScore=100，但 EX 模式每题中位 150s（正常），真正异常来自一个 169 题的 MAT **PRACTICE 练习 session（`submittedAt=null` 未交卷）**——前端在 PRACTICE 模式**未采集每题真实用时**，107 题 `timeSpent` 全记成占位值 1 秒，把整体 PRACTICE 中位拉到 1s，`normSpeed=100×180/1` 饱和满分。
+- 根因：V2.4.82 改用 PRACTICE 中位作主口径，但 **PRACTICE 计时系统性不可靠**（全库「PRACTICE 中位 ≤3s 且 ≥10 题」的异常 session 共 3 个，涉及 3 名学生），且算法对坏数据零鲁棒性（中位=1 即饱和）。
+- 修复（`teacher.js` `matrixOf` 的 `speedScore`）：主口径**切到 EXAM 每题中位**（`timeSpent` 真实可靠）；仅当无 EXAM 数据时回退 PRACTICE 中位，且对 PRACTICE 中位 ≤3s 的占位计时**整段排除**（置 `null`，不参与评分）。前端 `sSpeed/cSpeed` 已优先取后端 `speedScore`，无需改 web。
+- 验证：手签 JWT 直打 `/api/teacher/stats/students-matrix` — 袁盛康 `speedScore=100` 基于 EXAM 547 题中位 150s（真快非假象）；PRACTICE 有效中位 108s（脏 session 已排除）；`classBaseline.speedScore=95`（恢复区分度）；`/api/health` ok（api pid 2366515）。
+- 待拍板（未动）：`normSpeed` 在 `median≤基准` 时直接 clamp 100，全班 EXAM 中位 `min=20/median=68/max=215`，致 78% 学生速度分仍=100（比 TMUA 180s 基准快），属公式饱和层问题，与数据源无关，需另议。
+
+## V2.4.82 (2026-09-19) — 修复学情分析「速度」班级均值恒为 100
+- 现象：学生详情页「维度排行/能力雷达」的速度维度班级均值恒为 100（满分），不可解释。
+- 根因：班级基线 `classBaseline.speed` = **全班池化练习中位**（实测 59–60s，混入 ESAT/MAT 快刷题），前端再按考试基准归一 `100×基准/中位`。池化中位远低于考试基准（≈125s），比值 >100 被 clamp 饱和 → 班级均值恒 100；32 名学生中 15 人个人得分同样饱和。
+- 修复：
+  - 后端 `teacher.js` `matrixOf` 新增 `speedScore`（与前端 normSpeed 同式：练习中位按考试基准折算，clamp 0–100；无练习数据 → `null`）；`classBaseline.speedScore` = **逐生 speedScore 均值**（剔除无数据学生，实测 94），不再「池化中位再归一」。
+  - 前端 `students/[id]/page.tsx` 维度排行/雷达的本人与班级速度分优先取后端 `speedScore`（旧响应结构自动回退旧式），并注释禁用「池化中位再归一」口径。
+- 验证：手签 JWT 直打 `/api/teacher/stats/students-matrix`，`classBaseline.speedScore=94`，逐生得分正常（如 81s/基准80→99、188.5s/基准180→95）；`tsc --noEmit` 通过；`npm run build` 成功；`/api/health` ok（api pid 2364922 / web pid 2365754）。
+
 ## V2.4.81 (2026-08-25) — 模拟考中途退出计时暂停/续时
 - 需求：学生端模考试卷点开后中途退出（关标签、切后台、SPA 路由跳走），计时应暂停；再次打开时从剩余时间继续，退出/离线期间的时长不计入。
 - 根因（旧实现为墙钟 no-op）：`POST /api/sessions/:id/pause` 把 `deadlineAt` 改写为 `now + remaining`，而 `remaining = 原 deadline − now`，代数上 `now + remaining = 原 deadline`，等于没冻结，重新打开仍按原绝对截止时间算，离线时间被照常扣除；且 SPA 路由跳转（`router.push`）不触发 `pagehide`/`visibilitychange`，暂停从未在「返回首页/后退」时触发。
