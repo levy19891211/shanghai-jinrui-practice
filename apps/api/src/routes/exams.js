@@ -67,7 +67,7 @@ async function analyzeExam(assignmentId) {
   // 每题统计
   const qids = exam.paper ? parseIds(exam.paper) : [];
   const questions = qids.length
-    ? await prisma.question.findMany({ where: { id: { in: qids } }, select: { id: true, topic: true, difficulty: true } })
+    ? await prisma.question.findMany({ where: { id: { in: qids } }, select: { id: true, topic: true, difficulty: true, stem: true, options: true, answer: true } })
     : [];
   const qById = new Map(questions.map((q) => [q.id, q]));
   const qStats = new Map();
@@ -93,6 +93,9 @@ async function analyzeExam(assignmentId) {
       correct: st.correct,
       correctRate: st.attempts ? Math.round((st.correct / st.attempts) * 100) : null,
       avgTimeSpent: st.timeCount ? Math.round(st.timeSum / st.timeCount) : null,
+      stem: q?.stem ?? null,
+      options: q ? parseOptions(q.options) : [],
+      answer: q?.answer ?? null,
     };
   });
 
@@ -213,6 +216,8 @@ router.post(
     if (parsedDue && Number.isNaN(parsedDue.getTime())) return fail(res, 400, "截止时间格式不正确");
     const dMin = durationMin ? Math.round(Number(durationMin)) : null;
     if (!dMin || dMin <= 0) return fail(res, 400, "考试必须设置限时(分钟)");
+    // 记录"按组布置"的分组 id(去重);逐生布置时为空,存 null
+    const gids = Array.isArray(groupIds) ? [...new Set(groupIds.filter(Boolean).map(String))] : [];
     const assignment = await prisma.assignment.create({
       data: {
         teacherId: req.user.id,
@@ -222,6 +227,7 @@ router.post(
         mode: "EXAM",
         durationMin: dMin,
         dueAt: parsedDue,
+        groupIds: gids.length ? JSON.stringify(gids) : null,
         targets: { create: finalStudentIds.map((sid) => ({ studentId: sid })) },
       },
     });

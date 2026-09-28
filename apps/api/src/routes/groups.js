@@ -136,4 +136,71 @@ router.delete(
   })
 );
 
+// GET /api/teacher/groups/:id/assignments — 该分组已布置的模考与作业(含每项统计)
+// 仅返回创建时按组布置(groupIds 含本分组)的作业/考试;逐生布置的不在此列。
+router.get(
+  "/:id/assignments",
+  asyncHandler(async (req, res) => {
+    const group = await prisma.group.findUnique({ where: { id: req.params.id } });
+    if (!group || group.teacherId !== req.user.id) return fail(res, 404, "分组不存在");
+
+    const assignments = await prisma.assignment.findMany({
+      where: { teacherId: req.user.id },
+      orderBy: { createdAt: "desc" },
+      include: {
+        paper: { select: { id: true, title: true, subject: true } },
+        languagePaper: { select: { id: true, title: true } },
+        targets: { select: { studentId: true, status: true } },
+        sessions: { select: { studentId: true, score: true, total: true, correctCount: true, submittedAt: true } },
+      },
+    });
+
+    const list = [];
+    for (const a of assignments) {
+      // 过滤:仅保留"按组布置"且包含本分组的条目
+      let gids = [];
+      try { gids = a.groupIds ? JSON.parse(a.groupIds) : []; } catch { gids = []; }
+      if (!Array.isArray(gids) || !gids.map(String).includes(String(group.id))) continue;
+
+      const sessionByStudent = new Map(a.sessions.map((s) => [s.studentId, s]));
+      let submitted = 0, inProgress = 0, notSubmitted = 0;
+      for (const t of a.targets) {
+        if (t.status === "SUBMITTED") { submitted++; continue; }
+        const sess = sessionByStudent.get(t.studentId);
+        if (sess && !sess.submittedAt) inProgress++;
+        else notSubmitted++;
+      }
+      const done = a.sessions.filter((s) => s.submittedAt);
+      const scored = done.filter((s) => s.score != null);
+      const acc = done.filter((s) => s.total && s.total > 0);
+      const avgScore = scored.length ? Math.round(scored.reduce((x, s) => x + (s.score ?? 0), 0) / scored.length) : null;
+      const avgAccuracy = acc.length
+        ? Math.round(acc.reduce((x, s) => x + ((s.correctCount ?? 0) / s.total) * 100, 0) / acc.length)
+        : null;
+
+      list.push({
+        id: a.id,
+        title: a.title,
+        mode: a.mode, // PRACTICE=作业, EXAM=模考
+        note: a.note,
+        dueAt: a.dueAt,
+        createdAt: a.createdAt,
+        kind: a.paperId ? "SUBJECT" : a.languagePaperId ? "LANGUAGE" : "UNKNOWN",
+        paperTitle: a.paper?.title || a.languagePaper?.title || null,
+        subject: a.paper?.subject || null,
+        stats: {
+          total: a.targets.length,
+          submitted,
+          inProgress,
+          notSubmitted,
+          avgScore: avgScore,
+          avgAccuracy: avgAccuracy,
+        },
+      });
+    }
+
+    ok(res, { groupId: group.id, groupName: group.name, list });
+  })
+);
+
 export default router;

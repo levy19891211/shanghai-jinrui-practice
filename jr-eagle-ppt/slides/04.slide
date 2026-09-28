@@ -60,7 +60,7 @@
     gap: 12,
   }}>
     <Box style={{ width: 8, height: 8, background: '#D4AF37', borderRadius: '50%' }} />
-    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞升学 · 金鹰系统</Text>
+    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞高中综合管理系统</Text>
   </Box>
   <Text style={{
     position: 'absolute',

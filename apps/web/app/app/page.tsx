@@ -28,6 +28,7 @@ export default function StudentHome() {
   // 试卷库筛选/排序(与教师端试卷管理一致)
   const [libSubject, setLibSubject] = useState("");
   const [libKind, setLibKind] = useState("");
+  const [libSourceType, setLibSourceType] = useState("");
   const [libSort, setLibSort] = useState<"createdDesc" | "nameAsc" | "nameDesc">("createdDesc");
   const [allKps, setAllKps] = useState<{ id: string; name: string; subject: string }[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -223,6 +224,7 @@ export default function StudentHome() {
     let arr = papers.filter((p) => {
       if (libSubject && p.subject !== libSubject) return false;
       if (libKind && p.kind !== libKind) return false;
+      if (libSourceType && p.sourceType !== libSourceType) return false;
       return true;
     });
     if (libSort === "nameAsc" || libSort === "nameDesc") {
@@ -230,20 +232,20 @@ export default function StudentHome() {
       arr = [...arr].sort((a, b) => dir * String(a.title).localeCompare(String(b.title), undefined, { numeric: true, sensitivity: "base" }));
     }
     return arr;
-  }, [papers, libSubject, libKind, libSort]);
+  }, [papers, libSubject, libKind, libSourceType, libSort]);
 
   const input =
     "h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-indigo-500 ui-select";
 
   // 成绩趋势数据(已提交且有总分的会话,按时间升序,最近 10 次)
   const trendData = allSessions
-    .filter((s) => s.submittedAt && s.total && s.total > 0 && typeof s.score === "number")
+    .filter((s) => s.submittedAt && s.total && s.total > 0 && s.correctCount != null)
     .slice()
     .reverse()
     .slice(-10)
     .map((s, i) => ({
       name: `${i + 1}`,
-      rate: Math.round((s.score! / s.total!) * 100),
+      rate: Math.min(100, Math.round(((s.correctCount ?? s.score ?? 0) / s.total!) * 100)),
       mode: s.mode === "EXAM" ? "模考" : "练习",
     }));
 
@@ -520,12 +522,24 @@ export default function StudentHome() {
             </button>
           ))}
           <span className="mx-1 text-xs text-slate-300">|</span>
-          {[{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "CUSTOM", l: "组卷套题" }].map((t) => (
+          {[{ v: "", l: "全部套题" }, { v: "OFFICIAL", l: "原版套题" }, { v: "mock", l: "模考套题" }, { v: "CUSTOM", l: "组卷套题" }].map((t) => (
             <button
               key={t.v}
               onClick={() => setLibKind(t.v)}
               className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                 libKind === t.v ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t.l}
+            </button>
+          ))}
+          <span className="mx-1 text-xs text-slate-300">|</span>
+          {[{ v: "", l: "全部考试" }, { v: "TMUA", l: "TMUA" }, { v: "ESAT", l: "ESAT" }].map((t) => (
+            <button
+              key={t.v}
+              onClick={() => setLibSourceType(t.v)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                libSourceType === t.v ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
               {t.l}
@@ -559,6 +573,8 @@ export default function StudentHome() {
                       <p className="truncate text-sm font-medium text-slate-800" title={p.title}>{p.title}</p>
                       {p.kind === "OFFICIAL" ? (
                         <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[11px] font-medium text-teal-600">原版</span>
+                      ) : p.kind === "mock" ? (
+                        <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">模考</span>
                       ) : (
                         <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">组卷</span>
                       )}
@@ -678,8 +694,8 @@ export default function StudentHome() {
                   <td className="py-2">{s.mode === "EXAM" ? "模拟考" : "练习"}</td>
                   {s.submittedAt ? (
                     <>
-                      <td className="py-2">{s.score} / {s.total}</td>
-                      <td className="py-2">{s.total ? Math.round((s.score! / s.total) * 100) : 0}%</td>
+                      <td className="py-2">{(s.correctCount ?? s.score)} / {s.total}</td>
+                      <td className="py-2">{s.total ? Math.min(100, Math.round(((s.correctCount ?? s.score ?? 0) / s.total) * 100)) : 0}%</td>
                     </>
                   ) : (
                     <>

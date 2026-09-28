@@ -10,6 +10,7 @@ import { cleanUnits } from "../lib/text-normalize.js";
 import { chatComplete, llmConfigured, llmInfo } from "../lib/llm.js";
 import { planSkillFix } from "../lib/fix-question.js";
 import { normalizeNewlines } from "../lib/text-clean.js";
+import { applyTeacherPerms, expandSourceType } from "../lib/teacherPerms.js";
 import { parseImportFile, mapAnswerToOptionText, alignAnswerToOptions } from "../lib/parse-import-file.js";
 import { parsePdf, parseAnswerPdf } from "../lib/import-pdf.js";
 import { createImportTask, updateImportTask, finishImportTask, failImportTask, getImportTask } from "../lib/import-task.js";
@@ -670,7 +671,11 @@ function buildWhere(query, user) {
   }
   if (query.topic) where.topic = { contains: query.topic };
   // 题源/试卷类型过滤(TMUA/ESAT/NSAA...)
-  if (query.sourceType) where.sourceType = query.sourceType;
+  // ESAT 家族展开:筛选 ESAT 时同时命中 ENGAA / NSAA 的题(不改数据库原始值)
+  if (query.sourceType) {
+    const t = String(query.sourceType).trim();
+    where.sourceType = { in: expandSourceType(t).length ? expandSourceType(t) : [t] };
+  }
   // 搜题:按题干关键词搜索(含公式/LaTeX 原文片段)
   const q = String(query.q || "").trim();
   if (q) where.stem = { contains: q };
@@ -683,6 +688,8 @@ function buildWhere(query, user) {
   } else if (query.status) {
     where.status = query.status;
   }
+  // 教师可见范围权限:仅当 role=TEACHER 且配置了白名单时,将列表限制为白名单内
+  applyTeacherPerms(where, user);
   return where;
 }
 

@@ -93,7 +93,7 @@ export async function recalcPapersOfQuestion(questionId) {
 
 // 批量导入/单题录入后:把「成套」的题目自动组成试卷
 // created: [{ id, subject, paper, source }] — 本次新增的题
-// options: { mode, durationMin, title, minSetSize }
+// options: { title, kind, minSetSize }（考试模式/时长属于 Session,不在此设置）
 // 返回 [{ id, paperId, title, action: "created"|"merged", added, total, status }]
 //
 // 分组口径以「库中同 subject+paper+source 的全部题目」为准,而不是只看本次新增的几条。
@@ -111,7 +111,7 @@ export async function syncAutoPaperSets(created, options = {}) {
   }
 
   const results = [];
-  const single = groups.size === 1; // 只有一组时,允许调用方用 title/mode/durationMin 覆盖
+  const single = groups.size === 1; // 只有一组时,允许调用方用 title 覆盖卷名
   for (const [key, g] of groups) {
     const full = await prisma.question.findMany({
       where: { subject: g.subject, paper: g.paper, source: g.source },
@@ -121,8 +121,6 @@ export async function syncAutoPaperSets(created, options = {}) {
     g.ids = full.map((q) => q.id);
     if (g.ids.length < minSize) continue;
     const existing = await prisma.paper.findUnique({ where: { sourceKey: key } });
-    const mode = options.mode === "EXAM" ? "EXAM" : options.mode === "PRACTICE" ? "PRACTICE" : null;
-    const durationMin = Number(options.durationMin) || null;
 
     if (existing) {
       const old = parseIds(existing);
@@ -133,8 +131,6 @@ export async function syncAutoPaperSets(created, options = {}) {
         data: {
           questionIds: JSON.stringify(merged),
           ...(g.sourceType ? { sourceType: g.sourceType } : {}),
-          ...(mode ? { mode } : {}),
-          ...(durationMin ? { durationMin } : {}),
         },
       });
       const r = await recalcPaper(existing.id);
@@ -147,8 +143,6 @@ export async function syncAutoPaperSets(created, options = {}) {
           title: (single && options.title) || titleOf(g),
           subject: g.subject,
           sourceType: g.sourceType,
-          mode: mode || (durationMin ? "EXAM" : "PRACTICE"),
-          durationMin,
           questionIds: JSON.stringify(g.ids),
           source: g.source,
           origin: "AUTO_SET",

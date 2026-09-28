@@ -118,6 +118,23 @@ router.post(
   })
 );
 
+// DELETE /api/me/wrongbook — 批量删除错题本条目 { questionIds: [] }
+// 仅删除属于当前登录学生的条目,防止越权删除他人错题
+router.delete(
+  "/wrongbook",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const ids = Array.isArray(req.body?.questionIds)
+      ? req.body.questionIds.map((x) => String(x))
+      : [];
+    if (ids.length === 0) return fail(res, 400, "请选择要删除的错题");
+    const r = await prisma.wrongBook.deleteMany({
+      where: { studentId: req.user.id, questionId: { in: ids } },
+    });
+    ok(res, { deleted: r.count }, `已删除 ${r.count} 条错题`);
+  })
+);
+
 // GET /api/me/stats — 知识点掌握度(按 topic 聚合)
 router.get(
   "/stats",

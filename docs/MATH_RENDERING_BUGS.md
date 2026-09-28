@@ -1,6 +1,6 @@
 # 题目公式渲染 Bug 库与预防规范
 
-> 本文档记录「金瑞升学金鹰系统」中**题目数学公式渲染**发现的所有 Bug、
+> 本文档记录「金瑞高中综合管理系统」中**题目数学公式渲染**发现的所有 Bug、
 > 根因、修复与**预防规则**。任何对 `lib/rich.tsx`(latexify / smartMath / renderRich)的修改,
 > 必须:① 阅读本库;② 修改后运行 `npm run verify:math` 全题库回归;③ 更新本库。
 
@@ -19,6 +19,10 @@
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|------|------|------|------|
+| 35 | **题源库答案键「机械填充」损坏 + 同批导入残留(断字 / 页码),学生选对判错**(ESAT 物理「补充习题」库 186 题)。① **答案键大面积错**:库内 `answer` 字段与正确选项不符(逐题独立重算后 **30/30 全部确认为错答**,零假阳性),典型 `Q008` force→**charge**(SI 基本单位数)、`Q083` ×60→**÷60**(差 3600×)、`Q125` 6000μ₀→**zero**(反向等大抵消)、`Q028` 匀速列车悬挂物 D→**E**、`Q029` 非牛三对 D→**E**;② **解析「自承」尾注**:模型算出了正确答案,却在解析末尾补「依给定答案…」「疑为答案录入有误,**建议核对**」这类话术;③ **题干断字**:`electromag- netic`/`state- ments`/`dis- charge` 等 7 处;④ **选项尾部夹页码**:`…the weight of the satellite **9**`、`…remains constant. **27**` | **根因在题源库生成阶段,不在渲染层**:`bank_esat_physics_supplement_latex.json` 的 `answer` **逐字等于 `options[0]`**(机械取首项)、`_img.json` 的 `answer` **恒为 `A`**、`_supplement.json` 混杂 `(A)` 与乱码(如 `kg s^{-1} 4200×8 6.7×109`)⇒ 该库答案键在生成时即损坏,被它供题的**补充习题卷与模考10/11/12 忠实继承**。断字与页码则是 PDF 抽取残留。⚠️ **注意:纯重算答案查不出,因本库 `answer` 存完整选项文本、比对时又按选项原文匹配**;必须「独立重算 + 题源库交叉」才能定位 | ① **逐题独立重算**(3 路子代理并行,喂给模型的题面**剔除 `answer`/`solution`** 防污染)⇒ 纯文本题 28/28 与主核验一致;配图题(`Q069` 量纲、`Q114` 二极管读数)由主核验逐张读图定案;② 重写解析**删除「自承」尾注**并补完整推导(否则新答案与尾注打架);③ 按**选项原文精确校验唯一性**后写 `answer`;④ **只对「答案键耦合」的选项文本做清理**(如 `Q029` 的尾页码 `9` 必须清,否则答案键自身是坏串),非耦合残留(`Q076` C / `Q084` C / `Q041` 缺 `P:` 前缀)**不顺手改**,合并成一批待拍板;⑤ 五段式落库(双重备份 + 快照守卫 + 单事务 + 读回复核 + **全表逐行 diff**),两轮共修 **41 题**、`Question` 改动 41 行、新增 0 / 删除 0;⑥ 回写 `bank_esat_physics_supplement{,_latex,_img}.json` 防重导入冲掉(注:各文件 `options` 结构不同——完整文本型可同步,占位字母型 `['A'..]`/`'(A)'` **同步会破坏结构**);⑦ **门禁 D 是下界不是全集**:非命中题抽样 12 题仍有 3 题错答(≈25%),故补跑「抽样普查探针」;修完再跑一次权威口径又抓出 `Q028/Q029`(其话术用「建议核对」子句);⑧ 残余量化指纹 **`answer == options[0]`** 在未核 145 题中仍占 **25.5%** ⇒ **「门禁归零 ≠ 清干净」**,估算残留 30~37 道,正则手段用尽、只能靠独立重算。方法与铁律已沉淀进 `paper-quality-audit` 技能 | this |
+| 34 | **源卷 KaTeX→LaTeX 导入期静默丢符号:根号/下标/求和号/绝对值竖线被删,「合法 LaTeX 但数学含义错」**(ESAT 数学1/数学2 模考22,**21 题 23 处字段 / 70 处替换**)。四类:① **根号 `\sqrt{...}` 整体被删只留被开方数** —— `\sqrt{15}`→`15`、`\sqrt3`→`3`、`\sqrt m`→`m`,最重者一题丢 10 处(`\frac{7\sqrt{2}}{2\sqrt{2}-1}`→`\frac{72}{22-1}`),直接产出 `\sin60°=\frac{3}{2}`、`h=\frac{3}{2}s` 这类**数学上错误**的算式;② **单下标被整体转成上标** —— `S_n`→`Sⁿ`、`V_X`→`V^X`、`t_1`→`t¹`、`u_0`→`u⁰`(一题 11 处),**`\log_2`→`log²` 把对数底数变成"对数平方"**;③ **`\sum`/`\int` 被删只留悬空上下限** —— `$\sum_{n=2}^{20}$`→`$_{n=2}^{20}$`;④ **绝对值竖线被删**(同①机制:裸 `\|` 紧邻高内容时 KaTeX 渲染成 SVG 分隔符) —— `=\|-\frac{4}{3}\|=\frac{4}{3}`→`=-\frac{4}{3}=\frac{4}{3}`(**断言 −4/3=4/3,数学上为假**)、`\|\frac{k}{6}\|<1`→`\frac{k}{6}<1`(注意:同句的分隔符走 `\mid`(文本字形)故幸存,只丢紧邻分式的那对)。**其中 2 处落在题干(M2 Q16/M2 Q24),学生看到的题意已被改变**。⚠️ **全部渲染零报错**(`\frac{415}{2}` 是合法 LaTeX)——即 **KaTeX 严格校验门禁(#33)完全抓不到这一类** | **根因在导入器而非渲染层**:当年走的 `html_to_bank_esat_set2_v2.py` 是「**抽纯文本 + 启发式重新包 `$...$`**」的降级流水线,不是真正的 KaTeX→LaTeX 逆向转换:① 根号与**所有 KaTeX 用 SVG 绘制的原子**(含裸 `\|` 分隔符)被 `re.sub(r'<svg...')` **整块删除** → 只剩被开方数/丢掉竖线;② `<span class="msupsub">` 一律无脑写成 `^{...}`,**不区分 `vlist-s`(下标)与 `vlist-t2`(上标)**;③ `\sum`/`\int` 等大运算符原子无对应分支 → 直接丢字。**公式密集的卷子必然中招,且因答案键正确而长期潜伏**(本库 `answer` 存完整选项文本 ⇒ 纯重算答案 54/54 全对,查不出) | ① 以**源卷 KaTeX span 为唯一真值**(经权威转换器 `katex2latex.py` 逆向得 LaTeX),建「**源↔库结构计数差异审计**」逐题量化:`mord sqrt` 计数、`msupsub[vlist-s]` 计数、运算符(宏+字面)双向计数、`\|`+`\mid` 双向计数;② 声明式 patch 表 + 全量守卫(任一 `old` 缺失或计数不符 ⇒ 整体中止)+ 单事务写入 + 写后复核,40 条 patch / 70 处替换 / 23 个字段一次性修复(幂等,分两轮落库);③ **只改 `stem`/`solution`,绝不触碰 `answer`/`options`** ⇒ 判分零风险、无需重判;④ 全表 diff 证明仅 `Question` 表 21 行变动(新增 0/删除 0);⑤ 方法沉淀进 `paper-quality-audit` 技能 + 模板脚本 | this |
+| 33 | **题目数据坏 LaTeX 致显示损坏(TMUA P2 模考20 第10题)**:选项 B `cos(sin $θ$)` 把 `cos`/`sin` 函数名留在 `$...$` 外(文本字体)而 `θ` 在数学(斜体)→字体不统一;选项 A `$a^{ln b}$` 的 `ln` 未用 `\ln`;选项 C/D 文本与数学混排并夹 Unicode `−`/`≤`/`≥`;**解析 `$… \> 1$` 的 `\>` 是 KaTeX 未定义控制序列→该段数学渲染失败(红框/回退原文)** | 题目生成/转录产出坏 LaTeX:① 函数名 `cos`/`sin`/`ln` 未包进 `$...$` 或未加反斜杠;② 误用 `\>`(TeX 制表命令,KaTeX/MathJax 均未定义)作间距;③ 数学符号用 Unicode 而非 `\theta`/`-`/`\le`/`\ge` | ① 重写 Q10 四选项与解析,统一进数学模式并规范命令(`$\cos(\sin\theta)$`、`a^{\ln b}`、`\|P(x)-\cos x\|\le10^{-6}`、`x^{-4}\ge5`)、删 `\>`→`>`;② 纵深防御写库(双备份+守卫+单事务)部署线上;③ 补 regression 扫描 | this |
+| 32 | **内容/导出侧的裸 `$` 让其后所有公式整体错位**:自建 HTML 预览页正文里明写「解析 4 个 `$` 分段」这类描述,页面从此无法正确渲染 | `$` 的配对是**全局**的:正文混入一个裸 `$` 后,全页 `$` 计数由偶变奇,auto-render「先配对、后渲染」的策略会把其后的公式**整体错位一格**,大段中文散文被当成 LaTeX 送进 KaTeX(渲染成变量斜体/乱排)。数据层 `rich.tsx` 早有 `looksLikeTextInDollars` 兜底(#23/#24),但**静态导出页与自建预览页没有这层兜底**,auto-render 对内容里的裸 `$` 零容忍 | ① 把正文里的裸 `$` 改写为不含它的表述(本次:「解析 4 个 `$` 分段」→「解析题干的 2 处公式片段」);② 新增门禁:**去掉 script/style 与全部标签后,统计可见文本的 `$` 数量必须为偶数**;再按块级/行内两种模式切分,**对每一段逐一跑 KaTeX 严格模式(`throwOnError:true`)**,任一段报错即失败(本次可见 `$` 36 个、18 段全部通过) | this |
 | 31 | **文本形式 `sqrt(...)` 未渲染为根号**:TMUA 自编卷套题选项大量显示 `±(18sqrt(21))/(49)`,`sqrt(21)` 原样外露,无根号;学生/教师看到的选项像是普通英文而非数学公式 | ① `latexify` 函数名替换白名单遗漏 `sqrt`;② 从未把 `sqrt(...)` 这种**文本圆括号**形式转成 LaTeX `\sqrt{...}`;smartMath 虽把整段判为数学,KaTeX 收到的 `sqrt` 被当变量乘积,根号无法显示 | ① `apps/web/lib/rich.tsx`、`apps/api/src/lib/text-clean.js`、`apps/api/scripts/{verify_math.js,normalize_math_data.js,latexify_options.js}` 的 `latexify` 均加入 `fixSqrt`:循环把 `sqrt(...)`(支持嵌套,排除 `\sqrt`/变量前缀如 `rsqrt`)→`\sqrt{...}`;② 函数名替换正则加入 `sqrt`,并统一排除反斜杠避免 `\sqrt`→`\\sqrt`;③ 部署后运行 `fix_sqrt_text.mjs` 修复线上存量数据并同步 answer | this |
 | 30 | **PDF 双文件导入答案存成字母、全部无法判分(大量错答案)**:物理等学科「题目PDF+答案PDF」导入后,教师审题看到答案是 `F`/`H`/`G` 等单字母而非选项文本;学生选了正确选项也判错(判分 `a===s` 全等比对,字母永远≠选项文本);部分题字母越界(5 个选项却存 `G`) | ① `questions.js` 双文件导入在 `parsePdf`(已内部 `finalizeRow` 把字母→选项文本)之后,用答案文件**原始字母** `rows[i].answer = answers[i].answer` **覆盖答案**,而 `mapAnswerToOptionText` 只在 `finalizeRow` 内调用一次→覆盖后的字母再无映射机会;② 匹配用**位置**(`answers[i]`→`rows[i]`)而非题号,题数/编号不一致即整体错位 | ① `questions.js` 双文件匹配改为**按题号**(优先题目 `qno`,无则退回位置)并调用 `mapAnswerToOptionText` 把字母→选项文本;② `vision.js`/`import-pdf.js` 增加 `qno` 透传(题目提取带题号,答案按号匹配);③ **越界防护**:字母索引超出选项数量(如 5 选项给 G)视为识别错误,清空交教师审核;④ 一次性脚本把全库 `PDF 导入` 的字母答案映射回选项文本、越界清空 | 8e37100 |
 | 29 | **选项里罗马数字 `I` 被吞**——`I only`→`only`、`I and II only`→`and II only`、`I and IV only`→`and IV only`;线上 46 道含 `only` 的题中 **10 道** 中招(如 `cmslhyim70005k9n8qqzs1ld7`、`cmsles85u000cfqh19eiutve8`)。TMUA/ESAT 的「以下哪些正确」题型几乎全用 `I/II/III` 选项,影响面大且**改变题意**(学生看到的选项与原卷不一致) | `cleanOptionPrefix` 正则字母类 `[A-Ja-j]` **包含了 `I`**;而 `I only` 恰好是「大写字母 + 空格分隔符」,完全符合"选项字母前缀"的模式(等价于 `I. only`)→ 被当前缀删除。**这是 #17 的同一函数第二次踩坑**:#17 修 `*`→`+` 解决了"零分隔符"的误删,但没意识到 `I` 本身既是英文单词/罗马数字**又是合法选项字母**,只要它后面跟空格就必然误判——`+` 量词救不了 | ① `questions.js` `cleanOptionPrefix` 字母类改为 `[A-HJ-Za-hj-z]`,把 `I/i` 排除在可清洗前缀之外(第 9 个选项标签 `I.` 极少出现,宁可漏清洗也不能吞题意);② 线上脚本扫描全部含 `only` 的选项,按 `only`→`I only`、`and <罗马数字> only`→`I and <罗马数字> only` 规则回填修正 10 道题;③ 修复后复扫,损坏数 0 | 5acb124 |
@@ -26,12 +30,12 @@
 | 26 | **AI 生成英文解析格式/公式显示错乱**:解析出现 `## Solution Steps`、`- ` 列表、`**bold**` 字面显示,且英文正文段落被渲染成斜体(如 "never touches or crosses the $x$-axis" 整段数学化) | ① V2.3.17 的解析 prompt 要求「用 Markdown headings ## 组织」,但渲染层 `renderRich` 不解析 Markdown,`##`/`- `/`**` 原样显示;② `renderRich` 默认对非公式文本走 `smartMath`(为题干设计),英文长段落被误判成数学斜体 | ① `rich.tsx` `renderRich` 新增 `opts.smart=false` 参数,非公式文本原样输出——题干/选项仍 smartMath,解析类长文本(`reviewQ.solution`/`d.solution`/`w.solution`)传 `{smart:false}`;② `questions.js` 两处解析 prompt 改为「plain text + 简单换行分段,禁止 ##/- /**,公式只用 $...$/$$...$$,禁止 \\( \\[ \\text \\begin \\\\」;③ 一次性脚本清洗存量解析的 `##`/`- `(行首)/`**` 标记 | this |
 | 25 | **公式块级/行内混用 + 裸 LaTeX 源码不渲染**:如 2017 第 11 题(cmsladx3n000a88r5027kxs8g)题干渲染为:`$$x_1 = 7$$` 居中独占一行,紧接着的 `x_{n+1} = \frac{23x_n - 53}{5x_n + 1}` 完全是裸 LaTeX 源码(KaTeX 不渲染,显示 `x_{n+1}` `\frac` 等源码),末尾的 `$$\n` 是孤儿 display math(开 `$$` 但找不到闭合 `$$`)→ 整段排版错乱 | 视觉模型对短公式习惯用 `$$...$$` 块级,但紧跟的下一行公式忘了加 `$` 包裹直接裸写,又用 `$$\n` 试图开新块级却没闭合;**`vision.js` SYSTEM_PROMPT 第 46 行只笼统说「开 `$$` 必有闭 `$$`,不要在公式中间出现孤立的 `$`」——过于抽象,模型没遵守** | ① 一次性 UPDATE 该题 stem,把 `$$x_1 = 7$$` → `$x_1 = 7$`、裸 `x_{n+1} = \frac{...}{...}` → `$...$` 包裹、删孤儿 `$$\n`;② `vision.js` SYSTEM_PROMPT 新增「**公式定界符选择**」规则(显式定义短公式用 `$...$` 行内、复杂表达式才用 `$$...$$`、严禁块级与行内混用/半边定界符) | this |
 | 27 | **`\begin{pmatrix}` 等 LaTeX 环境命令原样外露**:题干 `$\begin{pmatrix} 3 \\ -5 \end{pmatrix}$` 显示为字面 `\begin{pmatrix}...` 源码(TMUA 2020 Q10) | `looksLikeTextInDollars`(V2.3.1 为防零散 `$` 引入)用 `\b[a-z]{2,}\b` 统计英文词,把 `begin`/`end`/`pmatrix` 当普通单词(≥2 个)→ 整个 `$...$` 误判为"数据残留文本"退回文本,KaTeX 不渲染 | `rich.tsx` `looksLikeTextInDollars` 先剔除 LaTeX 命令(`\\[a-zA-Z]+`)与环境名(`{[a-zA-Z]+}`)再统计;8 用例验证 | this |
-| 25b | **同卷内两个公式挤在同一行**:**2018 Q3/Q4**(`cmslazgrq0002qgwy554gmrmm` 圆方程对、`cmslazgry0003qgwy3y08cvg2` 联立方程组)、**2017 两题**(联立方程、解积分方程)、**2019 一题**(`cmsjwe4gy000v1d4iif1ti8kq` 对数方程组)。每题 stem 都是 `$$ 公式 A $$ 公式 B $$`(第二公式裸 LaTeX,末尾 `$$\n` 是孤儿块级)。`tokenize` 正则 `\$\$([\s\S]+?)\$\$` non-greedy 在奇数 `$$` 时把后续所有内容吞进一个超长块级公式 → KaTeX 报「Unexpected 」整段 LaTeX 源码 fallback 显示 | 视觉模型按原文 PDF 多公式连写,但导入后端没自动清洗、也没要求导入时换行——**5 题都靠手工 UPDATE 修复**:`stem` 每个公式独立一行 + 完整 `$$...$$` 包裹。**`vision.js` prompt 强化**:① 「**每个公式必须独立一行,严禁多个公式挤在同一行**」② 「**`$$` 必须两两配对,严禁单边 `$$`**」③ 「**display math 仅用于多行/分式/积分/求和/极限/矩阵;短公式用行内 `$...$`**」。**配套**:`scripts/verify-md-pairs.cjs` 扫全库,任何 stem 含奇数个 `$$` 或奇数个 `$` 退出码 1,可入 CI 防回归 | this |
+| 25b | **同卷内两个公式挤在同一行**:**2018 Q3/Q4**(`cmslazgrq0002qgwy554gmrmm` 圆方程对、`cmslazgry0003qgwy3y08cvg2` 联立方程组)、**2017 两题**(联立方程、解积分方程)、**2019 一题**(`cmsjwe4gy000v1d4iif1ti8kq` 对数方程组)。每题 stem 都是 `$$ 公式 A $$ 公式 B $$`(第二公式裸 LaTeX,末尾 `$$\n` 是孤儿块级)。`tokenize` 正则 `\$\$([\s\S]+?)\$\$` non-greedy 在奇数 `$$` 时把后续所有内容吞进一个超长块级公式 → KaTeX 报「Unexpected 」整段 LaTeX 源码 fallback 显示 | 视觉模型按原文 PDF 多公式连写,但导入后端没自动清洗、也没要求导入时换行 | **5 题都靠手工 UPDATE 修复**:`stem` 每个公式独立一行 + 完整 `$$...$$` 包裹。**`vision.js` prompt 强化**:① 「**每个公式必须独立一行,严禁多个公式挤在同一行**」② 「**`$$` 必须两两配对,严禁单边 `$$`**」③ 「**display math 仅用于多行/分式/积分/求和/极限/矩阵;短公式用行内 `$...$`**」。**配套**:`scripts/verify-md-pairs.cjs` 扫全库,任何 stem 含奇数个 `$$` 或奇数个 `$` 退出码 1,可入 CI 防回归 | this |
 | 24 | **行内公式兜底分支仍泄露 `$` 字符**:V2.3.1 修复后,题干中 `$This is a regular sentence about numbers$` 这类零散 `$`(内含 ≥2 个普通英文词)仍显示为 `$This is a regular sentence about numbers$`(前后两个 `$` 字符原样显示) | V2.3.1 新增的 `looksLikeTextInDollars` 兜底分支退回到文本 token 时**用了 `m[0]`(整段匹配,含外层 `$` 字符)**;任何被拦截的 `$...$` 都会泄露 2 个 `$` 字符。被外层 `$` 包裹的英文句子本来想作为文本渲染却被 `$` 字符本身污染 | `apps/web/lib/rich.tsx` tokenize:退回时改用 `expr`(剥掉外层 `$`),仅把内部内容作为文本 token 推进。`$` 字符从此**不会再进入文本 token** | this |
-| 23 | **题库题干/选项中 `$` 字符直接外露、整段被吞成巨大公式**:如题干出现 `f(x)g(x) = \cos^2 x$ for all real numbers x ... any x$ ?`,`$` 符号可见且后续整段被渲染成 KaTeX 变量斜体,导致题干无法阅读 | 数据导入/PDF 提取残留**只保留闭合 `$` 而丢失开头 `$**;`rich.tsx` 行内公式正则 `\$([^$]+?)\$` 会把两个零散 `$` 之间的整段正文吞进一个巨大行内公式,触发 KaTeX 把英文单词全部当变量渲染 | `apps/web/lib/rich.tsx`:① tokenize 增加 `looksLikeTextInDollars`,若 `$...$` 内含多个普通英文单词则退回文本;② `isMathToken` 增加 `stripDollarArtifacts`,让 `x$` 按变量 `x` 进入数学模式;③ `smartMath` 开头去掉片段首尾零散 `$`,flushMath 时从数学 buffer 中剔除所有残留 `$` | this |
+| 23 | **题库题干/选项中 `$` 字符直接外露、整段被吞成巨大公式**:如题干出现 `f(x)g(x) = \cos^2 x$ for all real numbers x ... any x$ ?`,`$` 符号可见且后续整段被渲染成 KaTeX 变量斜体,导致题干无法阅读 | 数据导入/PDF 提取残留**只保留闭合 `$` 而丢失开头 `$`**;`rich.tsx` 行内公式正则 `\$([^$]+?)\$` 会把两个零散 `$` 之间的整段正文吞进一个巨大行内公式,触发 KaTeX 把英文单词全部当变量渲染 | `apps/web/lib/rich.tsx`:① tokenize 增加 `looksLikeTextInDollars`,若 `$...$` 内含多个普通英文单词则退回文本;② `isMathToken` 增加 `stripDollarArtifacts`,让 `x$` 按变量 `x` 进入数学模式;③ `smartMath` 开头去掉片段首尾零散 `$`,flushMath 时从数学 buffer 中剔除所有残留 `$` | this |
 | 22 | **行内公式/字母/数字比正文小**:题库、练习、错题本中 `$x^2 - 5x + 6 = 0$`、`$3$` 等行内公式/数字比 surrounding text 小一截;同一句中 `$3$` 与正文 `4` 大小不一 | V2.2.5 修复 #21 对齐时,在 `globals.css` 给 `.math-inline .katex` 加了 `font-size: 1em !important`;KaTeX 字形本按 1.21em 设计,强制 1em 后视觉上比正文小,且该规则是全局样式,所有走 `renderRich` 的页面均中招 | `apps/web/app/globals.css`:移除 `.math-inline .katex { font-size: 1em !important }`,恢复 KaTeX 默认 1.21em;保留 `.math-inline { display:inline; vertical-align:baseline; overflow:visible }` 保证基线对齐 | this |
 | 21 | **行内数学 `x`/公式与正文上下不齐**:题干中 `x`、`x - 3y + 1 = 0`、`3x² - 7xy = 5` 等行内公式相对 surrounding text 明显上浮/下沉,单字母 `x` 看起来像上标 | `.math-inline` 外层被设为 `inline-block` 并加 `overflow-x:auto`;当 inline-block 的 `overflow` 不为 `visible` 时,其基线会落到块底部,导致 KaTeX 数学片段与正文基线错位 | `rich.tsx` 行内数学包裹层只保留 `className="math-inline"`,去掉 `inline-block`/`overflow-x-auto` 等工具类;`globals.css` 显式设置 `.math-inline { display:inline; vertical-align:baseline; overflow:visible; }`,内部 `.katex` 同样 `display:inline; vertical-align:baseline;` | this |
-| 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
+| 18 | **化学式括号仍斜体**:`NaCl(aq)` 的 `(aq)`、`copper(II)` 的 `(II)` 显示斜体;smartMath 把括号当 OP_TOKEN,括号内字符被判数学 | `(aq)`/`(II)` 单 token 进入 smartMath,`(` `)` 匹配 OP_TOKEN 数学,内部字符 `aq`/`II` 经 MIXED_LET/VAR 判数学 → KaTeX 数学字体斜体 | `isMathToken` 新增:`/^\(([a-z]{2,}\|[IVX]+)\)$/i` 命中→文本(化学状态 `(aq)`、罗马数字 `(II)/(III)/(IV)`);`(x)` 单字母不匹配,仍数学 | this |
 | 20 | **化学式裸下标显示 `X_n` 而非 `X₃`**:`HNO_3`、`CuNO_3`、`H_2O`、`NO_2` 等下标全部保留为 LaTeX `_n` 字面 | `cleanUnits` 只处理了**裸上标**(负幂次 `mol^{-1}`、`cm^3`)和 `$...$` 内的内容,**没有处理裸文本下标** `([A-Z][a-z]?)_(\d+)` 形式;视觉模型常输出 `HNO_3`/`CuNO_3` 等 | `cleanUnits` 新增:`.replace(/([A-Z][a-z]?)_(\d+)/g, (_, formula, n) => `${formula}${toSub(n)}`)`。`HNO_3`→`HNO₃`、`H_2O`→`H₂O`、`CuNO_3`→`CuNO₃`、`NO_2`→`NO₂` ✓。配合 #16 的 `HAS_UNI_SUP_SUB` 规则,清洗后判文本(正文字体)。**注意**:`x_n` 数学变量下标不误伤(`x` 不匹配 `[A-Z]`) | this |
 | 19 | **句子末尾括号注释整段斜体**:`(Ignore ions produced by dissociation of water.)` 中 `Ignore`、`dissociation`、`water` 整段斜体 | smartMath 按空白切分 `(Ignore...)` 得到 tokens `(`+`Ignore`、`ions`...、`water.)`(末尾 `)` 与 `.` 紧贴)。`water.)` 含 `)` 命中 `MIXED_LET` 数学特征 → 被判数学 → KaTeX 渲染;前面累积文本被 flush,整段视觉在数学上下文中 | `isMathToken` 新增:`/^[a-zA-Z][a-zA-Z.,;:'\-]*\)$/` 命中→文本(末尾 `)` 前面是普通英文)。`water.)` → 文本 ✓;`(x)` 数学不破坏(单字母被 `[a-z]{2,}`/规则不命中,仍数学) | this |
 | 17 | **选项首字母被吞**——`Covalent`→`ovalent`、`It has`→`t has`、`gains`→`ains`;扫库 72 个选项中招,本质是导入时清洗函数 | `cleanOptionPrefix` 正则 `[\(\[【（]?[A-Ja-j][\.\s:、)）\]】」、\]】]*` 用 `*`(零或多个),允许**零个分隔符**,等价于"删开头的单个字母":任何 `[A-Ja-j]` 开头的选项(几乎所有选项)都被误删首字母 | `*` 改为 `+`(一个或多个),要求字母后**至少一个分隔符**(`.`/` `/`:`/`)`/`]`等)。`Covalent bonds` 中 `C` 后是 `o`(字母,非分隔符)→ 不匹配 → 不删 ✓;"A 1/25" 中 `A` 后是 ` `(分隔符)→ 删 `A ` ✓ | this |
@@ -91,6 +95,18 @@
 
 30. **PDF 双文件导入的答案必须是「选项文本」而非字母**(见 #30):判分 `a===s` 全等比对,答案字段存 `F`/`G` 这类字母永远≠选项文本→全错。规则:① 任何把答案文件字母写回题目 `rows[i].answer` 的代码,**必须**经过 `mapAnswerToOptionText(letter, options)` 映射成选项文本(字母→文本只在 `finalizeRow` 内发生一次,覆盖式赋值时不会自动重跑,极易漏);② 答案与题目**按题号(`qno`)匹配**,绝不按位置(`answers[i]`→`rows[i]`),否则题数/编号错位即全错;③ **越界防护**:字母索引 `charCode-65 >= 选项数`(如 5 选项给 G)视为识别错误,清空交教师审核,绝不写入明显错误答案。修改 `questions.js` 双文件导入逻辑后,必须 `grep` 确认答案落库前经过 `mapAnswerToOptionText`,并查库确认 `PDF 导入` 题目的 answer 不再是单字母。
 31. **文本形式 `sqrt(...)` 必须转成 `\sqrt{...}`**(见 #31):视觉模型/外部导入常把根号写成 `sqrt(21)`。latexify 必须先把**圆括号参数**转成**花括号**,再给函数名加反斜杠;否则 KaTeX 把 `sqrt` 当变量乘积,根号无法显示。**必须**支持嵌套(如 `sqrt(a+sqrt(b))`→`\sqrt{a+\sqrt{b}}`);**必须**排除 `\sqrt` 本身(lookbehind 排除反斜杠)与 `rsqrt` 等变量前缀;新增数学函数时同步更新四份 latexify 与函数名白名单(FUNC_NAMES/FUNC_TOKEN/SM_FUNC)。
+
+32. **任何含 `$...$` 数学的 HTML/数据,正文里禁止出现字面 `$`**(见 #32):`$` 的配对是**全局**的,正文混入一个裸 `$` 会让其后的公式**整体错位一格**,大段散文被吞进 KaTeX。**门禁(可自动化,建议入 CI)**:① 去掉 script/style 与全部标签后,统计可见文本的 `$` 数量,**必须为偶数**;② 按 `$$...$$` 与 `$...$` 两种定界符切分后,对**每一段**跑 KaTeX 严格模式(`throwOnError:true`),任一段报错即门禁失败;③ 需要书写「美元符号 / 占位符」时,改写为不含 `$` 的表述(如「2 处公式片段」),**不要依赖 HTML 实体转义**——实体解码后仍是 `$`,auto-render 照样误配。**适用于题干/解析/选项等数据字段,也适用于自建预览页与静态导出页**(后者无 `rich.tsx` 兜底,更易中招)。
+
+33. **题目数据(题干/选项/解析)入库/发布前必须过 KaTeX 严格校验,并禁止两类坏 LaTeX**(见 #33):① **未定义控制序列**——KaTeX 仅支持 `\,` `\;` `\:` `\!` `\quad` `\qquad` 作间距,**绝不可写 `\>`/`\<` 等 TeX 制表命令**(会触发渲染失败,整段数学回退原文);② **`$...$` 外的裸函数名**——`cos`/`sin`/`ln`/`log` 必须写进数学模式并加反斜杠(`\cos`/`\sin`/`\ln`),否则文本/数学字体不统一且 `latexify` 只补数学模式内、不会补数学模式外的函数名。数学符号统一用 LaTeX 命令(`\theta`/`-`/`\le`/`\ge`),不用 Unicode `θ`/`−`/`≤`/`≥`(后者在文本/混合语境易错位)。**落地**:`verify_math.js` / `paper-quality-audit` 应增加扫描——对每题 stem/options/solution 剥出 `$...$` 段后跑 KaTeX `throwOnError:true`,任一段报未定义命令即失败;并对剥除数学后的文本做"裸 `cos(`/`sin(`/`ln(`"检测。
+
+34. **源卷 KaTeX HTML → LaTeX 的导入必须做「结构计数双向门禁」——渲染 0 错误 ≠ 内容正确**(见 #34):`\sqrt` 丢失、下标↔上标互换、`\sum`/`\int` 被删这三类损坏**产出的都是合法 LaTeX**,KaTeX 严格模式全部通过,答案键也照样正确(本库 `answer` 存完整选项文本,重算答案一样全对)⇒ **只能靠"源卷结构 vs 库内 LaTeX"的计数比对发现**。**强制门禁(任一不等即拒绝入库)**:
+   - **根号**:源 `class="mord sqrt"` 计数 == 库 `\sqrt` 计数;
+   - **脚本**:源 `msupsub` 内含 `vlist-s` 者计数 == 库 `_{` 计数,且库 `^{` 计数不得凭空增加;
+   - **运算符**:`∑ ∫ ∞ ≠ → √` 需**宏与字面 Unicode 双向计数**(库内 `∞`/`≠` 多以字面呈现,只数 `\infty` 会误判为"丢失";反之只数字面会漏掉 `\sum` 被删)。
+   - **分隔符/绝对值**:`|` + `\mid` + `∣` **三者合计**双向计数。⚠️ **只数 `|` 会漏**(源卷 `\mid` 在 LaTeX 里保持命令名),**只剥 HTML 标签也会漏**(竖线紧邻分式时被 KaTeX 画成 SVG,剥标签一并丢失 ⇒ 假阴性)。必须用**权威转换器**(`katex2latex.html_span_to_latex`)把源 span 转回 LaTeX 再计数,不要自己 `re.sub(r'<[^>]+>')`。
+   ⚠️ **三个必踩的判据坑**(口径错了会得到整片假阳性/假阴性):① 根号判据**不能**用 `viewBox="0 0 400000 1080"` 单一几何签名(KaTeX 按伸缩级别换几何),用**权威类名** `mord sqrt`;② 下标判据**不是** `vlist-r` 计数(`\frac` 也用 vlist-r),要判 `msupsub` 块内**是否含 `vlist-s`**;③ 源卷若含**整题替换**(导入期人工改写过的题),其源↔库本就不同题 ⇒ 必须**先把替换题排除**,否则会报一堆"丢失"(本轮 M2 Q06/Q15 即此类假阳性)。
+   **另外两条经验**:① 纯文本/纯 HTML 抽取式导入器(`抽文本 + 启发式重包 $`)是这类损坏的温床,**新卷一律走真正的 KaTeX→LaTeX 逆向转换**(`katex-html-paper-import` 技能的 `katex2latex.py`),不要再用 `re.sub` 删标签的路子;② 修这类数据时**只改 `stem`/`solution`、绝不碰 `answer`/`options`** ⇒ 判分零风险、无需重判任何 Session,且必须用**全表 diff** 证明"只改了预期字段"(本轮:仅 `Question` 表 20 行、新增 0 / 删除 0)。
 
 ## 三、验证用例集(手动/自动化回归样本)
 
@@ -191,6 +207,17 @@ $$f(x) - g(x) = 2\sin x$$f(x)g(x) = \cos^2 x$ for all real numbers x . Across al
                                                         (结果:行内公式正常渲染,$ 字符不可见,英文保持正文)
 $ f(x) = x^{\frac{1}{7}}(x^2 - x + 1) $                 ($ 后带空格仍正确渲染,且 $ 不可见)
 选项: 5 | 10 | 15 | 3\pi | 9\pi | 12\pi                 (裸 \pi 仍须渲染,不露出 $)
+
+**#33 回归样本(题目数据坏 LaTeX 必须被拦截,不得发布):**
+```
+选项/解析不得出现以下写法(均会显示损坏或字体不统一):
+(ii) cos(sin θ) = sin(cos θ)        →  (ii) $\cos(\sin\theta) = \sin(\cos\theta)$   (cos/sin 必须进 $...$ 且加反斜杠)
+(i) $a^{ln b}$                     →  (i) $a^{\ln b}$                              (ln 必须 \ln)
+(iii) |P(x) − cos x| ≤ 10^{−6}      →  (iii) $|P(x) - \cos x| \le 10^{-6}$           (−/≤ 用 -/\le,cos 进数学)
+(iv) $x^{4}$ + 3 + $x^{−4}$ ≥ 5     →  (iv) $x^{4} + 3 + x^{-4} \ge 5$                (−/≥ 用 -/\ge,整体进数学)
+因为 $2^{\ln 2} = e^{(\ln 2)^2} \> 1$   →  因为 $2^{\ln 2} = e^{(\ln 2)^2} > 1$        (\> 是未定义命令,必报错)
+```
+（扫描器应对每题剥出 `$...$` 段跑 KaTeX 严格模式;`\>`/`\<` 等未定义序列必须判失败;剥数学后文本不得含裸 `cos(`/`sin(`/`ln(`）
 ```
 
 **#29 回归样本(`cleanOptionPrefix` 输入 → 期望输出,罗马数字选项一字不得少):**
@@ -209,9 +236,42 @@ $ f(x) = x^{\frac{1}{7}}(x^2 - x + 1) $                 ($ 后带空格仍正确
 "Covalent bonds"      → "Covalent bonds"      (#17 样本,回归保留)
 ```
 
+**#34 回归样本(导入期符号丢失的「源卷结构 vs 库内 LaTeX」计数门禁;下列每行"源"必须计数等于"库",不等即拒绝入库):**
+
+```
+源 mord sqrt 计数  8   ==  库 \sqrt 计数  8      (M1 Q02;修复前 8 vs 6 → 丢 2)
+源 msubsup[vlist-s] 7  ==  库 _{ 计数     7      (M2 Q02;修复前 7 vs 0 → 下标全变上标)
+源 ∑ 计数 3            ==  库 \sum+Σ 计数  3      (M2 Q04;修复前 3 vs 0 → $_{n=2}^{20}$ 悬空)
+源 |+\mid+∣ 计数 8     ==  库 |+\mid+∣ 计数  8      (M2 Q23;修复前 10 vs 8 → |-4/3| 变 -4/3)
+```
+
+具体损坏→修复实例(修复后须逐条不再出现):
+
+```
+\frac{415}{2}                        →  \frac{4\sqrt{15}}{2}      (根号被删,被开方数残留)
+\sin 60°=\frac{3}{2}                 →  \sin 60°=\frac{\sqrt{3}}{2}
+\frac{72}{22-1}                      →  \frac{7\sqrt{2}}{2\sqrt{2}-1}   (一题丢 10 处之最)
+\int_{0}^{m}(mx-x^{3})dx             →  \int_{0}^{\sqrt{m}}(mx-x^{3})dx (积分限丢根号)
+=-\frac{4}{3}=\frac{4}{3}            →  =|-\frac{4}{3}|=\frac{4}{3}     (竖线被删→断言负=正)
+即 \frac{k}{6}<1                     →  即 |\frac{k}{6}|<1              (绝对值丢失)
+$S^{n}=\frac{n}{2}[2a+(n-1)d]$       →  $S_{n}=\frac{n}{2}[2a+(n-1)d]$  (下标→上标)
+$y^{k}=(x+k)^{2}+\dots$              →  $y_{k}=(x+k)^{2}+\dots$        (题干级,题意已变)
+\log^{2}(xy)=3                       →  \log_{2}(xy)=3                (题干级:底数变"对数平方")
+$u^{0}=\frac{-1+\sqrt{17}}{8}$       →  $u_{0}=\frac{-1+\sqrt{17}}{8}$ (一题 11 处)
+$S=_{n=0}^{∞}(\frac{k}{6})^{n}$      →  $S=\sum_{n=0}^{∞}(\frac{k}{6})^{n}$
+```
+
+⚠️ 上面**每一行在修复前都能被 KaTeX 无错误渲染**——本门禁必须靠**计数比对**而非渲染报错来把关。
+
 ## 四、运行验证
 
 ```bash
 # 全题库数学渲染回归(需后端已启动或直接连库)
 npm run verify:math --workspace=apps/api
+
+# #34 专用:单卷的 KaTeX 渲染门禁 + 结构化计数审计(不连库,读导出快照)
+node scripts/verify_esat22_render.mjs scripts/_esat22fix/dump_post.json
+python3 scripts/esat22_structure_audit.py --sqrt   --dump scripts/_esat22fix/dump_post.json
+python3 scripts/esat22_structure_audit.py --script --dump scripts/_esat22fix/dump_post.json
+python3 scripts/esat22_structure_audit.py --ops    --dump scripts/_esat22fix/dump_post.json
 ```

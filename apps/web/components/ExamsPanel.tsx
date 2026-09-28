@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import GroupPicker from "@/components/GroupPicker";
+import StudentExamDetail from "@/components/StudentExamDetail";
+import QuestionStatsTable from "@/components/QuestionStatsTable";
 import type { GroupSummary } from "@/lib/types";
+import type { Analysis } from "@/components/ExamAnalysisView";
 
 interface ExamRow {
   id: string;
@@ -34,26 +37,6 @@ interface StudentOption {
   email: string;
 }
 
-interface Analysis {
-  exam: { id: string; title: string; note: string | null; dueAt: string | null; createdAt: string };
-  paper: { id: string; title: string; subject: string; sourceType: string | null; durationMin: number | null; questionCount: number } | null;
-  students: {
-    studentId: string;
-    name: string;
-    email: string;
-    status: string;
-    submittedAt: string | null;
-    score: number | null;
-    total: number | null;
-    correctCount: number | null;
-    correctRate: number | null;
-    startedAt: string | null;
-  }[];
-  perQuestion: { questionId: string; index: number; topic: string; difficulty: number | null; attempts: number; correct: number; correctRate: number | null; avgTimeSpent: number | null }[];
-  overall: { totalStudents: number; submitted: number; pending: number; inProgress: number; avgCorrectRate: number | null; avgScore: number | null };
-  suggestions: string[];
-}
-
 const ST_LABEL: Record<string, string> = { PENDING: "未交", IN_PROGRESS: "进行中", SUBMITTED: "已交", EXPIRED: "已过期" };
 const ST_CLASS: Record<string, string> = {
   PENDING: "bg-slate-100 text-slate-500",
@@ -68,6 +51,47 @@ function fmtTime(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
+}
+
+/** 两行版：日期一行、时间一行，用于表格窄列 */
+function fmtTime2(s: string | null | undefined) {
+  if (!s) return <span>—</span>;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return <span>—</span>;
+  const date = d.toLocaleDateString("zh-CN");
+  const time = d.toLocaleTimeString("zh-CN", { hour12: false });
+  return (
+    <span className="whitespace-nowrap">
+      {date}
+      <br />
+      <span className="tabular-nums">{time}</span>
+    </span>
+  );
+}
+
+/** 自然序比较：把字符串拆成 [文本,数字,文本,数字,...] 交替段，数字按数值比 */
+function naturalCompare(a: string, b: string): number {
+  const re = /(\d+)|(\D+)/g;
+  const pa = (a.match(re) || []) as string[];
+  const pb = (b.match(re) || []) as string[];
+  const len = Math.min(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const ca = pa[i], cb = pb[i];
+    const na = /^\d+$/.test(ca), nb = /^\d+$/.test(cb);
+    if (na && nb) { const da = +ca, db = +cb; if (da !== db) return da - db; }
+    else { const c = ca.localeCompare(cb, "zh-CN"); if (c !== 0) return c; }
+  }
+  return pa.length - pb.length;
+}
+
+/** 考试标题排序：优先按「模考」编号排，再回退到自然序 */
+function examTitleCompare(a: string, b: string): number {
+  const ma = a.match(/模考(\d+)/);
+  const mb = b.match(/模考(\d+)/);
+  if (ma && mb) { const da = +ma[1], db = +mb[1]; if (da !== db) return da - db; }
+  if (ma && !mb) return -1; // 有「模考」的排前面
+  if (!ma && mb) return 1;
+  return naturalCompare(a, b);
 }
 
 export default function ExamsPanel() {
@@ -94,6 +118,28 @@ export default function ExamsPanel() {
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [llmOn, setLlmOn] = useState(false);
+  const [showOlder, setShowOlder] = useState(false);
+
+  // 已安排考试二级分类的折叠状态(默认全部折叠,点击展开)
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
+  const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
+  const toggleType = (key: string) =>
+    setExpandedTypes((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+  const toggleSubject = (key: string) =>
+    setExpandedSubjects((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+
+  // 单个学生考情明细(每题用时 / 错题)
+  const [detailStudent, setDetailStudent] = useState<{ studentId: string; name: string; email: string; score: number | null; total: number | null; correctCount: number | null; correctRate: number | null } | null>(null);
 
   const flash = (t: string) => {
     setMsg(t);
@@ -208,10 +254,165 @@ export default function ExamsPanel() {
     [selected, groupStudentIds]
   );
 
+  // 按发布日期分组：最近3天 vs 更早
+  const { recentExams, olderExams } = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 3);
+    cutoff.setHours(0, 0, 0, 0);
+    const recent: ExamRow[] = [];
+    const older: ExamRow[] = [];
+    for (const e of exams) {
+      const d = new Date(e.createdAt);
+      if (!Number.isNaN(d.getTime()) && d >= cutoff) recent.push(e);
+      else older.push(e);
+    }
+    return { recentExams: recent, olderExams: older };
+  }, [exams]);
+
+  // 已安排考试：二级分类(先按考试类型 sourceType,再按学科 subject),默认按字母顺序(中文按拼音)排列
+  function buildGroups(list: ExamRow[]) {
+    const byType = new Map<string, Map<string, ExamRow[]>>();
+    for (const e of list) {
+      const t = (e.paper?.sourceType ?? "").trim();
+      const s = (e.paper?.subject ?? "").trim();
+      if (!byType.has(t)) byType.set(t, new Map());
+      const sub = byType.get(t)!;
+      if (!sub.has(s)) sub.set(s, []);
+      sub.get(s)!.push(e);
+    }
+    const cmp = (a: string, b: string) => a.localeCompare(b, "zh-CN");
+    const EMPTY = "";
+    const typeKeys = Array.from(byType.keys()).filter((k) => k !== EMPTY).sort(cmp);
+    if (byType.has(EMPTY)) typeKeys.push(EMPTY);
+    return typeKeys.map((t) => {
+      const sub = byType.get(t)!;
+      const subKeys = Array.from(sub.keys()).filter((k) => k !== EMPTY).sort(cmp);
+      if (sub.has(EMPTY)) subKeys.push(EMPTY);
+      return {
+        type: t,
+        label: t || "未分类",
+        subjects: subKeys.map((s) => ({
+          subject: s,
+          label: s || "未分类",
+          rows: sub
+            .get(s)!
+            .slice()
+            .sort((a, b) => examTitleCompare(a.title || "", b.title || "")),
+        })),
+      };
+    });
+  }
+
+  const groupedOlder = useMemo(() => buildGroups(olderExams), [olderExams]);
+
   const rateColor = (r: number | null | undefined) => {
     if (r == null) return "text-slate-400";
     return r >= 70 ? "text-emerald-600" : r >= 40 ? "text-amber-600" : "text-red-500";
   };
+
+  // 二级折叠分组列表(可复用: 最近三天 / 更早的)
+  function GroupedList({ groups, prefix }: { groups: ReturnType<typeof buildGroups>; prefix: string }) {
+    return (
+      <div className="space-y-2">
+        {groups.map((g) => {
+          const typeKey = `${prefix}::${g.label}`;
+          const typeOpen = expandedTypes.has(typeKey);
+          const total = g.subjects.reduce((n, s) => n + s.rows.length, 0);
+          return (
+            <section key={typeKey} className="overflow-hidden rounded-xl border border-slate-200">
+              <button
+                onClick={() => toggleType(typeKey)}
+                className="flex w-full items-center justify-between gap-2 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+              >
+                <span className="flex items-center gap-2">
+                  <svg
+                    className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${typeOpen ? "rotate-90" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <h3 className="text-sm font-semibold text-slate-800">考试类型：{g.label}</h3>
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{total} 场</span>
+                </span>
+                <span className="text-xs text-slate-400">{typeOpen ? "收起" : "展开"}</span>
+              </button>
+              {typeOpen && (
+                <div className="space-y-2 px-3 py-3">
+                  {g.subjects.map((s) => {
+                    const subKey = `${typeKey}::${s.subject}`;
+                    const subOpen = expandedSubjects.has(subKey);
+                    return (
+                      <div key={subKey} className="overflow-hidden rounded-lg border border-slate-100">
+                        <button
+                          onClick={() => toggleSubject(subKey)}
+                          className="flex w-full items-center justify-between gap-2 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <svg
+                              className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${subOpen ? "rotate-90" : ""}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            <h4 className="text-xs font-medium text-slate-500">学科：{s.label}</h4>
+                            <span className="text-xs text-slate-400">{s.rows.length} 场</span>
+                          </span>
+                          <span className="text-xs text-slate-400">{subOpen ? "收起" : "展开"}</span>
+                        </button>
+                        {subOpen && (
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-left text-slate-400">
+                                <th className="pb-2 pl-3 font-normal">考试</th>
+                                <th className="pb-2 font-normal">考卷</th>
+                                <th className="pb-2 font-normal">DDL</th>
+                                <th className="pb-2 font-normal">完成情况</th>
+                                <th className="pb-2 font-normal text-right">操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.rows.map((a) => (
+                                <tr key={a.id} className="border-b border-slate-50">
+                                  <td className="py-2.5 pl-3 font-medium tabular-nums">{a.title}</td>
+                                  <td className="py-2.5 text-slate-500">
+                                    {a.paper ? `${a.paper.title}${a.paper.durationMin ? `(限时 ${a.paper.durationMin} 分钟)` : ""}` : "—"}
+                                  </td>
+                                  <td className="py-2.5 text-slate-500">{fmtTime2(a.dueAt)}</td>
+                                  <td className="py-2.5">
+                                    <span className="text-slate-600">
+                                      {a.stats.submitted}/{a.stats.total} 已交
+                                      {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
+                                      {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right whitespace-nowrap">
+                                    <button onClick={() => { setTab("analysis"); openAnalysis(a.id); }} className="mr-2 whitespace-nowrap text-indigo-600 hover:underline">
+                                      考情分析
+                                    </button>
+                                    <button onClick={() => deleteExam(a.id)} disabled={busyId === a.id} className="whitespace-nowrap text-red-500 hover:underline disabled:opacity-50">
+                                      删除
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -254,43 +455,90 @@ export default function ExamsPanel() {
           {exams.length === 0 ? (
             <p className="mt-6 text-center text-sm text-slate-400">还没有安排考试。点「新建考试」选择考卷与考生。</p>
           ) : (
-            <table className="mt-4 w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-left text-slate-400">
-                  <th className="pb-2 font-normal">考试</th>
-                  <th className="pb-2 font-normal">考卷</th>
-                  <th className="pb-2 font-normal">DDL</th>
-                  <th className="pb-2 font-normal">完成情况</th>
-                  <th className="pb-2 font-normal text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exams.map((a) => (
-                  <tr key={a.id} className="border-b border-slate-50">
-                    <td className="py-2.5 font-medium">{a.title}</td>
-                    <td className="py-2.5 text-slate-500">
-                      {a.paper ? `${a.paper.title}${a.paper.durationMin ? `(限时 ${a.paper.durationMin} 分钟)` : ""}` : "—"}
-                    </td>
-                    <td className="py-2.5 text-slate-500">{fmtTime(a.dueAt)}</td>
-                    <td className="py-2.5">
-                      <span className="text-slate-600">
-                        {a.stats.submitted}/{a.stats.total} 已交
-                        {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
-                        {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <button onClick={() => { setTab("analysis"); openAnalysis(a.id); }} className="mr-2 text-indigo-600 hover:underline">
-                        考情分析
-                      </button>
-                      <button onClick={() => deleteExam(a.id)} disabled={busyId === a.id} className="text-red-500 hover:underline disabled:opacity-50">
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="mt-4 space-y-4">
+              {/* 最近三天安排的考试(平铺,按安排时间从近到远) */}
+              <div>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-600">
+                  最近三天安排的考试
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{recentExams.length} 场</span>
+                </h3>
+                {recentExams.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-left text-slate-400">
+                        <th className="pb-2 font-normal">考试</th>
+                        <th className="pb-2 font-normal">考卷</th>
+                        <th className="pb-2 font-normal">安排时间</th>
+                        <th className="pb-2 font-normal">DDL</th>
+                        <th className="pb-2 font-normal">完成情况</th>
+                        <th className="pb-2 font-normal text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentExams
+                        .slice()
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map((a) => (
+                          <tr key={a.id} className="border-b border-slate-50">
+                            <td className="py-2.5 font-medium tabular-nums">{a.title}</td>
+                            <td className="py-2.5 text-slate-500">
+                              {a.paper ? `${a.paper.title}${a.paper.durationMin ? `(限时 ${a.paper.durationMin} 分钟)` : ""}` : "—"}
+                            </td>
+                            <td className="py-2.5 text-slate-500">{fmtTime2(a.createdAt)}</td>
+                            <td className="py-2.5 text-slate-500">{fmtTime2(a.dueAt)}</td>
+                            <td className="py-2.5">
+                              <span className="text-slate-600">
+                                {a.stats.submitted}/{a.stats.total} 已交
+                                {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
+                                {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-right whitespace-nowrap">
+                              <button onClick={() => { setTab("analysis"); openAnalysis(a.id); }} className="mr-2 whitespace-nowrap text-indigo-600 hover:underline">
+                                考情分析
+                              </button>
+                              <button onClick={() => deleteExam(a.id)} disabled={busyId === a.id} className="whitespace-nowrap text-red-500 hover:underline disabled:opacity-50">
+                                删除
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-sm text-slate-400">最近三天内没有安排考试。</p>
+                )}
+              </div>
+
+              {/* 更早的考试（折叠） */}
+              {groupedOlder.length > 0 && (
+                <div>
+                  {!showOlder ? (
+                    <button
+                      onClick={() => setShowOlder(true)}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 py-2.5 text-sm text-slate-500 transition hover:border-indigo-400 hover:bg-indigo-50/40 hover:text-indigo-600"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      展开更早的考试 ({olderExams.length} 场)
+                    </button>
+                  ) : (
+                    <>
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-400">更早的考试</span>
+                        <button
+                          onClick={() => setShowOlder(false)}
+                          className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-indigo-600"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                          收起
+                        </button>
+                      </div>
+                      <GroupedList groups={groupedOlder} prefix="older" />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -303,33 +551,94 @@ export default function ExamsPanel() {
             {exams.length === 0 ? (
               <p className="text-sm text-slate-400">还没有安排考试。请先到「考试安排」新建考试。</p>
             ) : (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                {exams.map((a) => {
-                  const active = analysis?.exam.id === a.id;
-                  return (
-                    <button
-                      key={a.id}
-                      onClick={() => openAnalysis(a.id)}
-                      className={`rounded-xl border p-3 text-left transition ${
-                        active
-                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
-                          : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-slate-800">{a.title}</span>
-                        {active && <span className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-xs text-white">查看中</span>}
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                        <span>发布 {fmtTime(a.createdAt)}</span>
-                        <span>参考 {a.stats.submitted}/{a.stats.total} 人</span>
-                        <span className={a.avgRate != null ? "font-medium text-indigo-600" : ""}>
-                          平均成绩 {a.avgRate != null ? `${a.avgRate}%` : "—"}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="space-y-3">
+                {/* 最近3天的考试 */}
+                {recentExams.length > 0 && (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {recentExams.map((a) => {
+                      const active = analysis?.exam.id === a.id;
+                      return (
+                        <button
+                          key={a.id}
+                          onClick={() => openAnalysis(a.id)}
+                          className={`rounded-xl border p-3 text-left transition ${
+                            active
+                              ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
+                              : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium text-slate-800">{a.title}</span>
+                            {active && <span className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-xs text-white">查看中</span>}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                            <span>发布 {fmtTime(a.createdAt)}</span>
+                            <span>参考 {a.stats.submitted}/{a.stats.total} 人</span>
+                            <span className={a.avgRate != null ? "font-medium text-indigo-600" : ""}>
+                              平均成绩 {a.avgRate != null ? `${a.avgRate}%` : "—"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 更早的考试（折叠） */}
+                {olderExams.length > 0 && (
+                  <div>
+                    {!showOlder ? (
+                      <button
+                        onClick={() => setShowOlder(true)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 py-2.5 text-sm text-slate-500 transition hover:border-indigo-400 hover:bg-indigo-50/40 hover:text-indigo-600"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        展开更早的考试 ({olderExams.length} 场)
+                      </button>
+                    ) : (
+                      <>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-400">更早的考试</span>
+                          <button
+                            onClick={() => setShowOlder(false)}
+                            className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-indigo-600"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                            收起
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {olderExams.map((a) => {
+                            const active = analysis?.exam.id === a.id;
+                            return (
+                              <button
+                                key={a.id}
+                                onClick={() => openAnalysis(a.id)}
+                                className={`rounded-xl border p-3 text-left transition ${
+                                  active
+                                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
+                                    : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-sm font-medium text-slate-800">{a.title}</span>
+                                  {active && <span className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-xs text-white">查看中</span>}
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                                  <span>发布 {fmtTime(a.createdAt)}</span>
+                                  <span>参考 {a.stats.submitted}/{a.stats.total} 人</span>
+                                  <span className={a.avgRate != null ? "font-medium text-indigo-600" : ""}>
+                                    平均成绩 {a.avgRate != null ? `${a.avgRate}%` : "—"}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -395,6 +704,7 @@ export default function ExamsPanel() {
                         <th className="pb-2 font-normal">正确率</th>
                         <th className="pb-2 font-normal">开始</th>
                         <th className="pb-2 font-normal">提交</th>
+                        <th className="pb-2 font-normal text-right">明细</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -417,6 +727,14 @@ export default function ExamsPanel() {
                           </td>
                           <td className="py-2.5 text-slate-500">{fmtTime(s.startedAt)}</td>
                           <td className="py-2.5 text-slate-500">{fmtTime(s.submittedAt)}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => setDetailStudent(s)}
+                              className="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-100"
+                            >
+                              查看明细
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -424,40 +742,8 @@ export default function ExamsPanel() {
                 </div>
               </div>
 
-              {/* 每题分析 */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-medium text-slate-700">每题整体考情</h2>
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[560px] text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-left text-slate-400">
-                        <th className="pb-2 font-normal">题号</th>
-                        <th className="pb-2 font-normal">知识点</th>
-                        <th className="pb-2 font-normal">难度</th>
-                        <th className="pb-2 font-normal">作答</th>
-                        <th className="pb-2 font-normal">答对</th>
-                        <th className="pb-2 font-normal">正确率</th>
-                        <th className="pb-2 font-normal">平均用时</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analysis.perQuestion.map((q) => (
-                        <tr key={q.questionId} className="border-b border-slate-50">
-                          <td className="py-2.5">第 {q.index} 题</td>
-                          <td className="py-2.5 text-slate-500">{q.topic || "未分类"}</td>
-                          <td className="py-2.5 text-slate-500">{q.difficulty ?? "—"}</td>
-                          <td className="py-2.5">{q.attempts}</td>
-                          <td className="py-2.5 text-emerald-600">{q.correct}</td>
-                          <td className={`py-2.5 font-medium ${rateColor(q.correctRate)}`}>
-                            {q.correctRate != null ? `${q.correctRate}%` : "—"}
-                          </td>
-                          <td className="py-2.5 text-slate-500">{q.avgTimeSpent != null ? `${q.avgTimeSpent}s` : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {/* 每题分析(题号悬停弹出题目内容) */}
+              <QuestionStatsTable perQuestion={analysis.perQuestion} />
             </>
           )}
 
@@ -564,6 +850,15 @@ export default function ExamsPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 单个学生考情明细(每题用时折线图 + 错题) */}
+      {detailStudent && analysis && (
+        <StudentExamDetail
+          examId={analysis.exam.id}
+          student={detailStudent}
+          onClose={() => setDetailStudent(null)}
+        />
       )}
     </div>
   );

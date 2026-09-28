@@ -6,8 +6,43 @@ import { api } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import ExamsPanel from "@/components/ExamsPanel";
 import GroupsPanel from "@/components/GroupsPanel";
+import ReviewRequestsPanel from "@/components/ReviewRequestsPanel";
+import { KnowledgeManageView } from "@/components/TeacherKnowledgeManage";
+import { StudentQuestionsManageView } from "@/components/TeacherStudentQuestionsManage";
 import GroupPicker from "@/components/GroupPicker";
+import InsightModal from "./InsightModal";
 import type { GroupSummary } from "@/lib/types";
+
+function fmtTime(s: string | null | undefined): string {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
+}
+
+/** 自然序比较：把字符串拆成 [文本,数字,文本,数字,...] 交替段，数字按数值比 */
+function naturalCompare(a: string, b: string): number {
+  const re = /(\d+)|(\D+)/g;
+  const pa = (a.match(re) || []) as string[];
+  const pb = (b.match(re) || []) as string[];
+  const len = Math.min(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const ca = pa[i], cb = pb[i];
+    const na = /^\d+$/.test(ca), nb = /^\d+$/.test(cb);
+    if (na && nb) { const da = +ca, db = +cb; if (da !== db) return da - db; }
+    else { const c = ca.localeCompare(cb, "zh-CN"); if (c !== 0) return c; }
+  }
+  return pa.length - pb.length;
+}
+
+/** 标题排序：优先按「模考」编号排，再回退到自然序 */
+function examTitleCompare(a: string, b: string): number {
+  const ma = a.match(/模考(\d+)/);
+  const mb = b.match(/模考(\d+)/);
+  if (ma && mb) { const da = +ma[1], db = +mb[1]; if (da !== db) return da - db; }
+  if (ma && !mb) return -1;
+  if (!ma && mb) return 1;
+  return naturalCompare(a, b);
+}
 
 interface StudentRow {
   id: string;
@@ -15,7 +50,7 @@ interface StudentRow {
   email: string;
   sessionCount: number;
   avgRate: number;
-  lastSession: { score: number; total: number; mode: string; submittedAt: string } | null;
+  lastSession: { score: number; total: number; mode: string; submittedAt: string; correctCount?: number } | null;
 }
 
 interface Overview {
@@ -23,6 +58,27 @@ interface Overview {
   sessions: number;
   totalAnswered: number;
   byTopic: { topic: string; attempts: number; correctRate: number }[];
+}
+
+// 每生学情高维矩阵(来自 /teacher/stats/students-matrix,仅教师端可见)
+interface MatrixSpeed {
+  meanSec: number | null;
+  medianSec: number | null;
+  count: number;
+}
+interface MatrixStudent {
+  id: string;
+  name: string;
+  email: string;
+  sessionCount: number;
+  avgRate: number;
+  difficulty: { difficulty: number; attempts: number; correctRate: number }[];
+  speed: { exam: MatrixSpeed; practice: MatrixSpeed };
+  trend: { slopePerSession: number | null; firstRate: number | null; lastRate: number | null; direction: string };
+  stability: { cv: number | null; meanRate: number | null; label: string };
+  modeDivergence: { examRate: number | null; practiceRate: number | null; delta: number | null };
+  coverage: { covered: number; total: number; rate: number };
+  carelessness: { highBaseAttempts: number; slipCount: number; slipRate: number | null };
 }
 
 interface AssignmentRow {
@@ -99,7 +155,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function TeacherStudentsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"stats" | "assign" | "exams" | "review" | "groups">("stats");
+  const [tab, setTab] = useState<"stats" | "assign" | "exams" | "reviewreq" | "groups" | "review" | "knowledge" | "origq">("stats");
   const [pendingCount, setPendingCount] = useState(0);
 
   // ——— 学情统计 ———
@@ -107,6 +163,10 @@ export default function TeacherStudentsPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  // 每生学情高维矩阵(仅教师端可见):id → 各维度聚合
+  const [matrixMap, setMatrixMap] = useState<Record<string, MatrixStudent>>({});
+  // 学情概览弹窗:点击表格内「学情概览」按钮后展示该生的信息图卡片
+  const [insightRowId, setInsightRowId] = useState<string | null>(null);
 
   // ——— 作业分发 ———
   const [assignList, setAssignList] = useState<AssignmentRow[]>([]);
@@ -129,6 +189,26 @@ export default function TeacherStudentsPage() {
   const [assignMode, setAssignMode] = useState<"" | "PRACTICE" | "EXAM">("");
   const [assignSubject, setAssignSubject] = useState("");
 
+  // 已布置作业：二级分类折叠状态 + 最近三天/更早拆分
+  const [showOlderAssign, setShowOlderAssign] = useState(false);
+  const [expandedAssignTypes, setExpandedAssignTypes] = useState<Set<string>>(new Set());
+  const [expandedAssignSubjects, setExpandedAssignSubjects] = useState<Set<string>>(new Set());
+  const [busyAssignId, setBusyAssignId] = useState<string | null>(null);
+  const toggleAssignType = (key: string) =>
+    setExpandedAssignTypes((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+  const toggleAssignSubject = (key: string) =>
+    setExpandedAssignSubjects((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+
   // ——— 注册审核 ———(待教师审核的学生)
   interface ReviewRow {
     id: string;
@@ -144,6 +224,8 @@ export default function TeacherStudentsPage() {
   const [selectedReview, setSelectedReview] = useState<Set<string>>(new Set());
   const [reviewMsg, setReviewMsg] = useState("");
   const [reviewErr, setReviewErr] = useState("");
+  // 删除学生(已移入注册审核 tab):按姓名/邮箱过滤已通过学生
+  const [delSearch, setDelSearch] = useState("");
 
   async function load(kw = search) {
     try {
@@ -173,6 +255,12 @@ export default function TeacherStudentsPage() {
     api.get<{ list: PaperOption[] }>("/papers").then((d) => setPapers(d.list)).catch(() => {});
     // 分组(供按组布置)
     api.get<{ list: GroupSummary[] }>("/teacher/groups").then((d) => setGroups(d.list)).catch(() => {});
+    // 每生学情高维矩阵(只读聚合)
+    api.get<{ students: MatrixStudent[] }>("/teacher/stats/students-matrix").then((d) => {
+      const m: Record<string, MatrixStudent> = {};
+      d.students.forEach((x) => { m[x.id] = x; });
+      setMatrixMap(m);
+    }).catch(() => {});
   }, [loadAssignments]);
 
   // 注册审核:拉取待审核(PENDING)学生
@@ -192,12 +280,13 @@ export default function TeacherStudentsPage() {
 
   const weak = (overview?.byTopic ?? []).slice(0, 5);
 
-  async function deleteStudent(s: StudentRow) {
+  async function deleteStudent(s: { id: string; name: string; email: string }) {
     if (!window.confirm(`确认删除学生「${s.name}」?该学生的成绩、错题本、作答记录等全部数据将被永久删除,无法恢复。`)) return;
     try {
       await api.del(`/teacher/students/${s.id}`);
       setError("");
       await load();
+      api.get<{ list: { id: string; name: string; email: string }[] }>("/teacher/students").then((d) => setStudents(d.list)).catch(() => {});
       const d = await api.get<Overview>("/teacher/stats/overview").then((x) => x).catch(() => null);
       if (d) setOverview(d);
     } catch (e) {
@@ -281,12 +370,15 @@ export default function TeacherStudentsPage() {
 
   async function deleteAssignment(id: string) {
     if (!window.confirm("确认删除这份作业?已提交的作答记录会保留,但作业分发关系会被撤销。")) return;
+    setBusyAssignId(id);
     try {
       await api.del(`/teacher/assignments/${id}`);
       setDetail(null);
       await loadAssignments();
     } catch (e) {
       setAssignErr(e instanceof Error ? e.message : "删除失败");
+    } finally {
+      setBusyAssignId(null);
     }
   }
 
@@ -393,6 +485,147 @@ export default function TeacherStudentsPage() {
     });
   }, [assignList, assignSearch, assignMode, assignSubject]);
 
+  // 按布置日期分组：最近3天 vs 更早
+  const { recentAssign, olderAssign } = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 3);
+    cutoff.setHours(0, 0, 0, 0);
+    const recent: AssignmentRow[] = [];
+    const older: AssignmentRow[] = [];
+    for (const a of filteredAssign) {
+      const d = new Date(a.createdAt);
+      if (!Number.isNaN(d.getTime()) && d >= cutoff) recent.push(a);
+      else older.push(a);
+    }
+    return { recentAssign: recent, olderAssign: older };
+  }, [filteredAssign]);
+
+  // 已布置作业：二级分类(先按试卷类型 sourceType,再按学科 subject),默认按字母顺序(中文按拼音)排列
+  function buildGroups(list: AssignmentRow[]) {
+    const byType = new Map<string, Map<string, AssignmentRow[]>>();
+    for (const a of list) {
+      const t = (a.paper?.sourceType ?? "").trim();
+      const s = (a.paper?.subject ?? "").trim();
+      if (!byType.has(t)) byType.set(t, new Map());
+      const sub = byType.get(t)!;
+      if (!sub.has(s)) sub.set(s, []);
+      sub.get(s)!.push(a);
+    }
+    const cmp = (a: string, b: string) => a.localeCompare(b, "zh-CN");
+    const EMPTY = "";
+    const typeKeys = Array.from(byType.keys()).filter((k) => k !== EMPTY).sort(cmp);
+    if (byType.has(EMPTY)) typeKeys.push(EMPTY);
+    return typeKeys.map((t) => {
+      const sub = byType.get(t)!;
+      const subKeys = Array.from(sub.keys()).filter((k) => k !== EMPTY).sort(cmp);
+      if (sub.has(EMPTY)) subKeys.push(EMPTY);
+      return {
+        type: t,
+        label: t || "未分类",
+        subjects: subKeys.map((s) => ({
+          subject: s,
+          label: s || "未分类",
+          rows: sub
+            .get(s)!
+            .slice()
+            .sort((a, b) => examTitleCompare(a.title || "", b.title || "")),
+        })),
+      };
+    });
+  }
+
+  const groupedOlderAssign = useMemo(() => buildGroups(olderAssign), [olderAssign]);
+
+  // 二级折叠分组列表(试卷类型 → 学科),用于「更早的作业」
+  function GroupedListAssign({ groups, prefix }: { groups: ReturnType<typeof buildGroups>; prefix: string }) {
+    return (
+      <div className="space-y-2">
+        {groups.map((g) => {
+          const typeKey = `${prefix}::${g.label}`;
+          const typeOpen = expandedAssignTypes.has(typeKey);
+          const total = g.subjects.reduce((n, s) => n + s.rows.length, 0);
+          return (
+            <section key={typeKey} className="overflow-hidden rounded-xl border border-slate-200">
+              <button
+                onClick={() => toggleAssignType(typeKey)}
+                className="flex w-full items-center justify-between gap-2 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+              >
+                <span className="flex items-center gap-2">
+                  <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${typeOpen ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <h3 className="text-sm font-semibold text-slate-800">试卷类型：{g.label}</h3>
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{total} 份</span>
+                </span>
+                <span className="text-xs text-slate-400">{typeOpen ? "收起" : "展开"}</span>
+              </button>
+              {typeOpen && (
+                <div className="space-y-2 px-3 py-3">
+                  {g.subjects.map((s) => {
+                    const subKey = `${typeKey}::${s.subject}`;
+                    const subOpen = expandedAssignSubjects.has(subKey);
+                    return (
+                      <div key={subKey} className="overflow-hidden rounded-lg border border-slate-100">
+                        <button
+                          onClick={() => toggleAssignSubject(subKey)}
+                          className="flex w-full items-center justify-between gap-2 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <svg className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${subOpen ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            <h4 className="text-xs font-medium text-slate-500">学科：{s.label}</h4>
+                            <span className="text-xs text-slate-400">{s.rows.length} 份</span>
+                          </span>
+                          <span className="text-xs text-slate-400">{subOpen ? "收起" : "展开"}</span>
+                        </button>
+                        {subOpen && (
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-left text-slate-400">
+                                <th className="pb-2 pl-3 font-normal">作业名称</th>
+                                <th className="pb-2 font-normal">试卷</th>
+                                <th className="pb-2 font-normal">模式</th>
+                                <th className="pb-2 font-normal">DDL</th>
+                                <th className="pb-2 font-normal">完成情况</th>
+                                <th className="pb-2 font-normal text-right">操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.rows.map((a) => (
+                                <tr key={a.id} className="border-b border-slate-50">
+                                  <td className="py-2.5 pl-3 font-medium tabular-nums">{a.title}</td>
+                                  <td className="py-2.5 text-slate-500">{a.paper?.title ?? "—"}</td>
+                                  <td className="py-2.5">{a.mode === "EXAM" ? `模考${a.durationMin ? ` · ${a.durationMin}分钟` : ""}` : "练习"}</td>
+                                  <td className="py-2.5 text-slate-500">{fmtTime(a.dueAt)}</td>
+                                  <td className="py-2.5">
+                                    <span className="text-slate-600">
+                                      {a.stats.submitted}/{a.stats.total} 已交
+                                      {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
+                                      {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right">
+                                    <button onClick={() => openDetail(a.id)} className="mr-2 text-indigo-600 hover:underline">详情</button>
+                                    <button onClick={() => deleteAssignment(a.id)} disabled={busyAssignId === a.id} className="text-red-500 hover:underline disabled:opacity-50">删除</button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between">
@@ -417,6 +650,12 @@ export default function TeacherStudentsPage() {
             考试管理
           </button>
           <button
+            onClick={() => setTab("reviewreq")}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "reviewreq" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            学生讲评请求
+          </button>
+          <button
             onClick={() => setTab("groups")}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "groups" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
           >
@@ -432,6 +671,18 @@ export default function TeacherStudentsPage() {
                 {pendingCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setTab("knowledge")}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "knowledge" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            知识点管理
+          </button>
+          <button
+            onClick={() => setTab("origq")}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === "origq" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            原创题审核
           </button>
         </div>
       </div>
@@ -502,8 +753,8 @@ export default function TeacherStudentsPage() {
                     <th className="pb-2 font-normal">刷题次数</th>
                     <th className="pb-2 font-normal">平均正确率</th>
                     <th className="pb-2 font-normal">最近成绩</th>
+                    <th className="pb-2 font-normal">学情概览</th>
                     <th className="pb-2 font-normal">详情</th>
-                    <th className="pb-2 font-normal text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -518,20 +769,25 @@ export default function TeacherStudentsPage() {
                         </span>
                       </td>
                       <td className="py-2.5 text-slate-500">
-                        {s.lastSession ? `${s.lastSession.score}/${s.lastSession.total} (${s.lastSession.mode === "EXAM" ? "模考" : "练习"})` : "—"}
+                        {s.lastSession ? `${s.lastSession.score ?? s.lastSession.correctCount}/${s.lastSession.total} (${s.lastSession.mode === "EXAM" ? "模考" : "练习"})` : "—"}
+                      </td>
+                      <td className="py-2.5">
+                        <button
+                          onClick={() => setInsightRowId(s.id)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-600 transition hover:bg-indigo-100"
+                          title="点击查看该生学情概览"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <rect x="1" y="6" width="2.4" height="5" rx="0.6" fill="currentColor" opacity="0.55" />
+                            <rect x="4.8" y="3.5" width="2.4" height="7.5" rx="0.6" fill="currentColor" opacity="0.8" />
+                            <rect x="8.6" y="1" width="2.4" height="10" rx="0.6" fill="currentColor" />
+                          </svg>
+                          概览
+                        </button>
                       </td>
                       <td className="py-2.5">
                         <button onClick={() => router.push(`/teacher/students/${s.id}`)} className="text-indigo-600 hover:underline">
                           查看
-                        </button>
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <button
-                          onClick={() => deleteStudent(s)}
-                          className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50"
-                          title="删除该学生及其全部数据"
-                        >
-                          删除
                         </button>
                       </td>
                     </tr>
@@ -690,43 +946,83 @@ export default function TeacherStudentsPage() {
             ) : filteredAssign.length === 0 ? (
               <p className="mt-4 text-sm text-slate-400">没有符合筛选条件的作业。</p>
             ) : (
-              <table className="mt-4 w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-left text-slate-400">
-                    <th className="pb-2 font-normal">作业名称</th>
-                    <th className="pb-2 font-normal">试卷</th>
-                    <th className="pb-2 font-normal">模式</th>
-                    <th className="pb-2 font-normal">DDL</th>
-                    <th className="pb-2 font-normal">完成情况</th>
-                    <th className="pb-2 font-normal">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAssign.map((a) => (
-                    <tr key={a.id} className="border-b border-slate-50">
-                      <td className="py-2.5 font-medium">{a.title}</td>
-                      <td className="py-2.5 text-slate-500">{a.paper?.title ?? "—"}</td>
-                      <td className="py-2.5">{a.mode === "EXAM" ? `模考${a.durationMin ? ` · ${a.durationMin}分钟` : ""}` : "练习"}</td>
-                      <td className="py-2.5 text-slate-500">{a.dueAt ? new Date(a.dueAt).toLocaleString("zh-CN", { hour12: false }) : "不限"}</td>
-                      <td className="py-2.5">
-                        <span className="text-slate-600">
-                          {a.stats.submitted}/{a.stats.total} 已交
-                          {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
-                          {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
-                        </span>
-                      </td>
-                      <td className="py-2.5">
-                        <button onClick={() => openDetail(a.id)} className="mr-2 text-indigo-600 hover:underline">
-                          详情
-                        </button>
-                        <button onClick={() => deleteAssignment(a.id)} className="text-red-500 hover:underline">
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="mt-4 space-y-4">
+                {/* 最近三天布置的作业(平铺,按布置时间从近到远) */}
+                <div>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-600">
+                    最近三天布置的作业
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{recentAssign.length} 份</span>
+                  </h3>
+                  {recentAssign.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-left text-slate-400">
+                          <th className="pb-2 font-normal">作业名称</th>
+                          <th className="pb-2 font-normal">试卷</th>
+                          <th className="pb-2 font-normal">模式</th>
+                          <th className="pb-2 font-normal">布置时间</th>
+                          <th className="pb-2 font-normal">DDL</th>
+                          <th className="pb-2 font-normal">完成情况</th>
+                          <th className="pb-2 font-normal text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentAssign
+                          .slice()
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                          .map((a) => (
+                            <tr key={a.id} className="border-b border-slate-50">
+                              <td className="py-2.5 font-medium tabular-nums">{a.title}</td>
+                              <td className="py-2.5 text-slate-500">{a.paper?.title ?? "—"}</td>
+                              <td className="py-2.5">{a.mode === "EXAM" ? `模考${a.durationMin ? ` · ${a.durationMin}分钟` : ""}` : "练习"}</td>
+                              <td className="py-2.5 text-slate-500">{fmtTime(a.createdAt)}</td>
+                              <td className="py-2.5 text-slate-500">{fmtTime(a.dueAt)}</td>
+                              <td className="py-2.5">
+                                <span className="text-slate-600">
+                                  {a.stats.submitted}/{a.stats.total} 已交
+                                  {a.stats.inProgress > 0 && <span className="ml-1 text-blue-500">· {a.stats.inProgress} 进行中</span>}
+                                  {a.stats.pending > 0 && <span className="ml-1 text-slate-400">· {a.stats.pending} 未交</span>}
+                                </span>
+                              </td>
+                              <td className="py-2.5 text-right">
+                                <button onClick={() => openDetail(a.id)} className="mr-2 text-indigo-600 hover:underline">详情</button>
+                                <button onClick={() => deleteAssignment(a.id)} disabled={busyAssignId === a.id} className="text-red-500 hover:underline disabled:opacity-50">删除</button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-sm text-slate-400">最近三天内没有布置作业。</p>
+                  )}
+                </div>
+
+                {/* 更早的作业（折叠,二级分类:试卷类型 → 学科） */}
+                {groupedOlderAssign.length > 0 && (
+                  <div>
+                    {!showOlderAssign ? (
+                      <button
+                        onClick={() => setShowOlderAssign(true)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 py-2.5 text-sm text-slate-500 transition hover:border-indigo-400 hover:bg-indigo-50/40 hover:text-indigo-600"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        展开更早的作业 ({olderAssign.length} 份)
+                      </button>
+                    ) : (
+                      <>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-400">更早的作业</span>
+                          <button onClick={() => setShowOlderAssign(false)} className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-indigo-600">
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                            收起
+                          </button>
+                        </div>
+                        <GroupedListAssign groups={groupedOlderAssign} prefix="older" />
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -775,7 +1071,7 @@ export default function TeacherStudentsPage() {
                               }`}
                             >
                               <span className="font-bold">{letter}.</span>
-                              <span className="flex-1">{renderRich(opt)}</span>
+                              <span className="flex-1">{renderRich(opt, { smart: false })}</span>
                               {isAnswer && <span className="shrink-0 text-xs font-medium">✓ 正确答案</span>}
                               {isSelected && !isAnswer && <span className="shrink-0 text-xs font-medium">✗ 你的选择</span>}
                             </div>
@@ -807,6 +1103,8 @@ export default function TeacherStudentsPage() {
           </div>
         </div>
       )}
+
+      {tab === "reviewreq" && <ReviewRequestsPanel />}
 
       {tab === "review" && (
         <div className="space-y-6">
@@ -899,12 +1197,76 @@ export default function TeacherStudentsPage() {
               </>
             )}
           </div>
+
+          {/* 删除学生:从学情统计移入,仅在此处提供删除入口 */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium text-slate-700">删除学生</h2>
+                <p className="mt-1 text-xs text-slate-400">删除已通过审核的学生账号。该学生的成绩、错题本、作答记录等全部数据将被永久删除、无法恢复,请谨慎操作。</p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={delSearch}
+                  onChange={(e) => setDelSearch(e.target.value)}
+                  placeholder="按姓名/邮箱筛选"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+            {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+            {students.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">暂无已通过审核的学生。</p>
+            ) : (
+              (() => {
+                const kw = delSearch.trim().toLowerCase();
+                const delList = kw ? students.filter((s) => s.name.toLowerCase().includes(kw) || s.email.toLowerCase().includes(kw)) : students;
+                return (
+                  <table className="mt-4 w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-left text-slate-400">
+                        <th className="pb-2 font-normal">学生</th>
+                        <th className="pb-2 font-normal">邮箱</th>
+                        <th className="pb-2 font-normal text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {delList.map((s) => (
+                        <tr key={s.id} className="border-b border-slate-50">
+                          <td className="py-2.5 font-medium">{s.name}</td>
+                          <td className="py-2.5 text-slate-500">{s.email}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => deleteStudent(s)}
+                              className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50"
+                              title="删除该学生及其全部数据"
+                            >
+                              删除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {delList.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="py-4 text-center text-sm text-slate-400">没有匹配的学生。</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()
+            )}
+          </div>
         </div>
       )}
 
       {tab === "groups" && <GroupsPanel />}
 
       {tab === "exams" && <ExamsPanel />}
+
+      {tab === "knowledge" && <KnowledgeManageView />}
+
+      {tab === "origq" && <StudentQuestionsManageView />}
 
       {/* 作业详情弹窗 */}
       {detail && (
@@ -969,6 +1331,14 @@ export default function TeacherStudentsPage() {
           </div>
         </div>
       )}
+
+      {/* 学情概览弹窗:一张信息图卡片涵盖该生绝大部分学情数据 */}
+      {insightRowId &&
+        (() => {
+          const s = list.find((x) => x.id === insightRowId);
+          if (!s) return null;
+          return <InsightModal studentId={s.id} row={s} m={matrixMap[s.id]} onClose={() => setInsightRowId(null)} />;
+        })()}
     </div>
   );
 }

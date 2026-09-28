@@ -1,4 +1,4 @@
-// Prisma schema — 金瑞升学金鹰系统(TMUA/ESAT)
+// Prisma schema — 金瑞高中综合管理系统(TMUA/ESAT)
 // 开发环境:SQLite(不支持 enum,字段用 String 并注释合法值)
 // 生产环境:切换 provider 为 "postgresql" 后可恢复为 enum 类型
 
@@ -11,7 +11,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// role 合法值:STUDENT | TEACHER | ADMIN
+// role 合法值:STUDENT | TEACHER | ADMIN | PARENT
+//   PARENT   家长账号(由 学号+姓名 精确匹配学生后自动 VERIFIED;未匹配则 PENDING 待班主任审批)
+//   ADMIN   最高权限管理员(可进入「教师管理」模块,新建/管理教师账号及其可见范围权限)
 // 学生账号审核状态 status 合法值:PENDING | APPROVED | REJECTED
 //   PENDING   待教师审核(注册后默认,不能登录/使用系统)
 //   APPROVED  已通过审核(可正常使用)
@@ -33,11 +35,18 @@ model User {
   passwordHash     String
   name             String
   role             String    @default("STUDENT")
+  // 教师子角色(仅 role=TEACHER 时有意义;ADMIN 无需填写):
+  //   ACADEMIC  教务老师 | ASSISTANT 助教老师 | SUBJECT 任课教师(默认) | COUNSELOR 升学指导老师
+  //   权限仍由 role 决定(TEACHER/ADMIN),teacherRole 仅承载岗位称谓与展示
+  teacherRole      String?   @default("SUBJECT")
   status           String    @default("PENDING") // 账号审核状态:PENDING | APPROVED | REJECTED
   reviewNote       String?   // 审核意见(拒绝原因等)
   reviewedBy       String?   // 审核人 id
   reviewedAt       DateTime? // 审核时间
   targetUniversity String?
+  // 教师可见范围权限(仅对 role=TEACHER 生效;ADMIN 不受限;空/null=全部可见)
+  permSubjects    String? // 学科白名单(JSON 数组,如 ["数学"]);空/null=全部学科
+  permSourceTypes String? // 题源白名单(JSON 数组,如 ["TMUA"]);空/null=全部题源
   createdAt        DateTime  @default(now())
   sessions         Session[]
   wrongBook        WrongBook[]
@@ -48,6 +57,39 @@ model User {
   favorites        FavoriteQuestion[]
   groups           Group[] // 老师创建的学生分组
   groupMemberships GroupStudent[] // 学生所属分组(反向关系)
+  reviewRequests   ReviewRequest[] // 学生发起的讲评请求(反向关系)
+
+  // ——— 教务模块反向关系(纯新增字段,不影响现有字段与数据)———
+  studentNo            String? @unique // 学号(仅学生账号;家长注册按 姓名+学号 精确匹配)
+  gender               String?   // 性别(成绩单用;选填)
+  birthDate            DateTime? // 出生日期(成绩单用;选填)
+  enrollmentDate       DateTime? // 入学时间(成绩单用;选填)
+  headedClasses        Class[]                 @relation("ClassHeadTeacher")
+  subjectTeaching      ClassSubjectTeacher[]
+  classMemberships     ClassMembership[]
+  examsCreated         Exam[]                  @relation("ExamCreator")
+  scores               Score[]                 @relation("ScoreStudent")
+  scoreUpdates         Score[]                 @relation("ScoreUpdater")
+  feedbacksReceived    TeacherFeedback[]       @relation("FeedbackStudent")
+  feedbacksGiven       TeacherFeedback[]       @relation("FeedbackTeacher")
+  timetableEntries     TimetableEntry[]
+  courseSelections     StudentCourseSelection[]
+  parentLinksAsParent  ParentLink[]            @relation("ParentLinkParent")
+  parentLinksAsStudent ParentLink[]            @relation("ParentLinkStudent")
+  gpaScores            GpaScore[]              @relation("GpaScoreStudent")
+  gpaScoresRecorded    GpaScore[]              @relation("GpaScoreRecorder")
+
+  // ——— 走班模块反向关系(纯新增字段,不影响现有字段与数据)———
+  teachingClassesTaught TeachingClassTeacher[] @relation("TeachingClassTeacher")
+  enrollments           Enrollment[]           @relation("EnrollmentStudent")
+  enrollmentLogsAsStudent EnrollmentLog[]      @relation("EnrollmentLogStudent")
+  enrollmentLogsOperated  EnrollmentLog[]      @relation("EnrollmentLogOperator")
+  placementRunsCreated    PlacementRun[]       @relation("PlacementRunCreator")
+  placementRunsPublished  PlacementRun[]       @relation("PlacementRunPublisher")
+  electiveWishes          ElectiveWish[]       @relation("ElectiveWishStudent")
+
+  // ——— 排课模块反向关系(纯新增字段,不影响现有字段与数据)———
+  courseBlocksTaught      CourseBlock[]        @relation("CourseBlockTeacher")
 }
 
 model Question {
@@ -76,6 +118,7 @@ model Question {
   records    AnswerRecord[]
   wrongBook  WrongBook[]
   favorites  FavoriteQuestion[]
+  reviewRequests ReviewRequest[] // 题被发起的讲评请求(反向关系)
 }
 
 // 题目收藏(学生端做题时收藏题目供自己查阅)
@@ -88,6 +131,28 @@ model FavoriteQuestion {
   createdAt  DateTime @default(now())
 
   @@unique([studentId, questionId])
+}
+
+// 学生讲评请求(从错题本 / 收藏发起,请求老师讲评某题)
+// source 合法值:WRONG_BOOK | FAVORITE
+//   WRONG_BOOK 来自错题本
+//   FAVORITE   来自题目收藏
+// status 合法值:PENDING | RESOLVED
+//   PENDING   待讲评(默认)
+//   RESOLVED  老师已讲评
+model ReviewRequest {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  source     String   @default("WRONG_BOOK") // WRONG_BOOK | FAVORITE
+  note       String?  // 学生附言(可选)
+  status     String   @default("PENDING")    // PENDING | RESOLVED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studentId, questionId]) // 同生同题仅一条,幂等防重复提交
 }
 
 // 知识点(老师手动维护,供题目归类)
@@ -235,6 +300,7 @@ model Assignment {
   durationMin Int? // 模考/考试的限时时长(分钟);由老师分发或考试管理时设置,练习模式可空
   dueAt       DateTime? // DDL(可空 = 不限时提交)
   status      String    @default("ACTIVE")
+  groupIds    String? // 按组布置时记录的分组 id(JSON 数组);为空表示逐生布置。用于"分组管理-查看布置"下钻
   createdAt   DateTime  @default(now())
   targets     AssignmentStudent[]
   sessions    Session[]
@@ -415,4 +481,493 @@ model LanguageWrongBook {
   updatedAt  DateTime @updatedAt
 
   @@unique([studentId, questionId])
+}
+
+// ============================================================
+// 升学规划模块(独立:与笔试题库/会话/作业等无任何关联,不影响现有笔试功能与数据)
+// 由 public/planning.html(去品牌后的「升学规划档案」)通过 /api/planning 读写
+//   data 存档案表单 JSON(字段随前端表单演进,后端不解析其内部结构)
+//   plan 存规划方案/知识库(JSON,可选;前端看板也会基于 data 本地计算)
+// ============================================================
+model PlanningProfile {
+  id             String   @id @default(cuid())
+  studentId      String   @unique // 以 User(cuid) 为主键,取代原 BLUE 表单的"学生姓名"主键
+  data           String // 档案表单完整 JSON(字符串化)
+  plan           String? // 规划方案/知识库 JSON(可选)
+  parentVisible  Boolean  @default(true) // 家长端是否可见该生升学规划档案(整档开关)
+  updatedAt      DateTime @updatedAt
+}
+
+// 升学规划「档案填写任务」:教师发布任务 -> 指定学生 -> 学生在学生端填写并提交档案
+// 完全独立,与笔试题库/作业/会话等无任何关联。
+// status 用字符串常量,避免引入 Prisma enum 与迁移复杂度:
+//   PlanningTask.status      : ACTIVE(进行中) | CLOSED(已关闭/重开前)
+//   PlanningTaskStudent.status: PENDING(未开始) | DRAFT(已保存草稿) | SUBMITTED(已提交)
+model PlanningTask {
+  id         String   @id @default(cuid())
+  teacherId  String // 发布者(User cuid)
+  title      String // 任务标题,默认"完善你的升学规划档案"
+  intro      String? // 任务说明(可选)
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PlanningTaskStudent {
+  id          String    @id @default(cuid())
+  taskId      String
+  studentId   String
+  status      String    @default("PENDING") // PENDING | DRAFT | SUBMITTED
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([taskId, studentId])
+}
+
+// ============================================================
+// 教务管理模块(独立:与笔试题库/会话/作业/升学规划等无任何关联,不影响现有功能与数据)
+// 设计要点:
+//   - 多科多师:一个班一门课可有多个任课教师(ClassSubjectTeacher,role=LEAD|CO|ASSISTANT)
+//   - 录分:Exam + Score(每个 exam×student 一条,可空 rankInClass)
+//   - 教师反馈:TeacherFeedback(逐条 visibility + DRAFT/PUBLISHED 草稿态)
+//   - 家长:ParentLink(学号+姓名精确匹配→VERIFIED;否则 PENDING 待班主任审批)
+//   - 课程表:TimetableEntry
+// 全部为新增表/可空字段,prisma db push 对现有表零破坏。
+// ============================================================
+
+// 班级
+// grade 合法值举例:高一 | 高二 | 高三(或留空)
+// term 合法值举例:第一学期 | 第二学期 | 全年
+model Class {
+  id             String   @id @default(cuid())
+  name           String // 班级名称,如 "高三(1)班"
+  grade          String? // 年级,如 "高三"
+  academicYear   String // 学年,如 "2026-2027"
+  term           String // 学期,如 "第一学期"
+  headTeacherId  String? // 班主任 User id
+  headTeacher    User?    @relation("ClassHeadTeacher", fields: [headTeacherId], references: [id])
+  createdAt      DateTime @default(now())
+
+  memberships    ClassMembership[]
+  subjectTeachers ClassSubjectTeacher[]
+  exams          Exam[]
+  timetable      TimetableEntry[]
+  courses        Course[]
+}
+
+// 班级-科目-教师(多科多师:一个班一门课可有多位教师)
+// role 合法值:LEAD(主讲) | CO(副讲/协同) | ASSISTANT(助教)
+model ClassSubjectTeacher {
+  id        String   @id @default(cuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject   String // 科目:数学 | 物理 | 化学 | 生物
+  teacherId String
+  teacher   User     @relation(fields: [teacherId], references: [id])
+  role      String   @default("LEAD") // LEAD | CO | ASSISTANT
+
+  @@unique([classId, subject, teacherId])
+}
+
+// 班级成员(学生归属某班)
+model ClassMembership {
+  id        String   @id @default(cuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([classId, studentId])
+}
+
+// 考试/测验
+// 归属二选一(双轨共存,互不破坏):
+//   - classId         传统按行政班录入(既有数据原样保留)
+//   - teachingClassId 走班考核按教学班录入(新流程)
+// classId 由必填放宽为可空,仅为支持走班流程,既有行不受影响
+// type 合法值:DAILY(日常) | MONTHLY(月考) | MIDTERM(期中) | FINAL(期末) | OTHER(其他)
+model Exam {
+  id           String   @id @default(cuid())
+  classId      String?
+  class        Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
+  teachingClassId String?
+  teachingClass   TeachingClass? @relation(fields: [teachingClassId], references: [id], onDelete: SetNull)
+  subject      String // 科目:数学 | 物理 | 化学 | 生物
+  title        String // 考试名称,如 "第一次月考"
+  type         String   @default("DAILY") // DAILY | MONTHLY | MIDTERM | FINAL | OTHER
+  examDate     DateTime // 考试日期
+  totalScore   Float    @default(100) // 满分
+  createdBy    String // 创建者(教师/管理员) User id
+  creator      User     @relation("ExamCreator", fields: [createdBy], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  scores       Score[]
+  feedbacks    TeacherFeedback[]
+
+  @@index([teachingClassId])
+}
+
+// 成绩(每个 exam×student 唯一一条;rankInClass 对学生/家长可见)
+model Score {
+  id          String   @id @default(cuid())
+  examId      String
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     User     @relation("ScoreStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  score       Float // 得分
+  rankInClass Int? // 班级排名(对学生/家长可见)
+  comment     String? // 教师评语(可选)
+  updatedBy   String? // 最后录入/修改者 User id
+  updater     User?    @relation("ScoreUpdater", fields: [updatedBy], references: [id])
+  updatedAt   DateTime @updatedAt
+
+  @@unique([examId, studentId])
+}
+
+// 教师反馈(逐条可见性 + 草稿态)
+// visibility 合法值:STUDENT(仅学生) | PARENT(仅家长) | BOTH(都可见)
+// status 合法值:DRAFT(草稿,未发布) | PUBLISHED(已发布)
+model TeacherFeedback {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation("FeedbackStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId  String
+  teacher    User     @relation("FeedbackTeacher", fields: [teacherId], references: [id])
+  subject    String? // 关联科目(可选)
+  examId     String? // 关联考试(可选)
+  exam       Exam?    @relation(fields: [examId], references: [id], onDelete: SetNull)
+  content    String // 反馈内容
+  visibility String   @default("BOTH") // STUDENT | PARENT | BOTH
+  status     String   @default("PUBLISHED") // DRAFT | PUBLISHED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// 课程表条目
+// dayOfWeek 合法值:1-7(周一至周日)
+model TimetableEntry {
+  id            String   @id @default(cuid())
+  classId       String
+  class         Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  dayOfWeek     Int // 1-7
+  period        Int // 第几节(网格导入时为行序,保序)
+  periodLabel   String? // 节次名(如"第一节"/"早读/班会",导入网格时提取)
+  periodTime    String? // 时间段(如"8:15-8:55",导入网格时提取)
+  subject       String // 科目
+  teacherId     String? // 教师(可空:课表导入网格格式无教师列)
+  teacher       User?    @relation(fields: [teacherId], references: [id])
+  room          String? // 教室
+  academicYear  String
+  term          String
+  // 来源课程块(排课管理拖拽产生;手动新增/网格导入的条目为 null)
+  // onDelete: SetNull ⇒ 删除课程块不会连带删掉已排课表(subject/teacherId/room 已快照在本条目上)
+  courseBlockId String?
+  courseBlock   CourseBlock? @relation(fields: [courseBlockId], references: [id], onDelete: SetNull)
+
+  // 唯一键含 teacherId:同一 slot 允许多门课程并存(选课走班 / 分层走班),
+  // 只禁止"同一时段 / 同一科目 / 同一教师"的完全重复条目。
+  // 典型走班形态:同一格内「英语·王老师(A层)」+「英语·李老师(B层)」,或「A2经济」+「AS生物」+「AS经济」并行。
+  @@unique([classId, dayOfWeek, period, subject, teacherId, academicYear, term])
+  @@index([courseBlockId])
+  @@index([classId, academicYear, term])
+}
+
+// 家长-学生关联
+// relation 合法值举例:父亲 | 母亲 | 监护人
+// status 合法值:PENDING(待审批) | VERIFIED(已验证) | REVOKED(已解除)
+// matchMethod 合法值:EXACT(学号+姓名精确匹配自动通过) | MANUAL(班主任手动审批)
+model ParentLink {
+  id             String   @id @default(cuid())
+  parentUserId   String
+  parent         User     @relation("ParentLinkParent", fields: [parentUserId], references: [id], onDelete: Cascade)
+  studentUserId  String
+  student        User     @relation("ParentLinkStudent", fields: [studentUserId], references: [id], onDelete: Cascade)
+  relation       String? // 与学生关系,如 父亲 | 母亲 | 监护人
+  status         String   @default("PENDING") // PENDING | VERIFIED | REVOKED
+  matchMethod    String? // EXACT | MANUAL
+  verifiedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@unique([parentUserId, studentUserId])
+}
+
+// ============================================================
+// 学生选课(选修/必修)
+// 设计要点:
+//   - 独立课程目录 Course:每个班每学期的科目及其类型(REQUIRED 必修 | ELECTIVE 选修)
+//   - 学生选课 StudentCourseSelection:每生每班每学期一条;submittedAt 非空即锁定,后续仅班主任/管理员可改
+//   - 课表过滤(buildStudentRecords):某班该学期存在目录且学生已提交 → 仅显示 必修 + 已选选修;否则全显(向后兼容)
+// ============================================================
+
+// 课程目录(独立):每个班每学期的科目及其必修/选修类型
+// type 合法值:REQUIRED(必修,默认选中不可取消) | ELECTIVE(选修,学生自行勾选)
+model Course {
+  id           String @id @default(cuid())
+  classId      String
+  class        Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicYear String
+  term         String
+  name         String // 科目名,如 "英语" | "A2物理"
+  type         String @default("ELECTIVE") // REQUIRED | ELECTIVE
+
+  @@unique([classId, academicYear, term, name])
+}
+
+// 学生选课(每生每班每学期一条;submittedAt 非空=已锁定,后续仅班主任/管理员可改)
+model StudentCourseSelection {
+  id               String   @id @default(cuid())
+  studentId        String
+  student          User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId          String
+  academicYear     String
+  term             String
+  selectedCourseIds String // JSON 数组:被勾选的选修科目名
+  submittedAt      DateTime? // 非空=已提交锁定
+
+  @@unique([studentId, classId, academicYear, term])
+}
+
+// ============================================================
+// GPA 管理(过程性考核成绩 + 综合评定 + 成绩单)
+// 设计要点:
+//   - GpaCourse:按「学年+年级」配置课程体系(课程模块/周课时/评定权重),与班级课程目录 Course 解耦
+//     (成绩单按年级课程体系组织,不受班级/学期课程目录增删影响)
+//   - GpaScore:过程性考核成绩,学生×课程×学季×考核组件 唯一;
+//     综合评定 = 各组件按权重加权(缺失组件按剩余权重归一化),等级按分数段映射 A/B/C/D/E
+//   - 学年综合评定 = 各学季综合得分的算术平均
+// ============================================================
+
+// GPA 课程(按 学年+年级 配置)
+// module 合法值:学术核心 | 素养与综合 | 艺术与体育 | 研究与创新 | 人工智能与实践
+model GpaCourse {
+  id            String   @id @default(cuid())
+  academicYear  String // 学年,如 "2026-2027"
+  grade         String // 年级,如 "高一" | "高二" | "高三"
+  name          String // 课程名称,如 "A Level数学"
+  module        String // 课程模块(见上方合法值)
+  weeklyHours   Float? // 周课时数(如 PBL 等无课时可空,成绩单显示 "/")
+  weightFinal   Float    @default(50) // 期末权重(%)
+  weightMidterm Float    @default(30) // 期中权重(%)
+  weightRegular Float    @default(20) // 平时权重(%)
+  sortOrder     Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scores GpaScore[]
+
+  @@unique([academicYear, grade, name])
+}
+
+// 过程性考核成绩(学生×课程×学季×考核组件 唯一)
+// season 合法值:夏季学 | 秋季学 | 冬季学 | 春季学
+// component 合法值:FINAL(期末) | MIDTERM(期中) | REGULAR(平时)
+model GpaScore {
+  id         String    @id @default(cuid())
+  courseId   String
+  course     GpaCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    User      @relation("GpaScoreStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  season     String
+  component  String
+  score      Float
+  fullScore  Float     @default(100)
+  remark     String?
+  recordedBy String
+  recorder   User      @relation("GpaScoreRecorder", fields: [recordedBy], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([courseId, studentId, season, component])
+}
+
+// ============================================================
+// 走班(分层走班 / 选课走班)教务模型
+// 设计要点(详见 docs/FLEXIBLE_SCHEDULING_DESIGN.md):
+//   - 行政班(Class)只管「人归谁管」;教学班(TeachingClass)管「课怎么上、成绩记在哪」
+//   - TimeBlock 让「同科目分层班强制同一时段」成为结构不变量,而非运行时校验
+//   - Enrollment 是下游(成绩/课表/报表)唯一依据;分层与选课上游流程分离、下游统一
+//   - 已确认:分层不影响分数难度(tier 为纯标签);选课超额由教务手工指定
+//   - 本阶段为 P0 纯增量:只加表,Exam.classId 仅放宽可空,与既有行政班流程双轨共存
+// ============================================================
+
+// 走班时段块:同科目的分层班共享同一时段(教务只指派一次,各层继承)
+// slots 为 JSON 数组:[{ dayOfWeek, period, periodLabel?, periodTime? }]
+model TimeBlock {
+  id            String   @id @default(cuid())
+  grade         String // 年级,如 "高一"
+  academicYear  String // 学年,如 "2026-2027"
+  term          String // 学期,如 "第一学期"
+  name          String // 如 "英语分层时段" | "高三选修时段"
+  slots         String // JSON 数组
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  teachingClasses TeachingClass[]
+  placementRuns   PlacementRun[]
+
+  @@unique([grade, academicYear, term, name])
+  @@index([grade, academicYear, term])
+}
+
+// 教学班:真正上课与录成绩的单位
+// type 合法值:ADMIN(行政班授课) | LEVEL(分层走班) | ELECTIVE(选课走班)
+// tier 为自由标签(A/B/C 或 提高/基础),tierOrder 仅用于排序,不硬编码层级数
+model TeachingClass {
+  id            String   @id @default(cuid())
+  subject       String // 科目
+  grade         String // 年级
+  academicYear  String
+  term          String
+  type          String   @default("ADMIN") // ADMIN | LEVEL | ELECTIVE
+  tier          String? // 层级标签,仅 LEVEL 有
+  tierOrder     Int? // 层级排序
+  name          String // 如 "高一英语A班"
+  capacity      Int? // 容量(可空=不限)
+  room          String? // 教室
+  blockId       String? // LEVEL/ELECTIVE 指向共享时段块
+  block         TimeBlock? @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  teachers      TeachingClassTeacher[]
+  enrollments   Enrollment[]
+  exams         Exam[]
+
+  @@unique([subject, grade, academicYear, term, tier])
+  @@index([grade, academicYear, term])
+  @@index([blockId])
+}
+
+// 教学班教师(多教师:主讲/副讲/助教,对齐原 ClassSubjectTeacher 的能力)
+// role 合法值:LEAD(主讲) | CO(副讲) | ASSISTANT(助教)
+model TeachingClassTeacher {
+  id              String   @id @default(cuid())
+  teachingClassId String
+  teachingClass   TeachingClass @relation(fields: [teachingClassId], references: [id], onDelete: Cascade)
+  teacherId       String
+  teacher         User     @relation("TeachingClassTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  role            String   @default("LEAD") // LEAD | CO | ASSISTANT
+
+  @@unique([teachingClassId, teacherId])
+  @@index([teacherId])
+}
+
+// 走班分配:学生 × 教学班(下游唯一依据)
+// 冗余 subject/grade/academicYear/term 以便 DB 级保证「每科每生至多一个教学班」
+// (Prisma 无法跨关系建立唯一约束)
+// teachingClassId 可空以支持新生未分 / 休学 / 转出(status=UNASSIGNED)
+model Enrollment {
+  id              String   @id @default(cuid())
+  studentId       String
+  student         User     @relation("EnrollmentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  teachingClassId String?
+  teachingClass   TeachingClass? @relation(fields: [teachingClassId], references: [id], onDelete: SetNull)
+  subject         String
+  grade           String
+  academicYear    String
+  term            String
+  status          String   @default("ASSIGNED") // ASSIGNED | UNASSIGNED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([studentId, subject, academicYear, term])
+  @@index([teachingClassId])
+}
+
+// 调剂审计日志:每次分班调整必留痕(家长质疑时可追溯)
+model EnrollmentLog {
+  id                  String   @id @default(cuid())
+  studentId           String
+  student             User     @relation("EnrollmentLogStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  fromTeachingClassId String?
+  toTeachingClassId   String?
+  operatorId          String
+  operator            User     @relation("EnrollmentLogOperator", fields: [operatorId], references: [id])
+  reason              String // 必填原因
+  createdAt           DateTime @default(now())
+
+  @@index([studentId])
+}
+
+// 分班方案:教务分班的工作单元
+// mode 合法值:LEVEL(分层走班) | ELECTIVE(选课走班)
+// status 合法值:DRAFT(草稿) | PUBLISHED(已发布) | REVOKED(已撤回)
+// tiers       JSON 数组:[{ key, label, capacity, teacherId, room }]
+// draftAssign JSON 对象:{ studentId: tierKey }
+model PlacementRun {
+  id           String   @id @default(cuid())
+  subject      String
+  grade        String
+  academicYear String
+  term         String
+  mode         String   @default("LEVEL") // LEVEL | ELECTIVE
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED | REVOKED
+  // blockId:该科目的走班时段块。同科目所有层级共享同一块,
+  // 以此把「分层班强制同一时段」做成结构不变量(教务只选一次,各层继承)
+  blockId      String?
+  block        TimeBlock? @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  tiers        String? // JSON 数组
+  draftAssign  String? // JSON 对象
+  basisExamId  String? // 依据考试(可空=纯人工 / 外部导入)
+  basisNote    String? // 依据说明,如 "2026春期末" | "外部排名导入"
+  publishedBy  String?
+  publisher    User?    @relation("PlacementRunPublisher", fields: [publishedBy], references: [id])
+  publishedAt  DateTime?
+  createdBy    String
+  creator      User     @relation("PlacementRunCreator", fields: [createdBy], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([subject, grade, academicYear, term])
+  @@index([status])
+}
+
+// 选课志愿(有序):rank=1 为第一志愿;教务对照容量手工指定超额去向
+model ElectiveWish {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      User     @relation("ElectiveWishStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  subject      String
+  rank         Int      @default(1)
+  academicYear String
+  term         String
+  submittedAt  DateTime?
+
+  @@unique([studentId, subject])
+  @@index([academicYear, term])
+}
+
+// ============================================================
+// 排课管理(组课 + 排课)
+// 组课:把「科目 + 任课教师」绑定成一个可拖拽的课程块,并声明预计每周课时数与开设年级。
+// 排课:选定班级后,把课程块拖进课表 slot(TimetableEntry.courseBlockId 记录来源,
+//       同时把 subject/teacherId/room 快照写入条目 ⇒ 删除课程块不会让已排课表消失)。
+// ============================================================
+
+// 课程块:一门课 + 一位任课教师 + 预计每周课时数 + 开设年级
+model CourseBlock {
+  id           String   @id @default(cuid())
+  subject      String // 科目,如 "数学"
+  teacherId    String? // 任课教师(可空:暂未定教师)
+  teacher      User?    @relation("CourseBlockTeacher", fields: [teacherId], references: [id])
+  grade        String // 开设年级,如 "高一"
+  academicYear String
+  term         String
+  weeklyHours  Int      @default(0) // 预计每周课时数(排课进度上限)
+  room         String? // 建议教室(拖入 slot 时默认带入)
+  note         String? // 备注(如 "合班/分层A层")
+  sortOrder    Int      @default(0) // 池内展示顺序
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  entries      TimetableEntry[]
+
+  @@index([grade, academicYear, term])
+  @@index([subject])
 }

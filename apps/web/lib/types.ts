@@ -4,7 +4,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "STUDENT" | "TEACHER" | "ADMIN";
+  role: "STUDENT" | "TEACHER" | "ADMIN" | "PARENT";
   /** 账号审核状态:PENDING 待审核 | APPROVED 已通过 | REJECTED 已拒绝 */
   status?: "PENDING" | "APPROVED" | "REJECTED";
   targetUniversity?: string | null;
@@ -91,6 +91,8 @@ export interface SessionSummary {
 export interface SessionDetail {
   id: string;
   mode: string;
+  // 服务端当前时间(epoch ms),用于前端校准本机时钟偏移(避免设备时钟偏快时提前禁答)
+  serverTime?: number;
   durationMin?: number | null;
   deadlineAt?: string | null;
   pausedRemaining?: number | null;
@@ -329,5 +331,29 @@ export interface GroupSummary {
   createdAt: string;
   memberCount: number;
   students: GroupStudent[];
+}
+
+// ---- 分组已布置的模考 / 作业(GET /api/teacher/groups/:id/assignments) ----
+export interface GroupAssignmentStats {
+  total: number;
+  submitted: number;
+  inProgress: number;
+  notSubmitted: number;
+  avgScore: number | null;
+  avgAccuracy: number | null;
+}
+
+export interface GroupAssignment {
+  id: string;
+  title: string;
+  /** PRACTICE = 作业;EXAM = 模考 */
+  mode: "PRACTICE" | "EXAM";
+  note: string | null;
+  dueAt: string | null;
+  createdAt: string;
+  kind: "SUBJECT" | "LANGUAGE" | "UNKNOWN";
+  paperTitle: string | null;
+  subject: string | null;
+  stats: GroupAssignmentStats;
 }
 

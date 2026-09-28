@@ -4,8 +4,19 @@ import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { parseIds, recalcPaper } from "../lib/paper-set.js";
 import { buildSubjectFilter } from "../lib/subject-filter.js";
+import { applyTeacherPerms, expandSourceType } from "../lib/teacherPerms.js";
 
 const router = Router();
+
+function parseJsonIds(str) {
+  if (!str) return [];
+  try {
+    const v = JSON.parse(str);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
 
 // 一次性算出多张卷的审核分布,避免逐卷查库(N+1)
 async function statsForPapers(papers) {
@@ -48,11 +59,26 @@ router.post(
     const where = { status: "PUBLISHED" };
     Object.assign(where, buildSubjectFilter(subject));
     // 题源多选:sourceTypes 数组非空时限定题目题源
+    // ESAT 家族展开:勾选 ESAT 时同时纳入 ENGAA / NSAA 的题(不改数据库原始值)
     if (Array.isArray(sourceTypes) && sourceTypes.length) {
-      const sts = sourceTypes.map((s) => String(s).trim()).filter(Boolean);
+      const sts = [...new Set(
+        sourceTypes.flatMap((s) => expandSourceType(String(s).trim())).filter(Boolean)
+      )];
       if (sts.length) where.sourceType = { in: sts };
     }
-    if (Array.isArray(topics) && topics.length) where.topic = { in: topics };
+    if (Array.isArray(topics) && topics.length) {
+      const selectedNames = new Set(topics.map((t) => String(t).trim()).filter(Boolean));
+      const selectedKps = await prisma.knowledgePoint.findMany({
+        where: { subject, name: { in: [...selectedNames] } },
+        select: { id: true },
+      });
+      const selectedIds = selectedKps.map((k) => k.id);
+      if (selectedIds.length === 0) {
+        return fail(res, 400, `选择的知识点不存在或不属于科目「${subject}」。`);
+      }
+      // topicIds 是 JSON 字符串，用 OR + contains 匹配任一选中的知识点 id
+      where.OR = selectedIds.map((id) => ({ topicIds: { contains: id } }));
+    }
     if (Array.isArray(difficulties) && difficulties.length) where.difficulty = { in: difficulties.map(Number) };
     const total = Math.max(1, Number(count) || 10);
     const all = await prisma.question.findMany({ where, select: { id: true } });
@@ -60,7 +86,7 @@ router.post(
       // 逐层回溯,精确告诉老师是哪个条件把题目筛空了
       const subjectPool = await prisma.question.findMany({
         where: { status: "PUBLISHED", subject },
-        select: { topic: true, difficulty: true },
+        select: { topicIds: true, difficulty: true },
       });
       if (subjectPool.length === 0) {
         const others = await prisma.question.groupBy({
@@ -73,10 +99,18 @@ router.post(
           : "题库中还没有任何已发布题目,请先到「题库管理」审核通过题目";
         return fail(res, 400, `科目「${subject}」下没有已发布的题目。${hint}`);
       }
-      const availTopics = [...new Set(subjectPool.map((q) => q.topic).filter(Boolean))];
+      const availTopicIds = new Set();
+      for (const q of subjectPool) {
+        for (const id of parseJsonIds(q.topicIds)) availTopicIds.add(id);
+      }
+      const availKps = await prisma.knowledgePoint.findMany({
+        where: { subject, id: { in: [...availTopicIds] } },
+        select: { name: true },
+      });
+      const availTopics = availKps.map((k) => k.name);
       const availDiffs = [...new Set(subjectPool.map((q) => q.difficulty).filter((d) => d != null))].sort((a, b) => a - b);
       const parts = [];
-      if (where.topic) parts.push(`知识点(可选:${availTopics.join("、") || "无"})`);
+      if (where.OR) parts.push(`知识点(可选:${availTopics.join("、") || "无"})`);
       if (where.difficulty) parts.push(`难度(可选:${availDiffs.join("、") || "无"})`);
       return fail(
         res,
@@ -121,7 +155,11 @@ router.get(
     if (isTeacher && req.query.subject) where.subject = String(req.query.subject);
     // 套题类型筛选:OFFICIAL 官方原版 / CUSTOM 组卷套题
     if (isTeacher && req.query.kind) where.kind = String(req.query.kind);
-    const list = await prisma.paper.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
+    // 教师可见范围权限:仅当 role=TEACHER 且配置了白名单时,将列表限制为白名单内
+    applyTeacherPerms(where, req.user);
+    // 不再限制 take:老师端「试卷管理」需要全量列表来做 Tab 计数与前端分页;
+    // 学生端只返回 READY 卷,数量本就有限,不受此影响
+    const list = await prisma.paper.findMany({ where, orderBy: { createdAt: "desc" } });
 
     if (!isTeacher) {
       return ok(res, {
@@ -169,21 +207,35 @@ router.get(
     let combos = [];
     let total = 0;
     if (subject) {
+      // 多值知识点：一道题可归属多个知识点，计数与筛选都应基于 topicIds 展开
+      const kps = await prisma.knowledgePoint.findMany({
+        where: { subject },
+        select: { id: true, name: true },
+      });
+      const kpNameById = new Map(kps.map((k) => [k.id, k.name]));
       const pool = await prisma.question.findMany({
         where: { status: "PUBLISHED", subject },
-        select: { topic: true, difficulty: true },
+        select: { topicIds: true, difficulty: true },
       });
       total = pool.length;
       const tMap = new Map();
       const dMap = new Map();
       const cMap = new Map();
       for (const q of pool) {
-        if (q.topic) tMap.set(q.topic, (tMap.get(q.topic) || 0) + 1);
+        const ids = parseJsonIds(q.topicIds).filter((id) => kpNameById.has(id));
+        for (const id of ids) {
+          const name = kpNameById.get(id);
+          tMap.set(name, (tMap.get(name) || 0) + 1);
+          if (q.difficulty != null) {
+            const key = `${name}\u0000${q.difficulty}`;
+            cMap.set(key, (cMap.get(key) || 0) + 1);
+          }
+        }
         if (q.difficulty != null) dMap.set(q.difficulty, (dMap.get(q.difficulty) || 0) + 1);
-        const key = `${q.topic ?? ""}\u0000${q.difficulty ?? ""}`;
-        cMap.set(key, (cMap.get(key) || 0) + 1);
       }
-      topics = [...tMap.entries()].map(([topic, count]) => ({ topic, count })).sort((a, b) => a.topic.localeCompare(b.topic));
+      topics = [...tMap.entries()]
+        .map(([topic, count]) => ({ topic, count }))
+        .sort((a, b) => a.topic.localeCompare(b.topic));
       difficulties = [...dMap.entries()].map(([difficulty, count]) => ({ difficulty, count })).sort((a, b) => a.difficulty - b.difficulty);
       // combos 供前端精确预览「当前知识点+难度组合」能匹配多少题
       combos = [...cMap.entries()].map(([key, count]) => {

@@ -44,7 +44,7 @@
       textAlign: 'center',
       fontFamily: '"PingFang SC","Microsoft YaHei",sans-serif',
     }}>
-      金瑞金鹰 · 让成长有迹可循
+      金瑞高中综合管理系统 · 让成长有迹可循
     </Text>
     <Box style={{
       width: 120,
@@ -68,7 +68,7 @@
     alignItems: 'center',
     gap: 6,
   }}>
-    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#F8FAFC' }}>金瑞升学 · 金鹰系统</Text>
+    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#F8FAFC' }}>金瑞高中综合管理系统</Text>
     <Text style={{ fontSize: 14, color: '#7A89A3' }}>谢谢观看</Text>
   </Box>
   <Text style={{

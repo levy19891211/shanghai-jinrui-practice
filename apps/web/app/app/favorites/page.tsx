@@ -27,11 +27,25 @@ export default function FavoritesPage() {
   const [list, setList] = useState<FavItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // 讲评请求相关状态
+  const [reviewedMap, setReviewedMap] = useState<Record<string, { note: string | null; status: string }>>({});
+  const [reviewTarget, setReviewTarget] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    api.get<{ list: FavItem[] }>("/me/favorites")
-      .then((d) => setList(d.list || []))
+    Promise.all([
+      api.get<{ list: FavItem[] }>("/me/favorites"),
+      api.get<{ list: { questionId: string; note: string | null; status: string }[] }>("/review-requests").catch(() => ({ list: [] as { questionId: string; note: string | null; status: string }[] })),
+    ])
+      .then(([fav, rr]) => {
+        setList(fav.list || []);
+        const m: Record<string, { note: string | null; status: string }> = {};
+        (rr.list || []).forEach((x) => { m[x.questionId] = { note: x.note, status: x.status }; });
+        setReviewedMap(m);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "加载失败"))
       .finally(() => setLoading(false));
   }, []);
@@ -43,6 +57,28 @@ export default function FavoritesPage() {
       setList((prev) => prev.filter((f) => f.question.id !== qid));
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
+  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 3500); };
+  function openReview(qid: string) {
+    const existing = reviewedMap[qid];
+    setReviewNote(existing?.note || "");
+    setReviewTarget(qid);
+  }
+  async function submitReview() {
+    if (!reviewTarget) return;
+    setReviewBusy(true);
+    try {
+      await api.post("/review-requests", { questionId: reviewTarget, source: "FAVORITE", note: reviewNote.trim() });
+      setReviewedMap((prev) => ({ ...prev, [reviewTarget as string]: { note: reviewNote.trim() || null, status: "PENDING" } }));
+      setReviewTarget(null);
+      setReviewNote("");
+      flash("已提交讲评请求");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "提交失败");
+    } finally {
+      setReviewBusy(false);
     }
   }
 
@@ -59,6 +95,7 @@ export default function FavoritesPage() {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {msg && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</p>}
 
       {loading ? (
         <p className="py-10 text-center text-sm text-slate-400">加载中...</p>
@@ -81,6 +118,21 @@ export default function FavoritesPage() {
               <button onClick={() => remove(f.question.id)} className="ml-auto text-xs text-red-500 hover:underline">
                 移除收藏
               </button>
+              {reviewedMap[f.question.id] ? (
+                <button
+                  onClick={() => openReview(f.question.id)}
+                  className="text-xs font-medium text-emerald-600 hover:underline"
+                >
+                  已提交讲评 ✓
+                </button>
+              ) : (
+                <button
+                  onClick={() => openReview(f.question.id)}
+                  className="text-xs font-medium text-amber-600 hover:underline"
+                >
+                  需要讲评
+                </button>
+              )}
             </div>
             <p className="mt-3 text-[15px] leading-relaxed text-slate-800">{renderRich(f.question.stem)}</p>
             <div className="mt-3 space-y-1">
@@ -89,7 +141,7 @@ export default function FavoritesPage() {
                 return (
                   <div key={j} className={`rounded px-3 py-1.5 text-[14px] ${isAns ? "bg-emerald-50 font-medium text-emerald-800" : "text-slate-600"}`}>
                     <span className="mr-1 font-bold text-indigo-600">{LETTERS[j]}.</span>
-                    {renderRich(opt)}
+                    {renderRich(opt, { smart: false })}
                     {isAns && <span className="ml-2 text-xs text-emerald-600">✓ 正确答案</span>}
                   </div>
                 );
@@ -103,6 +155,33 @@ export default function FavoritesPage() {
             )}
           </div>
         ))
+      )}
+
+      {/* 讲评请求确认弹窗(收藏) */}
+      {reviewTarget && (
+        <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => !reviewBusy && setReviewTarget(null)}>
+          <div className="mt-24 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-800">请求老师讲评</h2>
+              <button onClick={() => !reviewBusy && setReviewTarget(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <p className="mt-2 text-sm text-slate-500">你可以给老师留一句话,说明哪里没看懂(可留空)。</p>
+            <textarea
+              className="mt-3 min-h-[80px] w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-indigo-500"
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              placeholder="例如:这道向量题的几何意义不太明白..."
+            />
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => !reviewBusy && setReviewTarget(null)} disabled={reviewBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                取消
+              </button>
+              <button onClick={submitReview} disabled={reviewBusy} className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
+                {reviewBusy ? "提交中..." : "确认提交"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

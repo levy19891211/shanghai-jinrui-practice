@@ -6,7 +6,7 @@ import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
 } from "recharts";
-import { api, getUser } from "@/lib/api";
+import { api, getUser, getToken } from "@/lib/api";
 import { renderRich } from "@/lib/rich";
 import type { SessionSummary, WrongItem, StatsData, GrowthData } from "@/lib/types";
 import LangGrowthPanel, { type LangAssignment } from "@/components/LangGrowthPanel";
@@ -77,6 +77,14 @@ export default function PersonalSpacePage() {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // 讲评请求相关状态
+  const [reviewedMap, setReviewedMap] = useState<Record<string, { note: string | null; status: string }>>({});
+  const [reviewTarget, setReviewTarget] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  // 升学规划填写任务(来自 /api/planning/my-tasks,裸 JSON 不走 api 信封)
+  const [planningTasks, setPlanningTasks] = useState<{ id: string; title: string; intro: string | null; status: string }[]>([]);
 
   const [subjectTab, setSubjectTab] = useState("");
   const [openSolutions, setOpenSolutions] = useState<Set<string>>(new Set());
@@ -85,7 +93,7 @@ export default function PersonalSpacePage() {
     (async () => {
       setLoading(true);
       try {
-        const [a, s, ls, stats, w, kps, growthData] = await Promise.all([
+        const [a, s, ls, stats, w, kps, growthData, rr] = await Promise.all([
           api.get<{ list: Assignment[] }>("/me/assignments").catch(() => ({ list: [] as Assignment[] })),
           api.get<{ list: SessionSummary[] }>("/me/sessions").catch(() => ({ list: [] as SessionSummary[] })),
           api.get<{ list: LangSession[] }>("/language/sessions").catch(() => ({ list: [] as LangSession[] })),
@@ -93,6 +101,7 @@ export default function PersonalSpacePage() {
           api.get<{ list: WrongItem[] }>("/me/wrongbook").catch(() => ({ list: [] as WrongItem[] })),
           api.get<{ list: { id: string; name: string; subject: string }[] }>("/knowledge-points").catch(() => ({ list: [] as { id: string; name: string; subject: string }[] })),
           api.get<GrowthData>("/me/growth").catch(() => ({ points: [], milestones: [], coach: { encouragement: "", suggestions: [] }, summary: { hasData: false } })),
+          api.get<{ list: { questionId: string; note: string | null; status: string }[] }>("/review-requests").catch(() => ({ list: [] as { questionId: string; note: string | null; status: string }[] })),
         ]);
         setAssignments(a.list || []);
         setSubjectSessions(s.list || []);
@@ -110,7 +119,18 @@ export default function PersonalSpacePage() {
         setTotalAnswered(stats.totalAnswered || 0);
         setGrowth(growthData);
         setWrongList(w.list || []);
+        const rrMap: Record<string, { note: string | null; status: string }> = {};
+        (rr.list || []).forEach((x) => { rrMap[x.questionId] = { note: x.note, status: x.status }; });
+        setReviewedMap(rrMap);
         setAllKps(kps.list || []);
+        // 升学规划填写任务:planning 路由返回裸 JSON,直接用 fetch 带 token 拉取
+        const ptRes = await fetch('/api/planning/my-tasks', { headers: { Authorization: `Bearer ${getToken() || ''}` } }).catch(() => null);
+        let pt: { id: string; title: string; intro: string | null; status: string }[] = [];
+        if (ptRes && ptRes.ok) {
+          const pd = await ptRes.json().catch(() => ({ tasks: [] }));
+          pt = (pd.tasks || []).map((t: any) => ({ id: String(t.id), title: String(t.title), intro: t.intro ? String(t.intro) : null, status: String(t.status || "PENDING") }));
+        }
+        setPlanningTasks(pt);
       } catch (e) {
         setError(e instanceof Error ? e.message : "加载失败");
       } finally {
@@ -307,9 +327,9 @@ export default function PersonalSpacePage() {
 
   // 成绩趋势(学科会话,有得分)
   const trendData = subjectSessions
-    .filter((s) => s.submittedAt && s.total && s.total > 0 && typeof s.score === "number")
+    .filter((s) => s.submittedAt && s.total && s.total > 0 && s.correctCount != null)
     .slice().reverse().slice(-10)
-    .map((s, i) => ({ name: `${i + 1}`, rate: Math.round((s.score! / s.total!) * 100), mode: s.mode === "EXAM" ? "模考" : "练习" }));
+    .map((s, i) => ({ name: `${i + 1}`, rate: Math.min(100, Math.round(((s.correctCount ?? s.score ?? 0) / s.total!) * 100)), mode: s.mode === "EXAM" ? "模考" : "练习" }));
 
   const radarData = byTopic
     .filter((t) => typeof t.correctRate === "number" && t.attempts > 0)
@@ -342,6 +362,28 @@ export default function PersonalSpacePage() {
   async function markMastered(qid: string) {
     await api.post(`/me/wrongbook/${qid}/master`);
     setWrongList((prev) => prev.map((w) => (w.questionId === qid ? { ...w, mastered: true } : w)));
+  }
+
+  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 3500); };
+  function openReview(qid: string) {
+    const existing = reviewedMap[qid];
+    setReviewNote(existing?.note || "");
+    setReviewTarget(qid);
+  }
+  async function submitReview() {
+    if (!reviewTarget) return;
+    setReviewBusy(true);
+    try {
+      await api.post("/review-requests", { questionId: reviewTarget, source: "WRONG_BOOK", note: reviewNote.trim() });
+      setReviewedMap((prev) => ({ ...prev, [reviewTarget as string]: { note: reviewNote.trim() || null, status: "PENDING" } }));
+      setReviewTarget(null);
+      setReviewNote("");
+      flash("已提交讲评请求");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "提交失败");
+    } finally {
+      setReviewBusy(false);
+    }
   }
 
   const tabBtn = (t: Tab, icon: string, label: string, count?: number) => (
@@ -377,10 +419,42 @@ export default function PersonalSpacePage() {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {msg && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</p>}
       {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
 
       {!loading && tab === "assignments" && (
         <div className="space-y-8">
+          {/* 升学规划填写任务(来自 /api/planning/my-tasks) */}
+          {planningTasks.length > 0 && (
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-emerald-600">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-sm">📝</span>
+                升学规划填写任务 ({planningTasks.length})
+              </h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {planningTasks.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => router.push("/app/planning")}
+                    className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border-2 border-emerald-400 bg-emerald-50/60 p-4 shadow-sm transition hover:border-emerald-500 hover:bg-emerald-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-xs font-semibold text-white">档案填写</span>
+                        <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">{t.status === "DRAFT" ? "草稿 · 继续填写" : "待填写"}</span>
+                      </div>
+                      <p className="truncate text-sm font-semibold text-slate-800">{t.title}</p>
+                      {t.intro && <p className="mt-0.5 truncate text-xs text-slate-500">{t.intro}</p>}
+                    </div>
+                    <button className="shrink-0 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700">
+                      去填写 →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* 紧急区 · 24 小时内截止(全部) */}
           {urgentAssigns.length > 0 && (
             <section>
@@ -535,8 +609,8 @@ export default function PersonalSpacePage() {
                   <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                     <span className="shrink-0 rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{s.mode === "EXAM" ? "模考" : "练习"}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-700">{s.total ? `${s.score} / ${s.total}` : "—"}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{s.total ? `正确率 ${Math.round((s.score! / s.total) * 100)}%` : ""} · {new Date(s.startedAt).toLocaleString("zh-CN")}</p>
+                      <p className="text-sm font-medium text-slate-700">{s.total ? `${s.correctCount ?? s.score} / ${s.total}` : "—"}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{s.total ? `正确率 ${Math.min(100, Math.round(((s.correctCount ?? s.score ?? 0) / s.total) * 100))}%` : ""} · {new Date(s.startedAt).toLocaleString("zh-CN")}</p>
                     </div>
                     {s.submittedAt && (
                       <button onClick={() => router.push(`/app/practice/${s.id}`)} className="shrink-0 text-xs text-indigo-600 hover:underline">查看</button>
@@ -850,6 +924,33 @@ export default function PersonalSpacePage() {
           )}
         </div>
       )}
+
+      {/* 讲评请求确认弹窗(错题本) */}
+      {reviewTarget && (
+        <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => !reviewBusy && setReviewTarget(null)}>
+          <div className="mt-24 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-800">请求老师讲评</h2>
+              <button onClick={() => !reviewBusy && setReviewTarget(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <p className="mt-2 text-sm text-slate-500">你可以给老师留一句话,说明哪里没看懂(可留空)。</p>
+            <textarea
+              className="mt-3 min-h-[80px] w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-indigo-500"
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              placeholder="例如:这个函数积分的步骤不太明白..."
+            />
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => !reviewBusy && setReviewTarget(null)} disabled={reviewBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                取消
+              </button>
+              <button onClick={submitReview} disabled={reviewBusy} className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
+                {reviewBusy ? "提交中..." : "确认提交"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -864,6 +965,11 @@ export default function PersonalSpacePage() {
               <span>难度 {w.difficulty}</span>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(w.stem)}</p>
+            {w.answer ? (
+              <div className="mt-3 rounded-lg border-l-4 border-emerald-300 bg-emerald-50 px-3 py-2 text-sm leading-relaxed text-emerald-900">
+                <b className="text-emerald-700">正确答案:</b> {renderRich(w.answer, { smart: false })}
+              </div>
+            ) : null}
             <div className="mt-3">
               <button
                 onClick={() => toggleSolution(w.questionId)}
@@ -888,11 +994,28 @@ export default function PersonalSpacePage() {
           </div>
           <div className="shrink-0 text-right">
             <p className="text-xs text-slate-400">错 {w.wrongCount} 次</p>
-            {!w.mastered && (
-              <button onClick={() => markMastered(w.questionId)} className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
-                标记掌握
-              </button>
-            )}
+            <div className="mt-2 flex flex-col items-end gap-1.5">
+              {reviewedMap[w.questionId] ? (
+                <button
+                  onClick={() => openReview(w.questionId)}
+                  className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                >
+                  已提交讲评 ✓
+                </button>
+              ) : (
+                <button
+                  onClick={() => openReview(w.questionId)}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
+                >
+                  需要讲评
+                </button>
+              )}
+              {!w.mastered && (
+                <button onClick={() => markMastered(w.questionId)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                  标记掌握
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

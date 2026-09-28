@@ -16,6 +16,13 @@ import uploadsRouter from "./routes/uploads.js";
 import knowledgePointsRouter from "./routes/knowledge-points.js";
 import roguelikeRouter from "./routes/roguelike.js";
 import languageRouter from "./routes/language.js";
+import reviewRequestsRouter from "./routes/review-requests.js";
+import teacherAdminRouter from "./routes/teacher-admin.js";
+import planningRouter from "./routes/planning.js";
+import academicsRouter from "./routes/academics.js";
+import gpaRouter from "./routes/gpa.js";
+import flexibleRouter from "./routes/flexible.js";
+import schedulingRouter from "./routes/scheduling.js";
 
 export function createApp() {
   const app = express();
@@ -42,6 +49,17 @@ export function createApp() {
   app.use("/api/knowledge-points", knowledgePointsRouter);
   app.use("/api/roguelike", roguelikeRouter);
   app.use("/api/language", languageRouter);
+  app.use("/api/review-requests", reviewRequestsRouter);
+  app.use("/api/teacher/admin", teacherAdminRouter);
+
+  app.use("/api/planning", planningRouter); // 升学规划模块(独立命名空间,与笔试隔离)
+
+  app.use("/api/academics", academicsRouter); // 教务管理模块(独立命名空间,与笔试隔离)
+
+  app.use("/api/gpa", gpaRouter); // GPA 管理(过程性考核 + 综合评定 + 成绩单)
+
+  app.use("/api/flexible", flexibleRouter); // 走班(分层/选课)教务:时段块·分班方案·教学班成绩
+  app.use("/api/scheduling", schedulingRouter); // 排课管理(组课 + 拖拽排课;仅管理员/教务老师)
 
   // 404 兜底
   app.use((req, res) => fail(res, 404, "not found"));

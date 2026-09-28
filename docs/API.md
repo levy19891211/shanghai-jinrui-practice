@@ -1,4 +1,4 @@
-# API 契约文档 — 金瑞升学金鹰系统(TMUA / ESAT)
+# API 契约文档 — 金瑞高中综合管理系统(TMUA / ESAT)
 
 > 本文件是前后端对齐的**唯一依据**。任何接口变更必须先更新此处,再实现代码。
 > 契约演进:基础地址 `/api`(开发环境前端代理到 `http://localhost:4000`)。
@@ -24,7 +24,7 @@
 ## 枚举值
 
 - `subject`: `TMUA` | `ESAT`
-- `role`: `STUDENT` | `TEACHER` | `ADMIN`
+- `role`: `STUDENT` | `TEACHER` | `ADMIN` | `PARENT`(家长端:注册时以「学号+姓名」精确匹配已审核学生自动 VERIFIED,否则 PENDING 待班主任审批)
 - `mode`: `PRACTICE` | `EXAM`
 - `status`: `DRAFT` | `PUBLISHED` | `ARCHIVED`
 - `type`: `SINGLE_CHOICE` | `MULTIPLE_CHOICE` | `NUMERIC`
@@ -279,6 +279,112 @@
   不限时的练习会话可长期挂着,学生隔天回来继续作答即属正常(实测存在相差数小时的段)。
   时间分配甘特图的横轴 = **各段时长首尾相接的累计轴**(与 `startedAt/submittedAt` 解耦),
   故区间外的段仍能正确落位;`startedAt` 仅用于悬停提示里的「开考后 x 分」。
+
+---
+
+## 教务管理模块(`/api/academics`)
+
+> 与笔试题库/会话/作业/升学规划**完全隔离**:仅读写 8 张新增表(Class / ClassSubjectTeacher /
+> ClassMembership / Exam / Score / TeacherFeedback / TimetableEntry / ParentLink),不触碰任何现有
+> 业务 model/路由,不影响现有功能与数据。所有响应统一走 `{code,message,data}` 信封。
+
+### 枚举值(教务)
+
+- `subject`(教务):`数学` | `物理` | `化学` | `生物`
+- `Exam.type`:`DAILY`(日常) | `MONTHLY`(月考) | `MIDTERM`(期中) | `FINAL`(期末) | `OTHER`
+- `ClassSubjectTeacher.role`:`LEAD`(主讲) | `CO`(协同) | `ASSISTANT`(助教)
+- `TeacherFeedback.visibility`:`STUDENT`(仅学生) | `PARENT`(仅家长) | `BOTH`(都可见)
+- `TeacherFeedback.status`:`DRAFT`(草稿) | `PUBLISHED`(已发布)
+- `ParentLink.status`:`PENDING`(待审批) | `VERIFIED`(已验证) | `REVOKED`(已解除)
+- `ParentLink.matchMethod`:`EXACT`(学号+姓名精确匹配自动通过) | `MANUAL`(班主任手动审批)
+
+### 授权模型
+
+- **教师 / 管理员**:对「可见班级」有完整 CRUD;对「自己任教(或担任班主任)的班级+科目」可录分 / 排课。
+  - 可见班级 = 担任班主任(`headTeacherId`)或任一 `ClassSubjectTeacher` 记录的班级。
+- **学生**:只读本人成绩 / 反馈(`visibility` ∈ {STUDENT,BOTH} 且 `status=PUBLISHED`)/ 课表 / 班级信息,零写入。
+- **家长**:只读已 `VERIFIED` 关联孩子的全科成绩 / 反馈(`visibility` ∈ {PARENT,BOTH} 且 `status=PUBLISHED`)/ 课表 / 升学规划(仅当 `PlanningProfile.parentVisible`),零写入。
+
+### 班级 Class
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/classes` | 列出可见班级(含班主任/科目教师/人数) | 认证 |
+| POST | `/api/academics/classes` | 新建班级 `{name,grade?,academicYear,term,headTeacherId?}` | TEACHER/ADMIN |
+| GET | `/api/academics/classes/:id` | 班级详情(成员 + 科目教师) | 认证(可见范围) |
+| PUT | `/api/academics/classes/:id` | 更新班级 | TEACHER/ADMIN(作用域) |
+| DELETE | `/api/academics/classes/:id` | 删除班级(级联成员/考试/成绩/课表) | TEACHER/ADMIN(作用域) |
+
+### 班级科目教师 ClassSubjectTeacher
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/academics/classes/:id/teachers` | 列出班级科目教师 |
+| POST | `/api/academics/classes/:id/teachers` | 添加 `{subject,teacherId,role?}`(默认 LEAD) |
+| DELETE | `/api/academics/classes/:id/teachers/:linkId` | 移除任教记录 |
+
+### 班级成员 ClassMembership
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/academics/classes/:id/students` | 列出班级学生 |
+| POST | `/api/academics/classes/:id/students` | 添加学生(支持 `{studentIds:[...]}` 批量;仅纳入已审核 STUDENT) |
+| DELETE | `/api/academics/classes/:id/students/:studentId` | 移除学生 |
+
+### 考试 Exam 与 成绩 Score
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/exams?classId=&subject=` | 列出考试(作用域过滤) | 认证 |
+| POST | `/api/academics/exams` | 新建考试 `{classId,subject,title,type?,examDate,totalScore?}` | 任教该班该科目 |
+| GET | `/api/academics/exams/:id` | 考试详情 + 成绩列表 | 认证(可见范围) |
+| PUT | `/api/academics/exams/:id` | 更新考试 | 任教该班该科目 |
+| DELETE | `/api/academics/exams/:id` | 删除考试(级联成绩) | 任教该班该科目 |
+| PUT | `/api/academics/exams/:id/scores` | 批量录入/更新成绩 `{scores:[{studentId,score,rankInClass?,comment?}]}`(仅本班成员,idempotent upsert) | 任教该班该科目 |
+
+### 教师反馈 TeacherFeedback
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/feedbacks?studentId=&status=` | 列表(教师看全部;学生看本人 STUDENT/BOTH 已发布;家长看孩子 PARENT/BOTH 已发布) | 认证 |
+| POST | `/api/academics/feedbacks` | 新建 `{studentId,subject?,examId?,content,visibility?,status?}`(`status=DRAFT` 存草稿) | TEACHER/ADMIN |
+| PUT | `/api/academics/feedbacks/:id` | 修改(仅本人所写或 ADMIN) | TEACHER/ADMIN |
+| POST | `/api/academics/feedbacks/:id/publish` | 草稿发布 | TEACHER/ADMIN(本人) |
+| DELETE | `/api/academics/feedbacks/:id` | 删除 | TEACHER/ADMIN(本人) |
+
+### 课程表 TimetableEntry
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/timetable?classId=&academicYear=&term=` | 列出课表 | 认证(作用域) |
+| POST | `/api/academics/timetable` | 新增 `{classId,dayOfWeek,period,subject,teacherId?,room?,academicYear,term}` | 任教该班 |
+| PUT | `/api/academics/timetable/:id` | 更新 | 任教该班 |
+| DELETE | `/api/academics/timetable/:id` | 删除 | 任教该班 |
+
+> 唯一约束:`(classId, dayOfWeek, period, academicYear, term)`,重复排课返回 `code=409`。
+
+### 家长关联 ParentLink(审批)
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/parent-links?status=&studentId=` | 教师看 PENDING 待审批(默认);家长看本人全部 | 认证 |
+| POST | `/api/academics/parent-links/:id/approve` | 审批通过(PENDING→VERIFIED) | TEACHER/ADMIN |
+| POST | `/api/academics/parent-links/:id/reject` | 驳回/解除(→REVOKED) | TEACHER/ADMIN |
+
+### 学生 / 家长 聚合视图(只读)
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/me/records` | 学生本人教务档案(班级 + 考试/成绩 + 反馈 + 课表) | STUDENT |
+| GET | `/api/academics/children` | 家长已关联(VERIFIED)孩子列表 | PARENT |
+| GET | `/api/academics/children/:studentId/records` | 某孩子教务档案 + 升学规划(若 `parentVisible`) | PARENT(关联) |
+
+### 选择器(供前端下拉)
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/academics/teachers` | 教师/管理员列表(班主任 / 任课教师下拉) | TEACHER/ADMIN |
+| GET | `/api/academics/students` | 已审核学生列表(成员 / 录分下拉) | TEACHER/ADMIN |
 
 ---
 

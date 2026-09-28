@@ -5,6 +5,7 @@ import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { api, getUser } from "@/lib/api";
 import { plainText, renderRich } from "@/lib/rich";
 import { fetchSourceTypes, DEFAULT_SOURCE_TYPES } from "@/lib/sourceTypes";
+import { isEsatFamily, showEsatFamilyBadge } from "@/lib/sourceFamily";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
 import type { AutoFixBatchItem, AutoFixPlan, AiFixPlan, Question, QuestionList } from "@/lib/types";
 
@@ -937,6 +938,9 @@ export default function TeacherPage() {
                       <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-600">{q.subject}</span>
                       {q.sourceType && (
                         <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">{q.sourceType}</span>
+                      )}
+                      {showEsatFamilyBadge(q.sourceType) && (
+                        <span className="rounded bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600" title="属于 ESAT 题源家族">ESAT</span>
                       )}
                     </div>
                   </td>

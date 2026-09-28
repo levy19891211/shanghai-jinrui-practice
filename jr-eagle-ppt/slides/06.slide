@@ -59,7 +59,7 @@
     justifyContent: 'space-between',
     marginTop: 20,
   }}>
-    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞升学 · 金鹰系统</Text>
+    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞高中综合管理系统</Text>
     <Text style={{ fontSize: 14, color: '#7A89A3' }}>06 / 18</Text>
   </Box>
 </Slide>

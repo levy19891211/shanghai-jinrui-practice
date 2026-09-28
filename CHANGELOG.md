@@ -1,5 +1,353 @@
 # 版本历史
 
+## V2.4.106 (2026-09-28) — 教务老师获得建立班级/新建课程/管理任课教师权限
+
+- 需求：教务老师(teacherRole=ACADEMIC)需具备建立班级、新建课程、指派/移除任课教师的教务管理权限；同时保持破坏性操作(删除班级、班级成员管理、分班/录取、GPA、我的班级等)仍仅管理员可执行。
+- 后端改动(apps/api/src/routes/academics.js)：
+  - 新增 `isAcademicAdmin(user)` 判定(`role===ADMIN || teacherRole===ACADEMIC`)，作为跨班教务管理的总开关。
+  - `POST /api/academics/classes`：由 `requireRole("ADMIN")` 改为 `requireAuth` + 行内 `isAcademicAdmin` 校验，管理员或教务老师均可建班。
+  - `PUT /api/academics/classes/:id`：放行 `isAcademicAdmin || canManageClass`。
+  - `POST/DELETE /api/academics/classes/:id/teachers`：放行 `isAcademicAdmin || canManageClass`，教务老师可跨班指派/移除任课教师。
+  - `canManageCourses`：新增 `teacherRole===ACADEMIC` 分支，教务老师可跨班维护课程目录/选课。
+  - 保持 `DELETE /classes/:id`、`/students` 成员管理、分班/录取、GPA 等仍为 `requireRole("ADMIN")` 或班主任作用域，未下放给教务老师(纵深防御)。
+- 前端改动(apps/web/app/teacher/academics/page.tsx)：`canManage = role===ADMIN || teacherRole===ACADEMIC`；新建班级按钮、全部班级视图、任课教师 Tab、新建课程入口均对教务老师开放；普通教师不显示教务提示、仅见任教班级。
+- 验证：服务端 E2E 脚本 8/8 PASS —— 教务老师建班/加任课教师/建课均 200；普通教师建班 403；无 token 401；教务老师删班 403(仍仅管理员)；脚本自清理零残留。
+
+## V2.4.105 (2026-09-28) — 修复「教务老师」角色徽章无颜色（Tailwind content 漏扫 components/）
+
+- 现象：教师管理列表中「任课教师」(靛蓝)、「管理员」(琥珀)、「助教老师」(紫) 徽章均有色，唯「教务老师」显示为裸文本。
+- 根因：`apps/web/tailwind.config.ts` 的 `content` 只配了 `./app/**`，未含 `./components/**`。`bg-sky-100 text-sky-700` 仅出现在 `components/TeacherTeachersManage.tsx` 的 `TEACHER_ROLE_BADGE` 映射里 → Tailwind 从未扫描到 → 生产 CSS 无 `.bg-sky-100/.text-sky-700` 规则 → JS 输出类名但无样式。
+- 为何其它角色正常：`bg-violet-100`(助教)、amber/indigo 等恰好也在 `app/**` 下出现过，被顺带扫入；`bg-sky-100` 全项目仅存在于 components/，故唯一中招。
+- 系统性影响（同为隐患）：所有「仅被 components/ 使用」的 Tailwind 类此前都不会生成 CSS（如 GPA 等级徽章色、选课类型「选修」sky 色）。本次修复后这些样式将开始生效。
+- 修复：content 增加 `./components/**/*.{ts,tsx}`，全量重建 CSS。
+
+## V2.4.104 (2026-09-28) — 管理员/教务老师可设置班级班主任
+
+- 需求：管理员（ADMIN）和教务老师（TEACHER + teacherRole=ACADEMIC）可以给班级设置班主任。
+- 后端（`apps/api/src/routes/academics.js`）：
+  - 新增判定 `canSetHomeroom(user)` = `role===ADMIN || teacherRole===ACADEMIC`。
+  - 新增专用接口 `PUT /api/academics/classes/:id/head-teacher`：仅上述两角色可调；`headTeacherId` 校验必须是 TEACHER/ADMIN；传空即移除班主任。
+  - 采用「专用接口 + 最小权限」而非放开既有 `POST/PUT /classes`（仍限 ADMIN），避免把班级 CRUD/删除连带开放给教务老师。
+- 前端（`apps/web/app/teacher/academics/page.tsx`）：
+  - 新增组件 `HeadTeacherSetter`：班级面板标题行「班主任」处展示姓名；对可设置角色显示「设置/更换」按钮，点击展开教师下拉（含「不设置」选项）+ 保存/取消；无权限者（学科教师）仅看名字。
+  - 复用既有 `GET /api/academics/teachers`（返回全部 TEACHER+ADMIN）。
+- 验证：待部署后冒烟。
+
+## V2.4.103 (2026-09-27) — 右上角「修改信息」与用户名左边缘严格对齐
+
+- 需求：V2.4.102 排版仍不齐——按钮自带 `px-1` 内边距，使「修改信息」文字比上方用户名右缩 4px。
+- 修复（3 个 layout 各一行）：按钮改 `-ml-1 px-1`，负左边距抵消内边距，文字左边缘与用户名严格对齐（hover 背景仍完整覆盖文字）。
+
+## V2.4.102 (2026-09-27) — 右上角排版对齐 + 学生/家长端接入「修改信息」
+
+- 需求：① V2.4.101 的两行排版不整齐（「退出」垂直居中悬在两行中间）；② 学生/家长端右上角也加入「修改信息」入口。
+- 前端（3 个 layout，`ProfileDialog` 角色无关直接复用）：
+  - 教师端/学生端/家长端统一为两行对齐结构：第一行 `用户名(角色) | 退出`，第二行「修改信息」小字靛蓝按钮与用户名左对齐。
+  - `app/app/layout.tsx`（学生端）、`app/parent/layout.tsx`（家长端）：接入 `ProfileDialog`（`profileOpen` 状态 + 弹窗渲染 + 保存后同步本地缓存显示名），走既有 `PUT /api/auth/profile`（改密需验旧密码，所有角色可用）。
+
+## V2.4.101 (2026-09-27) — 移除背景音乐功能 + 「修改信息」移至用户名下方
+
+- 需求：① 删去背景音乐功能（含教师端/学生端 header 播放控件与全部音频资源）；② 右上角「修改信息」按钮改放到用户名下方。
+- 前端：
+  - 删除 `components/BgmPlayer.tsx`、`components/BgmProvider.tsx`，`app/layout.tsx` 去掉 `BgmProvider` 包裹，`app/teacher/layout.tsx` 与 `app/app/layout.tsx` 移除 `<BgmPlayer />` 及其 import。
+  - 删除 `public/audio/`（ambient1-3.wav + bgm.wav，约 14.5MB）。
+  - 教师端右上角改为两行结构：第一行用户名（含角色），第二行「修改信息」小字按钮；「退出」与分隔线保持右侧不变。
+  - 学生端 header 同步简化为 版本号 + 用户名 + 退出 一行。
+
+## V2.4.100 (2026-09-27) — 教师默认密码 Jinrui@2026 + 右上角「修改信息」（可改密码）
+
+- 需求：① 新建教师账号默认密码 `Jinrui@2026`；② 教师端右上角新增「修改信息」入口，里面可以修改密码。
+- 后端：
+  - `teacher-admin.js` 新建教师密码改为**可省略**，留空即用默认密码 `Jinrui@2026`（自定义密码仍须 ≥6 位）；创建成功消息明确告知初始密码，响应带 `defaultPassword` 标记。
+  - `auth.js` 新增 **`PUT /api/auth/profile`**（所有已登录角色可用）：修改姓名直接生效；修改密码必须携带旧密码且 bcrypt 比对通过，新密码 ≥6 位。
+- 前端：
+  - 新增组件 `components/ProfileDialog.tsx`：修改姓名 + 旧密码/新密码/确认新密码三栏，改完同步本地缓存用户信息（右上角显示名即时更新）。
+  - `app/teacher/layout.tsx` 右上角用户名旁新增「修改信息」按钮（靛蓝色，与「退出」以分隔线区隔）。
+  - `TeacherTeachersManage.tsx` 新建教师密码框改为可留空，placeholder 与下方提示说明默认密码；教师首次登录后可在右上角自行改密。
+
+## V2.4.99 (2026-09-27) — 排课交互：已排课程「拖出课表即删除」（无二次确认）
+
+- 需求：已经排进课表的课程条目，拖拽到课表网格外松手即视为删除，不需要二次询问确认。
+- 前端（`apps/web/components/TeacherScheduling.tsx`）：
+  - 已排条目卡片新增 `onDragEnd`：拖拽结束时若未落到任何课表格子（`dragRef` 仍持有该条目 = 拖到了网格外），直接调用删除接口并刷新，不弹确认。
+  - 拖拽期间底部出现全局提示条：「拖到课表外松手 = 删除「科目」（移回原格或格子内松手则取消）」，让该手势可被感知。
+  - 拖回自己原来所在的格子视为取消，不触发走班/替换选择卡、不落库。
+  - 课程块池卡片补 `onDragEnd` 清理拖拽状态，避免陈旧 `dragRef` 污染条目删除判定。
+  - 操作提示文案补充「已排课程拖出课表松手即删除」（红色强调）。
+- 保留原 hover ✕ 移除按钮作为备选路径；本次纯前端改动，无 DB / 后端变更。
+
+## V2.4.98 (2026-09-27) — 排课页布局调整：课程块池改为「一行四个小格子」
+
+- 需求：课程块池原是左侧 300px 窄栏里的一列长卡，在小屏下会整行铺开显得空旷；用户要求改成一行放四个的小格子。
+- 前端（`apps/web/components/TeacherScheduling.tsx`，纯 UI）：排课页由「左池 + 右课表」双栏改为**上下结构** —— 上方课程块池以网格铺开（`grid-cols-2 / md:3 / lg:4`，宽屏一行四个），卡片改为紧凑小格（科目色条 + 科目 + 已排/需 + 教师·教室 + 细进度条，「已排满」徽章缩为「满」）；下方课表网格占满整行，可视列宽更大。操作提示同步由「拖拽左侧」改为「拖拽上方」。
+
+## V2.4.97 (2026-09-27) — 排课管理 UX 打磨：组课卡片操作常显 + 课程块池版式重排
+
+- 需求：①「组课」里已建好的课程块要能直接编辑/删除（原按钮 hover 才浮现，等于看不见）；②「排课」左侧课程块池卡片排版太松散，重排。
+- 前端（`apps/web/components/TeacherScheduling.tsx`，纯 UI，无接口/结构变更）：
+  - **组课卡片**：「编辑 / 删除」由 hover 浮现（`opacity-0 group-hover:opacity-100`）改为**常显**，加边框描边样式（编辑 hover 变靛蓝、删除 hover 变红），可发现性不再依赖鼠标悬停。
+  - **课程块池卡片重排**：小色块方块 → **左侧科目色条**（与组课卡片同一视觉语言）；「已排满 / 超 N」徽章从第二行上移到**标题行**（科目名旁）；教师·教室合并为一行；进度条保留在底部。信息层级：科目 → 教师 → 进度，扫读路径更短。
+  - 课程块池标题补课程块数量（「课程块池 · N 个」）。
+
+## V2.4.96 (2026-09-27) — 排课管理支持「同一格多课程」= 选课走班（并修复组课指定教师误报）
+
+- 需求：排课网格里**同一个格子允许放多门课程** —— 这是「选课走班 / 分层走班」的正常形态（同一时段全班学生分流到不同课堂），此前被当作"同格冲突"标红提示，语义不对。
+- 后端（`apps/api`）：
+  - **`TimetableEntry` 唯一键放宽**：`[classId, dayOfWeek, period, subject, academicYear, term]` → **`[classId, dayOfWeek, period, subject, teacherId, academicYear, term]`**，从而放开「同科目 + 不同教师」的分层走班（英语 A 层王老师 / B 层李老师同一时段并存）；同时补 `@@index([classId, academicYear, term])`。**纯结构变更，不改任何数据行**。
+  - `scheduling.js`：`POST /place`、`POST /move` 引入 **`mode: "append" | "replace"`**（旧 `replace: true` 兼容等价于 `replace`）：
+    - `append` = **加入选课走班**：保留该格已有课程，追加一门，返回 `cellSize`（该格现有课程数）；
+    - `replace` = 覆盖该格；
+    - **未声明 `mode` 且目标格已有课程 → 409**，`data` 带 `conflict`（占用课程）+ `incoming`（待放入课程）+ `options`（append/replace 两个选项及后果说明），不允许静默覆盖。
+  - **走班组两条硬约束**（`appendGuard`，命中返回 409 + 具体原因）：① 同一课程块不得在同格重复；② 同一位教师不得在同格并行两门课。
+  - `GET /board` 统计口径修正：`stats.conflicts`（同格冲突，告警语义）→ **`stats.electiveCells`（走班时段数）+ `stats.electiveCourses`（走班课程数）**（信息语义）。
+  - **缺陷修复**：`TEACHER_SELECT` 漏选 `role` 字段，导致 `findTeacher` 里 `t.role !== "TEACHER"` 恒真 —— **在「组课」里指定任课教师会误报「教师不存在或角色不符」**（V2.4.95 的 E2E 因未传教师而漏过）。现已一并修好。
+  - `academics.js`：唯一键含 `teacherId` 后，SQLite 下 `teacherId` 为 NULL 不参与唯一性判断，故在**手动新增课表条目**与**课表批量导入**两条路径补应用层去重（只挡「同科目 + 同教师(含均未指定)」的完全重复；不同课程 / 不同教师允许并存），保持原有幂等语义不回退。
+- 前端（`apps/web`）：
+  - 落点冲突弹窗由「确认替换吗」升级为**三选一选择卡**：列出该时段现有课程（科目色标签），并用文字写明两种后果 —— **「加入选课走班」**（保留原课程，作为同时段并行第 N 门）/ **「替换该时段」**（清空该格只留新的）/ 取消（Esc）。
+  - 走班格视觉**去告警化**：红色角标 → **紫色胶囊 `走班 N`**；格子底色 `border-violet-200 bg-violet-50/40`；`title` 提示「同一时段并行开设 N 门课程，学生按选课/分层分流到不同课堂」；格内多张卡片纵向堆叠、行高自适应。
+  - 统计条「同格冲突」→ **「走班时段」**（紫色，信息性），右侧补「走班课程 N 门」；顶部与提示条补「同一格放多门课程即为「选课走班」」的说明。
+  - 若放入的课程块已在该格，前端直接拦下提示「已在此格，无需重复添加」，不弹选择卡。
+- 验证（本地隔离空库端到端，**33/33 通过**，跑完零残留）：
+  - 权限：无 token 401 / 学生 403 / 教务 200（组课建块 ×6 全部成功，含同科目两位教师）。
+  - 空格排入 `cellSize=1`；同格再排（无 mode）**409 且携 conflict + options[append,replace]**；`append` 后 `cellSize=2`、`board` 该格 2 条、`electiveCells=1`、`electiveCourses=2`。
+  - 走班约束：同格重复同一课程块 409；同格同教师并行 409（原因文案正确）。
+  - 分层走班：同科目 + 不同教师（英语 A/B 层）同格并存 **200**。
+  - `replace` 覆盖 `replaced=2` 且格子归 1；`move` 到已占用格（无 mode）409 → `append` 并入后 `cellSize=2`、`electiveCells` 仍为 1。
+  - 导入路径：同格不同课程并入 + 完全重复跳过（`created=2 / skipped=1`）；手动新增同科目同教师重复 409、同格不同课程 200。
+  - 逐条移除后课表归零。
+  - 本地 `tsc --noEmit` 通过；`scheduling.js` / `academics.js` 模块导入检查通过；`prisma validate` 通过。
+- 设计文档：`docs/SCHEDULING_DESIGN.md` 同步升级为 V2.4.96（新增「一格 ≠ 一门课」概念说明、落点协议 JSON 示例、走班格排版规范、6.3 落点抉择章节改写、边界表与后续可选项更新）。
+- 部署：`prisma db push`（唯一键放宽，不动数据行）+ `pm2 restart api web`；DB 部署前备份。
+
+## V2.4.95 (2026-09-27) — 新增「排课管理」：组课（课程块）+ 拖拽排课
+
+- 需求：管理员 / 教务老师在「教务管理」下新增「排课管理」，分两个子模块 ——
+  **① 组课**：把「所开设课程 + 教师」绑定成一个课程块，可设预计每周课时数与开设年级；
+  **② 排课**：选定班级后，把课程块拖进课表 slot，可删除已排课程块，也可替换成其他课程块。
+- 后端（`apps/api`）：
+  - 模型：新增 `CourseBlock`（科目 + 任课教师 + 预计每周课时数 + 开设年级 + 建议教室 + 备注 + 排序）；`TimetableEntry` 增加可空 `courseBlockId`（`onDelete: SetNull` ⇒ 删除课程块不会连带删掉已排课表，因为 subject/teacherId/room 已快照在条目上）；`User` 增加 `courseBlocksTaught` 反向关系。**纯增量迁移**，既有数据零改动。
+  - 新增 `src/routes/scheduling.js`，挂载 `/api/scheduling`，**整体前置「仅 ADMIN 或 teacherRole=ACADEMIC」**：
+    - 元数据：`GET /classes`（全部班级 + 年级/学年/学期选项，教务可遍历全校班级，不受"任教班级"限制）
+    - 组课：`GET /blocks`、`POST /blocks`、`PUT /blocks/:id`、`DELETE /blocks/:id`
+    - 排课：`GET /board`（一次返回课程块池含 `placed`/`cells`、课表条目、节次行头元数据、统计）、`POST /place`（支持 `replace` 覆盖）、`POST /move`、`DELETE /entries/:id`
+  - 关键不变量：① 一个 slot（班级 × 星期 × 节次 × 学年 × 学期）**最多放一个课程块**（DB 唯一键含 subject 挡不住"同格不同科目"，故在接口层保证）；拖到已占用格且不带 `replace` → **409 + 冲突详情**；② 同「科目 + 教师 + 年级 + 学年学期」的课程块唯一；③ 节次行头（`periodLabel`/`periodTime`）从同节次既有条目继承，与网格导入的课表行头保持一致。
+- 前端（`apps/web`）：新增 `components/TeacherScheduling.tsx`，顶部 pill 切换两个子模块：
+  - **组课**：学年/学期/年级筛选 + 「共 N 个课程块 · 合计 M 课时/周」统计；课程块卡片（科目色条、`N 课时/周` 徽章、教师/教室/备注、hover 编辑/删除）；新建/编辑内联表单（科目/教师/每周课时/开设年级/教室/备注）；按年级分组并显示每组小计。
+  - **排课**：班级选择 + 显示节次（自动/6/8/10/12）+ 工作日/含周末开关 + 刷新；统计条（需排课时/已排课时/待排/超出计划/同格冲突）；左侧**课程块池**（`已排 n / 需 w` + 进度条 + 排满置灰沉底 + 超出标红）；右侧**课表网格**（行 = 节次含时间段，列 = 星期）。
+  - 三种操作方式：**拖拽**（池 → 格；已排格也可拖到其他格 = 移动）、**点击两步**（先点课程块再点格子）、**hover 操作**（✕ 移除 / ⇄ 替换，替换态下点池中任意块即完成替换）；占用冲突弹**自绘确认卡**（列出占用课程，非原生 confirm）；`Esc` 取消当前选择；同格多条时显示红色角标计数。
+  - 接入 `app/teacher/academics` 子模块 Tab「排课管理」（仅教务/管理员可见），支持 `?tab=scheduling` 直达；班级面板「课程表」Tab 顶部加引导条，一键跳转排课管理。
+- 验证：
+  - 本地 `tsc` 通过；`scheduling.js` 模块导入检查通过。
+  - `prisma db push` 成功：`CourseBlock` 表已建、`TimetableEntry.courseBlockId` 已加、`courseBlock` 0 行（纯增量）。
+  - **服务器端到端 17/17 通过**（自清理脚本，跑完零残留）：无 token 401 / 普通教师 403 / 学生 403；班级元数据 200；建块 200；重复块 409；`board` 200 且统计字段齐备；空格排入 200；同格重复排课 409 且带 `conflict` 详情；`replace` 覆盖成功；`move` 移动成功；移除后 `placed` 归零；删除课程块成功；终态无残留课程块/课表条目。
+  - `next build` 编译成功（30/30 静态页）；`pm2 restart api/web`。
+- 部署：`prisma db push` + `pm2 restart api web`。DB 部署前已备份至 `backups/db_before_scheduling_20260927-113431`。
+- 观察项（待拍板）：生产某班级课表存在 **23 处「同格多条」**（历史网格导入 / 分层遗留），排课网格已用红色角标标出、可逐格删除；如需**批量清理工具**（保留一条 / 按规则合并）需另做。
+
+## V2.4.94 (2026-09-27) — 班级面板下线「教师反馈」「家长审批」两个子模块入口
+
+- 需求：教师端「教务管理 → 班级管理」班级面板 Tab 栏删除「教师反馈」与「家长审批」两项。
+- 实现：
+  - `apps/web/app/teacher/academics/page.tsx`：`ADMIN_TABS` 移除 `feedback`/`parents`，`TEACHER_TABS` 移除 `feedback`；`ClassPanel` 中对应渲染分支同步移除。
+  - `FeedbackTab` / `ParentsTab` 组件代码保留在文件内（未删除，便于按需恢复）；因不再被引用，已被打包器 tree-shake，不进入产物。
+  - `apps/web/app/parent/page.tsx`：删除指向已下线入口的提示文案（原「请联系班主任在『教务管理 → 家长审批』中通过您的申请」），改为提示核对注册时的「学号 + 姓名」。
+- 影响面（已知并接受）：
+  - 教师端不再有新建「教师反馈」的入口；学生端 / 家长端的「教师反馈」展示 Tab 保留，仅展示历史数据。
+  - 家长关联的 PENDING 审批暂无前台入口；「学号 + 姓名」精确匹配的家长注册仍自动 `VERIFIED`。
+- 验证：`tsc` 通过；`next build` 编译成功（30/30 静态页）；`/teacher/academics`、`/parent` 均返回 200；新产物 chunk 中「家长审批」0 命中、「教师反馈」0 命中（仅学生端/家长端展示 Tab 保留该词）。
+- 部署：`npm run build` + `pm2 restart web`。
+- 附带修复：服务器 `CHANGELOG.md` 曾被前一步的 `awk` 去重命令误清空（仅剩 3 条），已用本地全量历史恢复，并将本次会话的教务系列条目重排版本号以避免与考试系列（V2.4.86–89 甘特图/考情）编号冲突。
+
+## V2.4.93 (2026-09-27) — 走班(分层/选课)教务：模型 + 分班工作台 + 我的教学班
+
+- 需求：支持分层走班与选课走班。行政班（归属）与教学班（上课/录分）解耦；「同科目分层班强制同一时段」做成结构不变量。
+- 后端新增（`apps/api/prisma` + `src/routes/flexible.js`，挂载 `/api/flexible`）：
+  - 模型：`TimeBlock`（走班时段块）、`TeachingClass`（教学班，多教师 `TeachingClassTeacher`）、`Enrollment`（走班分配，每科每生至多一条）、`EnrollmentLog`（调剂审计）、`PlacementRun`（分班方案 DRAFT/PUBLISHED/REVOKED）、`ElectiveWish`（选课志愿）。
+  - `Exam` 增加可空 `teachingClassId`（与旧 `classId` 共存，不破坏既有成绩）；迁移为纯增量 `db push`，已有数据零改动。
+  - 接口：时段块 CRUD、教师列表、依据考试列表、分班方案 草稿/自动预分（按成绩排名，可解释）/人工调剂（草稿态直接改、已发布态写日志）/发布（跑检查清单后生成教学班 + 名单）/撤回、我的教学班（按任教关系过滤）、教学班名册、建考核、按名册录分（校验 + 自动重算班内排名）。
+  - 权限：分班/时段块仅教务（`ACADEMIC`）或管理员；录分仅任教该教学班的科任（职责分离）。
+- 前端（`apps/web`）：新增 `components/TeacherPlacementWorkbench.tsx`（分班工作台 + 时段块管理）、`components/TeacherMyClasses.tsx`（我的教学班 + 成绩登记）；接入 `app/teacher/academics` 两个新 Tab「分层/选课分班」（教务/管理员）、「我的教学班」（全员）。
+- 验证：`prisma db push` 成功（7 张新表已建，Prisma Client 重生成）；`tsc` 通过；`next build` 编译成功（30/30 静态页）；`/api/flexible/blocks` 返回 401（路由挂载 + 鉴权正常）；`/teacher/academics` 返回 200。部署前 DB 已备份至 `backups/db_before_flexible_20260927-091405`。
+- 部署：`db push` + `pm2 restart api/web`。
+- 设计文档：`docs/FLEXIBLE_SCHEDULING_DESIGN.md`。
+
+## V2.4.92 (2026-09-26) — 知识点管理/原创题审核整合为「教学管理」子模块
+
+- 需求：顶部导航「知识点管理」「原创题审核」收编为「教学管理」(`/teacher/students`) 下的子模块 Tab，与其余六个子模块（学情统计/作业分发/考试管理/学生讲评请求/分组管理/注册审核）并列。
+- 实现：
+  - 新增 `components/TeacherKnowledgeManage.tsx`（`KnowledgeManageView`，自原 `app/teacher/knowledge/page.tsx` 抽出：学科切换、知识点增删改、逐题打标签）。
+  - 新增 `components/TeacherStudentQuestionsManage.tsx`（`StudentQuestionsManageView`，自原 `app/teacher/student-questions/page.tsx` 抽出：待审核/已入库/已驳回、单题与批量通过/驳回）。
+  - 两个原页面改为纯转发（`export { default } from` 组件），保留路由兼容。
+  - `app/teacher/students/page.tsx`：tab 联合类型扩展 `knowledge | origq`，新增两个 Tab 按钮与内容分支。
+  - `app/teacher/layout.tsx`：移除顶部导航中的「知识点管理」「原创题审核」两项。
+- 验证：`tsc` 通过；`next build` 编译成功（30/30 静态页）；`/teacher/students`、`/teacher/knowledge`、`/teacher/student-questions` 均返回 200；bundle 含两个子模块内容，导航项已移除。
+- 部署：`npm run build` + `pm2 restart web`。
+
+## V2.4.91 (2026-09-26) — GPA 管理下拉菜单样式美化
+
+- 问题：GPA 管理页（成绩登记/课程与权重/成绩单）中的原生下拉框未套用统一组件样式，macOS 下显示系统默认微调箭头、视觉突兀。
+- 修复：
+  - `components/TeacherGpaManage.tsx`：本地 `input` 类升级为 `ui-input` 同款圆角/聚焦环样式；8 处 `select` 统一追加 `ui-select`（appearance-none + 自定义下拉箭头 + indigo focus ring + bg-white + px-3 py-2）。
+  - `components/GpaReportView.tsx`：成绩单学年切换下拉同步升级为同款样式（学生/家长端也受益）。
+- 验证：`tsc` 通过；`next build` 编译成功（30/30 静态页）；`ui-select` 已确认存在于服务端产物；`/teacher/academics`、`/app/gpa` 均返回 200。
+- 部署：`npm run build` + `pm2 restart web`。
+
+## V2.4.90 (2026-09-26) — 教师管理整合为「教务管理」子模块（管理员端）
+
+- 需求：管理员端「教师管理」从独立导航项收编为「教务管理」下的第三个子模块（与「课程管理」「GPA管理」并列）。
+- 实现：
+  - 新增 `components/TeacherTeachersManage.tsx`（`TeacherManageView`，从 `app/teacher/teachers/page.tsx` 抽出：新建/编辑/删除教师、可见学科与题源权限设置、角色与状态管理）。
+  - `app/teacher/teachers/page.tsx` 改为纯转发（`export { default } from "@/components/TeacherTeachersManage"`），保留路由兼容。
+  - `app/teacher/academics/page.tsx` 子模块 Tab 增加「教师管理」（仅 `isAdmin` 可见），支持 `?tab=teachers` 直达；`sub` 状态类型扩展为 `course|gpa|teachers`。
+  - `app/teacher/layout.tsx` 移除仅管理员可见的独立「教师管理」导航项。
+- 验证：`tsc` 通过；`next build` 编译成功（30/30 静态页）；`/teacher/academics`、`/teacher/teachers` 均返回 200；bundle 含教师管理组件、独立导航注释已移除。
+- 部署：`npm run build` + `pm2 restart web`。
+
+## 教师端「教务管理」整合 GPA 子模块 (2026-09-26)
+
+- 「教务管理」(` /teacher/academics`) 改为容器页,顶部子模块 Tab:**课程管理**(原教务管理全部内容)+ **GPA管理**(原 GPA 管理页)。
+- 顶部导航删除独立「GPA管理」入口;GPA 组件抽离为 `components/TeacherGpaManage.tsx`(命名导出 `GpaManageView`),`/teacher/gpa` 路由保留并转发默认导出,支持 `/teacher/academics?tab=gpa` 直达。
+- 踩坑:Next.js `page.tsx` 不允许命名导出组件(`"GpaManageView" is not a valid Page export field`),组件必须放 components 下、页面文件只留 default 导出。
+
+## 学生端移除打印成绩单按钮 (2026-09-26)
+
+- `GpaReportView` 新增 `showPrint` prop(默认 true):打印按钮 + 提示文案包在 `{showPrint && ...}`。
+- 学生端两处(课程中心 gpa tab / `/app/gpa`)传 `showPrint={false}`;家长端与教师端保留打印。
+
+## 成绩单打印修复 + 官方 logo/水印 (2026-09-26)
+
+- **打印修复(根因:时序竞态 → 改为 Portal 常驻副本)**:旧逻辑在按钮 onClick 里 `setShowTranscript` 后 `setTimeout(window.print,350)`,因 A4 预览依赖 `data` 渲染、DOM 更新与 `window.print()` 之间存在竞态,常「点了没反应/打印空白」。现改为:成绩单副本经 React Portal 常驻挂在 `document.body` 直下的 `#print-portal`(屏幕上 `display:none`,打印时显示并隐藏 body 其余子节点,见 `GpaPrintStyle`),按钮直接同步 `window.print()`,无任何竞态;内容走正常文档流,多页分页正确,且不受任何祖先 `overflow/position/transform` 影响。
+- **官方 logo/水印**:用 `金瑞logo.ai`(PDF 型 Illustrator 文件)经 PyMuPDF 提取为纯矢量 SVG(无字体依赖、透明底、`viewBox` 完整)+ 高清 PNG,置于 `public/transcript/jinrui-logo.svg|png`。`TranscriptReport` 页眉与居中水印均改用该官方 logo(替换原手绘盾形占位),水印 `opacity=0.07` 仅显 logo 形状不显底框。
+- 部署:4 文件 scp+md5 对齐(`TranscriptReport.tsx`/`GpaReportView.tsx`/logo svg/png)→ `npm run build` OK → `pm2 restart web`。冒烟 `/app` `/app/academics` `/teacher/gpa` 全 200;logo 资产 `200 image/svg+xml|image/png`;`print-portal`/`jinrui-logo` 字符串进 chunks。
+
+## 学生端 GPA 观看入口调整 + 打印修复 (2026-09-26)
+
+- **入口调整**：学生端顶部导航删除独立的「成绩单」；「查看各学期成绩(GPA 过程性考核 + 综合评定 + 可打印成绩单)」改为放在**课程中心**内的一个 Tab（与成绩与排名/教师反馈/课程表/选课/学情统计并列），由 `/app/academics?tab=各学期成绩` 承载，复用 `GpaReportView`。`/app/gpa` 页面保留但不再从导航进入。
+- **打印修复（学生端不能打印成绩单）**：原逻辑在 `onClick` 内 `setShowTranscript(true)` 后直接 `setTimeout(()=>window.print(), 350)`，但 `TranscriptReport` 依赖 `data` 渲染、`showTranscript` 的 DOM 更新与 `window.print()` 存在时序竞态，常导致「点了没反应 / 打印空白」。改为：点击时置 `pendingPrint`，由 `useEffect([pendingPrint, showTranscript])` 在成绩单 A4 预览真正渲染完成（150ms）后再调用 `window.print()`，确保 `#transcript-print` 已在 DOM。打印 CSS（`GpaPrintStyle`：`body * { visibility:hidden }` + `#transcript-print` 可见）维持不变。
+- **部署**：3 文件 scp+md5 对齐（`GpaReportView.tsx`/`app/app/academics/page.tsx`/`app/app/layout.tsx`）→ `npm run build` OK → `pm2 restart web`。冒烟 `/app /app/academics /app/gpa` 全 200；产物校验：课程中心 chunk 含「各学期成绩」、学生导航 layout chunk 已无「成绩单」。
+- ⚠️ 提醒：浏览器硬刷新后查看。
+
+## GPA 管理功能上线 + 笔试练习页修复 (2026-09-26)
+- **新功能 GPA 管理**：过程性考核成绩登记（期末/期中/平时，按 学生×课程×学季×考核组件 存储）、课程与权重配置 CRUD、综合评定算法（按权重加权，缺项按剩余权重归一化，等级映射 A≥90/B≥80/C≥70/D≥60/E）、学年综合评定（各学季综合得分算术平均）、按样张复刻的正式成绩单（`TranscriptReport.tsx`：模块分组 × 四学季明细三行表头）。
+  - 后端：`apps/api/prisma/schema.prisma` 新增 `GpaCourse`/`GpaScore`/（学生档案复用 User 字段）3 张表；`apps/api/src/routes/gpa.js` 挂载 `/api/gpa`（meta/classes/roster/课程 CRUD/scores 读+批量 upsert/report 聚合）。`prisma db push` 纯增量，DB 快照备份在前。
+  - 前端：教师端 `/teacher/gpa`（成绩登记/课程配置/成绩单开具三 Tab）；学生端 `/app/gpa`「成绩单」页（GpaReportView 过程性明细 + 综合评定 + 打印）；家长端新增「成绩单」Tab；三端导航同步。
+  - E2E（9 项全过）：建课→名册→批量登记（92/85/88）→ 综合评定 **89.1 → B**（与手算一致）→ 成绩单聚合完整 → 学生越权访问他人 403 / 查本人 200 → 测试课程级联清理。
+- **Bug 修复（笔试练习打开显示选课页）**：根因为服务器 `apps/web/app/app/page.tsx` 残留旧版「选课直达路由」，历次 surgical 部署漏传此文件。已重新 scp（md5 对齐）+ 构建，产物 chunk 验证含 试卷/组卷/知识点/错题 字符串、`StudentCourseSelection` 不在 `/app` 产物中；`/app/course-selection` 直达路由保留可用。
+- **部署**：12 文件 scp+md5 对齐 → `prisma db push`（102ms）+ Prisma Client 重生成 → `pm2 restart api`（health 200，`/api/gpa/*` 未登录 401 鉴权生效）→ `npm run build`（经 4 轮修复：家长端 tab 联合类型补 `"gpa"`、`comprehensive()` 元组类型标注、`Set` 展开改 `Array.from`、`TranscriptReport` 补 `Fragment` 导入）→ `pm2 restart web`。冒烟 7 路由全 200。
+- ⚠️ 提醒：浏览器需**硬刷新**（Cmd+Shift+R）以加载新构建产物。
+
+## 系统改名 (2026-09-26) — 品牌名称由「金瑞升学金鹰系统」统一改为「金瑞高中综合管理系统」
+- **改动**：全站系统名称（含三端布局页眉、登录页标题、根 metadata 的 `title`/`description`、练习页页眉、预览页、README、docs、API/schema 注释、PPT 介绍 deck 页脚/封面）由「**金瑞升学金鹰系统**」统一改为「**金瑞高中综合管理系统**」。
+- **规则**：
+  - 带端后缀的保持后缀：学生端/老师端/家长端 → `金瑞高中综合管理系统 · 学生端/老师端/家长端`（本次三端原后缀一致，仅换前缀）。
+  - 根 `description` 由 `金瑞升学 · TMUA / ESAT 在线刷题、模拟考与学情分析平台` 同步改为 `金瑞高中综合管理系统 · TMUA / ESAT 在线刷题、模拟考与学情分析平台`。
+  - PPT deck（`jr-eagle-ppt`）中「金瑞金鹰系统」「金瑞金鹰 · 让成长有迹可循」「金瑞升学 · 金鹰系统」三种旧写法一并归一为「金瑞高中综合管理系统」。
+- **历史快照不碰**：`_gantt_*`、`scripts/_schema_tmp.prisma` 属历史/临时快照，保留原样；CHANGELOG 历史条目（含 V2.3.33 的改名记录）原样保留，仅新增本条。
+- **部署**：前端 6 个 tsx/ts 布局与 1 个静态 html 已 scp 至 `8.219.151.140` 并 `npm run build` + `pm2 restart web`；`apps/api/prisma/schema.prisma` 仅改首行注释，无 schema 变更、无需迁移。
+
+## 数据修正 (2026-09-24) — ESAT Physics 模考11 修复落库（6 题 / 12 字段 + 1 条判分记录文本规范化）
+- 触发：用户「**请修复 ESAT Physics 模考11中的问题**」（承接同卷核验报告 §七 分级处置 P0/P1/P2）。**已写生产库。**
+- **改动清单**（Q13 超纲按用户选定**方案 B：退回考纲内**处置）：
+  - **Q15（P0 答案键错）**：`answer` **C 图 → B 图**（`6236522e…png` → `c0252bab…png`）；`solution` 重写（移除首行错误标注「正确答案：选项 C」，改为「斜率递增 ⇒ 下凸 ⇒ B」并附求导论证）。全库 `AnswerRecord` = **0** ⇒ **零重判**。
+  - **Q13（P1 超纲歧义 → 方案 B）**：`stem` 慢电子速度 $1.20\times10^8\to1.20\times10^6\ \mathrm{m/s}$；5 个选项整体缩放到 $10^6$ 量级；`answer` **D（$1.97\times10^8$）→ B（$2.40\times10^6$）**；`solution` 改为纯 $p=mv$ 推导。⇒ 彻底回到 ESAT 物理考纲（P3.6 仅定义 $p=mv$，无相对论）。
+  - **Q21（P0 结构 + P1 解析）**：`stem` 补齐未闭合的 `$`（`$3.0\times10^8\ \mathrm{m\,s^{-1}}$`，原先吞掉 Table 2 图导致**题目不可做**）+ 单位改 `\mathrm{}` + 图片前后补空行；`solution` 按 Table 2 **真实数据**（$1.0\times10^{-4}/10^{-2}/10^{-1}$ m 与 $5.0\times10^{-7}/5\times10^{-1}/1.0\times10^{3}$ m）整体重写（原解析用了题面**不存在**的波长，靠假矛盾推真结论）。
+  - **Q14（P1 解析硬缺陷）**：`solution` 按**读图确认的真实拓扑**（电池→左 1R→(1R ∥ 2R)→右 1R，伏特表跨下支路右侧电阻）重写 ⇒ $3.0+2.0+3.0=8.0$ V；删除「选项中没有该值 / 说明原题可能要求…」两处答案反推话术。
+  - **Q18（P1 解析硬缺陷）**：`solution` 末句「因此选 B」→ 按 $\varphi_Y=\theta$ 推出**顺时针 $45°-\theta$（E）**，附 $\theta=30°$ 校验与干扰项排除。
+  - **Q06（P2 版式）**：`options` 断字修复 `conserva- tion`→`conservation`、`conser- vation`→`conservation`（A/B/C）+ `speed$u$`→`speed $u$`。
+- **判分记录**：`AnswerRecord cmuck3pg30108o71k5zlmbk5r`（Q13，会话**未交卷**）`selected` 由 $2.40\times10^8$ **文本规范化**为 $2.40\times10^6$（学生所选同为选项 B，仅文本随题干缩放更新）⇒ 规范化后恰等于新答案；`isCorrect` 保持 `NULL` **未动**。**判分一致性复扫：写前/写后均 126 条（错判对 95 / 对判错 31），未新增任何不一致。**
+- **纵深防御五段式**：① 双重备份（服务器 `dev.db.bak-prephys11fix-20260924-1852` md5 `283767dbec8931b455b7a6ae51042adc` + 本地 `dev_fresh.db` 同 md5）② 写前**重拉**服务器库做新鲜度守卫（md5 与 18:32 快照一致、无 `-wal`/`-journal` 残留）③ 快照守卫 `target=0 apply=12 unexpected=0` + 写前自检 `SELF_CHECK_OK`（答案∈选项且唯一、选项无重复、`$` 全配对）④ 单事务写入 ⑤ 三重核验：**全表逐行 diff**（`Question` 改 6 行、`AnswerRecord` 改 1 行，新增 0 / 删除 0，其余 22 表逐字节一致）＋**服务器写后库 ↔ 本地独立重放副本 0 差异**＋结构门禁复跑（`GATE_A=0 / GATE_D=0 / ANS_NOT_IN_OPTIONS=0 / UNCLOSED_$=0 / HYPHEN=0`，`ANN_HEAD` 6→5）。
+- **幂等实测**：本地副本预演后复跑、服务器端复跑均返回 `ALREADY_TARGET`（环境重放已生效，未二次写入）。
+- **派生资产回写**：`bank_esat_physics_supplement{,_latex,_img}.json` 共 5 处字段（备份 `*.pre-phys11fix-<md5[:8]>`）。其中纯文本版只修断字（不引入 `$` 定界符）、latex 版按库内原文整段同步 `options`、img 版因选项为占位字母只同步 letter 型 `answer` + `solution`。
+- ⭐ **本轮新规则（已写回技能）**：**当答案键改动伴随「选项文本」改动（如数值缩放）时，必须显式把历史 `AnswerRecord.selected` 的文本同步为新选项文本**，否则同一选项的学生会在交卷时被判错 —— 这是「改键四步」的显式例外条款（本次仅 1 条未交卷记录，`isCorrect` 无结论可改，故为纯文本规范化）。
+- ⭐ **前端渲染约束（新发现）**：`apps/web/lib/rich.tsx` **只识别** `![alt](url)` / `$$…$$` / `$…$`，**不解析 Markdown**（无粗体、无列表）；学生端 5 个调用点全部 `renderRich(solution, { smart: false })` ⇒ 新撰写的解析**禁用 `**` 与行首 `- `**（会字面显示），本轮 5 段新解析已改为叙述体。
+- 报告：`scripts/REPORT_ESAT_Physics_模考11_核验报告.md` 新增 **§十 实施记录**（含改动清单表、五段式证据、新规则、待拍板、复现命令）。脚本：`scripts/_phys11_fix/{build_patch.py,new_texts.py,apply_phys11.py,sync_bank_phys11.py,katex_check.mjs}`。
+- **仍待拍板**：① Q11/Q16/Q23/Q24/Q25 的 5 处解析首行标注（与库存答案自洽，属「全库 72 处」版式政策子集）；② 5 处 EN/EM DASH（合法用法）；③ 7 处 `NONASCII_MATH` 假阳性（⇒ 门禁脚本需做 `$$` 感知）；④ 门禁脚本需扩展扫描 `options`（Q06 断字即人工发现、门禁漏报）；⑤ 库内存量解析的 `**…**` 版式问题；⑥ **全库 126 条判分污染**仍待立项（最高优先级）。
+
+## 核验 (2026-09-24) — ESAT Physics 模考12 逐题核验（27 题：**27/27 全对，0 缺陷**）+ ⭐**证伪「继承补充题库错答」假设**
+- 指令：承接模考11 核验，同系列推进「逐题核验 ESAT Physics 模考12」（Paper `cmto9sarg8svzlntpuxypyh2`，mock/AUTO_SET/READY，27 题）。**只核验，未写库（本轮零改动）。**
+- 方法：四道门禁（A 0 / B 0 / C 0 / **D 权威口径 0**）+ 结构体检 + **逐题独立重算**（先主 agent 手算，再由 **4 个独立子代理并行盲算**，题面均已剔除 answer/solution 防污染）+ **4 道配图题 12 张图逐张实看** + 曲线题**像素级弦偏差法** + KaTeX 渲染冒烟（310 公式）+ **题源答案键横向比对** + 跨卷复用与判分影响面扫描。
+- **① 答案键：27/27 全部正确**（主 agent 手算与 4 子代理盲算**完全一致**）⇒ 0 废题、0 超纲（逐题比对 ESAT 物理 P1–P7 考纲）、0 解析硬缺陷（无与答案键相悖、无幻觉数值、无拓扑反推）。
+- **② 4 道配图题逐张实看定案**：`Q06`（钢球在甘油中下落的 a–t 图，5 图选项）弦偏差法读数 **D rel=−0.1906（初始最陡、渐近趋 0）正确**，A 直线/C 水平线/B 斜率递增(+0.1524)/E 方向相反均错 ⇒ 与库 **D** 一致；`Q14`（二极管 I–V）读图 **(1.2 V, 8.0 mA) 恰落网格交点** ⇒ $R=(6.0-1.2)/0.008=600\ \Omega$ ⇒ 库 **F** 一致（稳健区间 593–607 Ω，答案不变）；`Q16`（竖直上抛 $E_k$–$s$）标准 V 形 ⇒ 库 **C** 一致；`Q19`（电磁波 P/Q 对比表）逐行抄录 A–H，**真空同速 ⇒ 速度比 1.0、频率比 1.0×10⁻⁸、P 微波 / Q X 射线** ⇒ 库 **A** 一致。库内选项图片与题干选项**一一对应、无错位**。
+- **③ 四道门禁命中 = 0**；门禁输出中的 13 处非零标记**全部核实为假阳性或纯版式**：7 处 `NONASCII_MATH`（因解析大量使用 `$$...$$` 显示定界符，旧正则 `\$([^$]+)\$` 误判 ⇒ **门禁脚本需升级为 `$$` 感知**）、4 处 `ANN_HEAD` 首行标注（与库存答案**全自洽**，并入既有「72 处首行标注」批次）、3 处 EN DASH（纯排版）。另发现**门禁漏报**：Q06/Q16 的图在**选项**里而门禁只扫 stem/solution ⇒ **门禁脚本需扩展扫描 `options`**。
+- ⭐ **④ 本轮最高价值结论 —— 证伪「模考12 继承补充题库错答」假设**：模考12 含 **11 道补充习题库来源题**（Q03/Q06/Q09/Q11/Q15/Q16/Q17/Q20/Q23/Q24/Q25），库内答案与卷内答案**完全一致**且重算**全部正确**。上一轮把 `Supplement_Q094`（→本卷 Q20）与 `Supplement_Q108`（→本卷 Q15）列为「疑似继承错答」，本轮逐条核实**两题入库时答案键均正确**（Q20 = 1.0×10¹⁵ Hz 的 B；Q15 = 48 W 的 D）⇒ 假设**被证伪**。同时 F1 指纹（`answer == options[0]`）本卷仅命中 Q079/Q23（A）且为**真阳性正确题**，证明该指纹是**下界指标、存在假阳性**。
+- **⑤ 判分影响面**：27 题全库 `AnswerRecord` = **17 条**，`isCorrect` 与现行答案**零不一致**；因答案无需修改 ⇒ **零重判**。**跨卷复用**：27 题另被 **7 套卷**引用（补充习题 11 / 物理碗 2013-2017 5 / 物理碗 2021-2025 4 / NSAA Physics 2023 3 / 2019 2 / 2021 1 / 2018 1），因答案全对 ⇒ **无连带污染**。
+- **⑥ KaTeX 微弱项**：310 个公式 `katex-error=0`，唯 **Q03 题干 `$Ω$` 用 U+2126 OHM SIGN**（同卷 Q14 用规范 U+03A9「Ω」），KaTeX 报 `Unrecognized Unicode character` 并降级为 `<mtext>`（能显示但缺字符度量）⇒ 建议改 `\Omega`。
+- **与前序卷对照**：模考11 的 Q15 病灶（碳丝灯泡 I–V 误用 NTC）**未在模考12 复现**；模考12 未出现「题源键被机械填充」的继承问题。**全库最新一套物理模考在此维度上免于前序卷的病灶。**
+- 报告：`scripts/REPORT_ESAT_Physics_模考12_核验报告.md`（过 `_md_lint.py` 0 违规）。脚本：`scripts/_phys12/{dump_phys12.py,gates.py,curve_shape2.py,katex_check.mjs,clean.json}`；快照 `scripts/_phys12/dev.db`（18.1 MB，md5 `283767dbec8931b455b7a6ae51042adc`）。
+- **待拍板（纯版式，本轮零改动）**：P12-1 Q03 U+2126→`\Omega`（并全库扫描 U+2126）；P12-2 4 处首行标注并入既有批次；P12-3 3 处 EN DASH；P12-4 Q19 选项文本「A. A」冗余。
+
+## 核验 (2026-09-24) — ESAT Physics 模考11 逐题核验（27 题：26 对 / **1 错答 Q15**）+ ⭐**全库 126 条「改键未重判」判分污染**
+- 指令：「逐题校验 ESAT Physics 模考11」（Paper `cmtv39af4zdpqkhizxslmbxk`，mock/AUTO_SET/READY）。**只核验，未写库。**
+- 方法：四门禁（A 0 / **D 权威口径 0** / C 0）+ **逐题独立重算**（题面剔除 answer/solution）+ **7 题 17 张配图本轮全部实看原图**（图片通道已可用）+ I–V 曲线**像素级弦偏差法** + **题源答案键横向比对**。
+- **① 答案键确证错 1 题 — Q15（碳丝灯泡 I–V）**：库存 **C（过原点直线＝欧姆）** → 应为 **B（下凸／斜率递增）**。三证：物理（碳丝 NTC ⇒ $R\downarrow$ ⇒ $I$ 增长快于正比）、**逐张读图**（B=下凸、C=直线、A/E=下降、D=上凸）、`curve_shape2.py` 弦偏差（**B rel=−0.1128 下凸 / C rel=0.0 直线**）。且**解析自身**写着「斜率递增…——**正确答案：选项 C**」＝解析与落款互斥。**三源三方互异**（库 C / 补习题源 A / `_latex` 源 A / 正确 B），已用 `opt_crops_final3/extra_q107_opt_{A..E}.png` 证实源与库选项**同序**（排除「选项重排」辩护）。
+- **② 超纲歧义 1 题 — Q13（相对论动量）**：经典 $p=mv$ ⇒ 2.40×10⁸（**B**）；相对论 $p=\gamma mv$ ⇒ 1.97×10⁸（**D＝库存**）。核对 `esat_physics_syllabus.md`：**P3.6 只定义 $p=mv$，全卷无相对论条目**，题干亦未声明 ⇒ 双重可解、学生按考纲作答会被判错。建议改数值（1.20×10⁸→1.20×10⁶）退回考纲内。
+- **③ 解析硬缺陷 3 题（答案键对，四门禁均抓不到）**：`Q14` 解析按「左2+中1+右3」**错误拓扑**算出 11.0 V，再以「选项中没有该值…说明原题可能要求左侧两个电阻的总电压」**反推**选 E（正解确为 8.0 V＝$3.0+2.0+3.0$，读图证实拓扑为 电池→R→(R∥2R)→R）；`Q18` 解析末句写「**因此选 B**」而库存答案是 **E**（重算 $\varphi_Y=\theta$ ⇒ 顺时针 $45°-\theta$，$\theta=30°$ 反证 E 唯一）；`Q21` 解析**整套数值编造**（用 2 m/0.2 m/0.02 m 等题面不存在的波长），靠假矛盾推出真结论 E（正确：波3=3 kHz 可听、波4=6×10¹⁴ Hz 可见；Table 2 实为 10⁻⁴/10⁻²/10⁻¹ m 与 5×10⁻⁷/5×10⁻¹/10³ m）。
+- **④ 结构/版式**：**Q21 题干 `$` 未闭合**（会吞掉紧随的 Table 2 图 ⇒ 题目不可做，必修）；Q06 选项断字 `conserva- tion`／`conser- vation` + `speed$u$` 缺空格；6 处首行标注 `**正确答案：选项X**`（与库存答案**全自洽**，纯版式）；EM DASH ×1 / EN DASH ×4；7 处 `NONASCII_MATH` 判为脚本假阳性（希腊字母/`Ω` 合法）。
+- **⑤ 题源横向比对（补习题 10 道）**：**5 道题源键本身错**（Q11/Q15/Q16/Q23/Q25，多为题源机械取 `options[0]`）；其中 **4 道入库时被改对**，**仅 Q15 改错**。⇒ 导入流程**具备纠错能力**但存在人工/机械误改，建议对所有「库答案 ≠ 题源答案」的题做专项复核。
+- ⭐ **⑥ 本轮最高价值发现 — 全库判分一致性扫描（`scripts/_phys11/audit_isCorrect.py`，只读）**：`AnswerRecord.isCorrect` 与**现行** `Question.answer` 不一致 **126 条**＝**错判对 95（学生被多给分）+ 对判错 31（被少给分）**，横跨 **22 卷 / 48 个会话**。重灾区：`TMUA P1 逻辑推理专练 20 题 A`（48）、`TMUA Paper 2 模考15`（23）、`MAT 2007-2023`（9）。
+  - **实证样本（与模考11 同源题 Q18）**：`NSAA Physics 2023` 3 条记录——选 B 判**对**（08-10）、**选 E（＝现行正确答案）却被判错**（08-17）、选 A 判错（09-02）⇒ 证明该题答案键曾 **B→E 修订而未回扫历史判分**。
+  - 风险：`isCorrect` 是错题本 / 知识点掌握度 / 学情分析 / 教师端错因的**唯一数据源**，95 条错判对还会抬高 `correctCount`/`score`。
+  - 整改建议（**单独立项**）：① 以现行 `answer` 重判受影响记录 → ② 同步回填 `Session.correctCount`/`score`（守 `score===correctCount`，跑 `audit_session_invariant.py`）→ ③ 在「改答案」后台动作里**强制追加幂等重判**，并把本扫描做成常驻巡检。**需双重备份 + 显式确认方可动生产库。**
+- **影响面**：Q15 全库 `AnswerRecord`＝**0 条** ⇒ 改键 **C→B 零重判**；模考11 自身仅 1 个**未交卷**会话（23 条记录 `isCorrect` 全 `None`），当前无学生成绩受损。
+- 报告：`scripts/REPORT_ESAT_Physics_模考11_核验报告.md`（过 `_md_lint.py` 0 违规）。脚本：`scripts/_phys11/{dump_phys11.py,gates.py,curve_shape2.py,audit_isCorrect.py}`。
+- **待拍板**：① Q15 改键 C→B（建议立即）；② Q21 `$` 闭合（建议立即）；③ Q13 超纲处置；④ Q14/Q18/Q21 解析重写；⑤ **全库 126 条判分污染是否立项清洗**（最高优先级）；⑥ Q06 断字等版式项。
+
+## 数据修正 (2026-09-24) — ESAT 物理「补充习题」库**残留错答补修 2 题**（Q028/Q029）+ 门禁 D 权威口径全库归零
+- 来源：上一条修复收尾后，用**门禁 D 权威口径**（含新增近义变体子句）对**未核的 147 题**做只读残留量化，发现仍命中 **2 题**（不在上轮 30 题名单内）。
+- **两题均为确证错答（独立复算）**：
+  - `Q028`（匀速列车内悬挂物）：库存 D → **E**。匀速 ⇒ 惯性系、物体不受水平附加力 ⇒ 仍在标记正上方；A/C/D 均预设列车有加速度。
+  - `Q029`（哪对力**不是**牛三作用-反作用对）：库存 D（电子–质子库仑引力，实为**有效**对）→ **E**（向心力与重力**都作用在卫星上**，不成对）。
+  - 两题解析**自身就写着**「题库所录答案为…**建议核对**」= 缺陷指纹；已同步删除尾注并改写为完整推导。
+- **连带清理（仅限答案键耦合项）**：`Q029` 选项 E 尾部页码残留 `…the weight of the satellite **9**` → 已清（它将成为答案键文本，不清则答案键自身是坏串）。同类但**非**答案耦合的 `Q076` C「 27」/`Q084` C「 30」**未动**，与 `Q041` 缺 `P:` 前缀合并待拍板。
+- **影响面**：两题仅在「ESAT 物理 补充习题」卷（CUSTOM/READY），**不在模考10/11/12 任何一卷**；`AnswerRecord`/`WrongBook`/`FavoriteQuestion`/`ReviewRequest` **全 0** ⇒ **零重判**。
+- 落库五段式：① 双重备份（服务器 `dev.db.bak-prefollowup-20260924-1226` + 写入器快照 `dev.db.bak-prepatch-004c544555d4`）② 对**重新拉取**的服务器最新库逐条守卫 5/5 `APPLY`、`unexpected=0`（**未沿用旧副本**——服务器在 12:25→12:35 活跃增长约 16 KB）③ 单事务写入 `WROTE 5 rows` ④ 读回复核位次均 E ⑤ **全表逐行 diff：`Question` 改动 2 行 / 新增 0 / 删除 0**，其余差异全为线上业务写入（`AnswerRecord` +88、`AssignmentStudent` +16 等）。
+- **幂等守卫再次实测有效**：环境重放命令，第二次返回 `target=5 apply=0` ⇒ `ALREADY_TARGET` **拒写**。
+- **门禁 D 权威口径全库归零**（修复前：已修组 30 + 未核组 2）。但 ⚠️ **归零 ≠ 残余错答为零**：机械填充指纹 F1（`answer == options[0]`）在未核 145 题中仍占 **25.5%**，与抽样探针 3/12 ≈ 25% 高度吻合 ⇒ **点估计未核题中可能仍有 30~37 道错答**，正则手段已用尽，只能靠独立重算清除。
+- 派生资产：`bank_esat_physics_supplement{,_latex,_img}.json` 再次回写（原件存 `*.orig-backup-followup`）；其中 `_latex.json`/`_supplement.json` 额外同步 `options`（完整选项文本），`_img.json` 因选项为占位字母故只同步 letter 型 `answer`。
+- 报告：`scripts/REPORT_ESAT_Physics_模考10_核验报告.md` **§十二**（新增）。至此补充习题库累计修复 **41 题**。
+
+## 数据修正 (2026-09-24) — ESAT 物理「补充习题」库答案键系统性错误修复（39 题 / 39 行）+ 门禁 D 召回率发现
+- 来源：应「逐题核验 ESAT Physics 模考10」（27 题，结论 24 对 / **3 错答** / 0 废题）之后执行「**请修复**」。
+- **根因（不在渲染层、不在答案录入，在题源库生成阶段）**：`bank_esat_physics_supplement_latex.json` 的 `answer` 字段**绝大多数逐字等于 `options[0]`**（机械取首项）；`bank_esat_physics_supplement_img.json` 的 `answer` **恒为 `A`**（186/186）；`bank_esat_physics_supplement.json` 混杂 `(A)`×37 与乱码（`A x T`、`kg s^{-1} 4200×8 6.7×109`）。⇒ 该库答案键**在生成阶段即损坏**，下游（补充习题卷 + 模考10/11/12）忠实继承。
+- **本轮修复（写入生产库 `Question` 表 39 行：`answer`×33 / `solution`×36 / `stem`×7）**：
+  - **P0/P1-A 答案键修正 30 题**（门禁 D 扩充名单）：**30/30 原答案全部有误**（零假阳性）。含模考10 的 Q09/Q11/Q20、模考11 的 Q09/Q20、模考12 的 Q15/Q20。典型：`Q008` force→**charge**（SI 基本单位数）、`Q061` 625→**25**（漏开平方）、`Q083` ×60→**÷60**（单位换算差 3600×）、`Q092` 紫外→**红外**（10¹³ Hz ⇒ λ=30 µm）、`Q108` 6.0 W→**48 W**（R∝I 时 P∝I³）、`Q110` R/2→**R**、`Q125` 6000μ₀→**zero**（反向等大抵消）、`Q153` 17→**35**（核子数=质量数）、`Q170` ln(τ/2)→**τ**。
+  - **P0/P1-B 解析重写 30 题**：删除「依给定答案 / 按题给答案 / 疑为答案录入有误…」等**自相矛盾尾注**，改写为正确推导（否则修完答案后尾注会与新答案打架）。
+  - **P0-C 断字/连字修复 7 处 `stem`**：`electromag- netic`→`electromagnetic`、`char- acteristics`、`state- ments`、`dis- charge`、`resis- tance`、`current- voltage`、`eﬀiciency`(U+FB00→ff)。
+  - **P2 解析首行 `**正确答案：选项 X**` 剥离 3 处**（模考10 Q16/Q23/Q25）。
+  - **P1-新 探针新发现错答 3 题**：`Q023` 17→**22 m/s**（$v^2=10^2+2(1.6)(120)$，漏初速度）、`Q034` E→**D**（非弹性碰撞中**动量守恒成立**）、`Q148` A→**B**（$N_s/N_p=V_s/V_p=I_p/I_s$，电流比写反）。三者均在线上卷（模考12 Q09 / 模考11 Q06）。
+- **⚠️ 本轮最高价值发现 —— 门禁 D 是「下界」而非「全集」**：对「未被门禁 D 命中、且不依赖配图」的 74 题**均匀抽 12 题独立重算**，得 **3 题确证错答（≈25%）**，其中 `Q148` 的解析**已完整推导出正确答案**却把 `answer` 写成另一个选项（通篇无「给定答案」字样，任何正则都抓不到）、`Q023` 用的是同款话术的**近义变体**（「疑为答案录入有误，建议核对」）。⇒ **「解析自承」只是缺陷子集**；凡遇「题源库答案键被机械填充损坏」，必须再跑一步**抽样普查探针**（抽题时输出**不得含 `answer`/`solution`**，防子代理污染），并在报告中标注「剩余 N 题未核，估算残留 M 道」。已把扩充正则（11→30 召回）与这条铁律写回 `paper-quality-audit` 技能。
+- 复核（**四路独立**）：主核验 + **3 个子代理并行独立重算**（28 道纯文本题，输入不含答案/解析）⇒ **28/28 与主核验完全一致**；2 道配图题（`Q069` 五图阴影面积量纲、`Q114` 二极管伏安图读数）由主核验**逐张读图/程序化读数**判定（Q069：E「引力场强度×时间=m/s」非能量；Q114：$V=I_g\!\cdot\!100\,\Omega=0.8$ V ⇒ 导通二极管 6 mA ⇒ 总电流 14 mA）。
+- 落库五段式：① 双重备份（服务器 `dev.db.bak-prephys10supp-20260924-102602`，md5 与当时库一致；本地拉回 `dev_pre.db`）② 快照守卫逐条比对 `old`，`unexpected=0` ③ 单事务写入（`apply_patch.py`）④ 读回复核 `VERIFIED_OK` ⑤ **全表逐行 diff（36 张表）：`Question` 改动 39 行 / 新增 0 / 删除 0，其余 35 张表零差异**。
+- **幂等守卫实测有效**：远程命令因环境重放被执行两次，第二次报 `ALREADY_TARGET` 并**拒写**（未重复应用）—— 与技能中「拒用 `--dry-run`、改用状态守卫」的结论一致。
+- 判分影响：30 题范围内 `AnswerRecord` **仅 2 条**（`Q008` selected=`charge`、`Q096` selected=`radio`），**均为未交卷会话**（`submittedAt/correctCount/score` 皆 `NULL`）⇒ **零重判**；两条所选文本恰为修正后的正确答案。`WrongBook`/`FavoriteQuestion`/`ReviewRequest` 命中 **0**。
+- 门禁复核（生产库实跑）：模考10/11/12 与补充习题库的**门禁 A=0、C=0、D=0（原 3/2/2/30）**、断字 **0**。
+- 派生资产：`bank_esat_physics_supplement{,_latex,_img}.json` 回写（35/38/34 处，原件存 `*.orig-backup`），防止将来重导入冲掉修复。
+- 观察项（**未修，待拍板**）：① 补充习题库**剩余 147 题未经独立重算**（含 82 道配图题），按 25% 抽样命中率粗估**可能仍有数十道错答**，且已被多套模考复用 —— 建议立项**全库普查**；② 库内尚有 **76 处**解析首行 `**正确答案：选项 X**`（经核**全部与库存答案自洽**，属版式决策，未擅改）；③ `topic` 元数据重映射（如 Q088/Q093/Q100/Q153 标注与实际考点不符，改 `topic` 需同步 `topicIds`）；④ **`Q041` 选项文本丢失首位 `P:` 标签**（现为 `moving left; Q: …; R: …`），按项目约定「只改 `answer` 不动选项文本」未动；⑤ Q04 `pond`/`lake` 混用。
+- 报告：`scripts/REPORT_ESAT_Physics_模考10_核验报告.md`（403 行，§八 实施记录 / §九 门禁召回率发现 / §十 待拍板 / §十一 复现命令）。
+
+## 数据修正 (2026-09-24) — ESAT 数学1/数学2 模考22 导入期符号丢失修复（根号/下标/求和号/绝对值竖线，21 题、23 字段、70 处）
+- 来源：应「逐题核验 ESAT 数学1 模考22 与数学2 模考22」时的**连带发现**——两卷答案键 **54/54 全对、零废题**（不需下架、不需重判），但源卷 KaTeX→LaTeX 转换在**成批静默丢符号**，产出「**合法 LaTeX 但数学含义错**」的算式。**这类损坏 KaTeX 严格模式零报错**（`\frac{415}{2}` 是合法 LaTeX），故既有渲染门禁（#33）完全抓不到；本库 `answer` 存完整选项文本，**纯重算答案也查不出**——必须靠「源↔库结构计数比对」才能发现。
+- 四类损坏（源卷 `ESAT 数学 1 + 数学 2 · Set 2（27 + 27 题）.html` 为唯一真值）：
+  - **① 根号被整体删除**（25 处 / 6 题）：`\sqrt{15}`→`15`、`\sqrt3`→`3`、`\sqrt m`→`m`；最重 M1 Q26 一题丢 10 处（`\frac{7\sqrt2}{2\sqrt2-1}`→`\frac{72}{22-1}`），并产出 `\sin60°=\frac{3}{2}`、`h=\frac32 s` 这类**数学上错误**的算式；M2 Q19/Q25 则丢了积分上下限的根号（`\int_{0}^{\sqrt m}`→`\int_{0}^{m}`）。
+  - **② 单下标被整体转成上标**（40 处 / 12 题）：`S_n`→`Sⁿ`、`V_X`→`V^X`、`V_c`→`V^c`、`t_1`→`t¹`、`u_0`→`u⁰`（M2 Q26 一题 11 处）、`\log_2`→`log²`（**对数底数变「对数平方」**）。
+  - **③ `\sum`/`\int` 被删只剩悬空上下限**（4 处）：`$\sum_{n=2}^{20}$`→`$_{n=2}^{20}$`（M2 Q04 三处、M2 Q27 一处）。
+  - **④ 绝对值竖线被删**（2 处，与 ① 同机制——裸 `|` 紧邻高内容时被 KaTeX 画成 SVG 分隔符，与根号一起被导入器整块删除）：M2 Q23 解析 `=|-\frac{4}{3}|=\frac{4}{3}`→`=-\frac{4}{3}=\frac{4}{3}`（**断言 −4/3=4/3，数学上为假**）、M2 Q27 解析 `|\frac{k}{6}|<1`→`\frac{k}{6}<1`。注意同句的 `\mid r\mid`/`\mid k\mid` 是文本字形故幸存，**只丢紧邻分式的那一对**——这也解释了早期「剥 HTML 标签」统计法的假阴性。
+  - **其中 4 处落在题干（M2 Q16 `\log^2`→`\log_2`、M2 Q24 `y^k`→`y_k`），学生看到的题意已被改变（P0）**。
+- 根因（在**导入器**，不在渲染层）：当年走的 `scripts/html_to_bank_esat_set2_v2.py` 是「**抽纯文本 + 启发式重新包 `$...$`**」的**降级流水线**，不是真正的 KaTeX→LaTeX 逆向转换 —— ① 所有用 SVG 绘制的 KaTeX 原子（根号、紧邻分式的裸 `|` 分隔符）被 `re.sub(r'<svg...')` **整块删除**；② `msupsub` 一律无脑写成 `^{...}`，**不区分 `vlist-s`(下标) 与 `vlist-t2`(上标)**；③ `\sum`/`\int` 等大运算符原子无对应分支，直接丢字。
+- 修复方式（**只改文本层，判分零风险**）：以源卷 KaTeX span 经权威转换器 `katex2latex.py` 逆向得的 LaTeX 为真值，**声明式 patch 表 + 全量守卫**（任一 `old` 缺失或计数不符 ⇒ 整体中止，不写半条）+ **单事务**写入 + 写后复核，脚本 `scripts/patch_esat22_math.py`。共 **40 条 patch / 70 处替换 / 23 个字段 / 21 题**（P0 题干 12 处、P1 根号+求和号 16 处、P1b 竖线 2 处、P2 下标上标 40 处）。**仅改 `stem`/`solution`，绝不触碰 `answer`/`options`** ⇒ 无需重判任何 AnswerRecord / Session。分两轮落库，**第二轮顺带验证了幂等**（已修的 38 条自动跳过，只写新增 2 条）。
+- 验收（七条全绿）：
+  - ① **守卫**：40 条 patch 全部命中且计数精确（0 错误）；服务器预演的 before→after 字段 md5 与本地副本**逐条一致** ⇒ 服务器内容与验证副本同源；上库前另做一次**快照新鲜度检查**（导出后 DB 又被学生作答写入过）⇒ 两卷题面**零漂移**才动手。
+  - ② **全表 diff**（`scripts/_db_full_diff.py`，24 张表逐行 md5 比对）：仅 `Question` 表 **21 行**变动（23 字段），**新增 0 / 删除 0**；`Session`/`Paper`/`ReviewRequest`/`WrongBook` 等全部逐字节一致。（唯一一处 `AnswerRecord` 新增经核验属 **TMUA 2020 Paper 2 的实时作答**，与本次无关。）
+  - ③ **结构计数审计归零**：根号净丢失 M1 15→**0** / M2 10→**0**；绝对值竖线真缺陷 2→**0**；上下标缺位 13 题→**只剩 2 处已确认假阳性**（M2 Q06/Q15 是导入期**整题替换**题，源↔库本就不同题，须先排除否则会报一堆「丢失」——本轮踩过）；运算符只剩 2 处已知非缺陷（M1 Q25 箭头被改写为文字、M2 Q15 步骤2 本就是不定积分写法不带上限）。
+  - ④ **渲染门禁**（新脚本 `scripts/verify_esat22_render.mjs`，前端同源 latexify + KaTeX `throwOnError`）：1425 个数学段，修复前后均 **0 失败 / 0 未闭合**，**段数不变**（只改内容未增删段）。
+  - ⑤ **端到端等价性**：从线上库重新导出两卷，与本地已验证快照**逐字段完全一致**。
+  - ⑥ **人工目视 + 数学自洽**：M2 Q16 修复后题意自洽（`u+v=3, uv=2 ⇒ x=2,4 ⇒ 和=6` 与答案 `6` 一致）；M2 Q24 题干 `y_k` 可解析；M1 Q26 有理化得 `4+\sqrt2` 与答案一致；M2 Q25 面积积分得 `a=2` 与答案一致。
+  - ⑦ **派生资产对齐**：`scripts/bank_esat_m1_mock22.json`（8 字段）+ `bank_esat_m2_mock22.json`（16 字段）回写后与线上库比对**零偏差**。
+- 上线数据：落库前 `dev.db` md5 `8f9d6f00111d4fa16b31133a76bcd091` → 落库后 `b06f2e79f4d5f626ece2252bfb5f53d6`；服务器备份 `apps/api/prisma/dev.db.bak-pre-esat22fix-20260924` + 本地双重备份 `scripts/_esat22fix/dev.db.pre`。**api/web 均未重启**（纯数据层，Prisma 每次查询直读 SQLite），无需 build；学生端硬刷新即见修复。
+- 登记：`docs/MATH_RENDERING_BUGS.md` 新增 **#34**（源卷 KaTeX→LaTeX 导入期静默丢符号）+ 预防规则 #34（**「源↔库结构计数双向门禁」**，含四个计数项与三个判据坑）+ #34 回归样本与专用审计命令。
+- 方法沉淀：`paper-quality-audit` 技能补入「源↔库结构差异审计」（模板脚本 `scripts/structure_audit_template.py`）。
+- 观察项（**未修，待拍板**）：① **同一导入器产出的其它 ESAT 卷可能同样带病**（当年 Set2 用 `html_to_bank_esat_set2_v2.py`，同族脚本还有 `html_to_bank_esat_set2/3.py`、`_hardmock1/2` 等）——建议对全库 ESAT/TMUA 卷跑一遍结构计数审计再定；② 超纲项：**M1 Q10**（数列题，M1 不含数列；与当年已被整题替换的 Q25 同因，属漏网）、**M2 Q27**（含概率，M2 不含统计概率）、M1 Q02/Q16 解析引用正弦/余弦定理、M1 Q03 用倍角公式、M2 Q04 引用「曲棍球棒恒等式」；③ 解析文字瑕疵：**M1 Q13 末句「选项 D 也是 √60，两者等价」是源卷自带的幻觉**（D 实为 `2\sqrt{10}≈6.32`，答案 `2\sqrt{15}≈7.75`，并不等价）、M2 Q14 用 `g''>0` 判极小、M1 Q22 排除理由措辞错乱；④ `sin60°` 未写 `\sin`（渲染层 latexify 会补，**显示正常**，仅不规范）；⑤ M1 Q23 选项 A `(6x−8)/(4x+6)` 与答案数值等价（未约尽，靠题干 "complete simplification" 区分）。
+
 ## V2.4.89 (2026-09-24) — 「一题多段」：分段停留采集（`visits`）+ 甘特图同一行多条时间条
 - 需求（用户原话）：「目前每一题都是显示一段时间条 我希望的是 如果学生在一道题上思考了几分钟 没有作答 过了一段时间又回到这道题 花了一些时间作答后 图上应该有两段时间条」；范围限定：「过去的反推不出分段就算了 请后续学生所做的题目成"一题多段"的形式」。
 - **为何必须先动采集端（关键，非显而易见）**：`timeSpent` 是**累计标量**、`createdAt` 是**首次保存时刻**，同一题的多次停留已被加总成一维 ⇒ **信息有损，数学上无法反推分段**。所以不是"只改渲染"，必须新增「每次进入/离开题目」的分段记录；历史会话**不追**，老数据走向后兼容回退。

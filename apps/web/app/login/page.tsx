@@ -8,8 +8,8 @@ import type { AuthData } from "@/lib/types";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [mode, setMode] = useState<"login" | "register" | "parentRegister">("login");
+  const [form, setForm] = useState({ email: "", password: "", name: "", studentName: "", studentNo: "", relation: "" });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,12 +29,34 @@ export default function LoginPage() {
         });
         setSuccess(`注册申请已提交！账号「${data.user.email}」正在等待教师审核，通过后即可登录。`);
         setMode("login");
-        setForm({ email: form.email, password: "", name: "" });
+        setForm({ email: form.email, password: "", name: "", studentName: "", studentNo: "", relation: "" });
+      } else if (mode === "parentRegister") {
+        // 家长注册:学号 + 姓名 精确匹配已审核学生 → 自动 VERIFIED 并直接登录;否则待班主任审批
+        const data = await api.post<{ token?: string; user: AuthData["user"] }>("/auth/register", {
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          role: "PARENT",
+          studentName: form.studentName,
+          studentNo: form.studentNo,
+          relation: form.relation || undefined,
+        });
+        if (data.token && data.user) {
+          setToken(data.token);
+          setUser(data.user);
+          router.push("/parent");
+        } else {
+          setSuccess(`注册申请已提交！因学号+姓名未精确匹配，家长账号「${data.user.email}」待班主任审核通过后即可登录。`);
+          setMode("login");
+          setForm({ email: form.email, password: "", name: "", studentName: "", studentNo: "", relation: "" });
+        }
       } else {
         const data = await api.post<AuthData>("/auth/login", { email: form.email, password: form.password });
         setToken(data.token);
         setUser(data.user);
-        router.push(data.user.role === "STUDENT" ? "/app" : "/teacher");
+        router.push(
+          data.user.role === "STUDENT" ? "/app" : data.user.role === "PARENT" ? "/parent" : "/teacher"
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败");
@@ -49,18 +71,18 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-center text-2xl font-bold text-slate-900">金瑞升学金鹰系统</h1>
+        <h1 className="text-center text-2xl font-bold text-slate-900">金瑞高中综合管理系统</h1>
         <p className="mt-1 text-center text-sm text-slate-500">TMUA / ESAT · 练习 · 模拟考 · 学情分析</p>
         <p className="mt-1 text-center text-xs text-slate-300">{APP_VERSION}</p>
 
         <div className="mt-6 flex rounded-lg bg-slate-100 p-1 text-sm">
-          {(["login", "register"] as const).map((m) => (
+          {(["login", "register", "parentRegister"] as const).map((m) => (
             <button
               key={m}
               onClick={() => { setMode(m); setError(""); }}
               className={`flex-1 rounded-md py-1.5 transition ${mode === m ? "bg-white font-medium text-indigo-600 shadow-sm" : "text-slate-500"}`}
             >
-              {m === "login" ? "登录" : "注册"}
+              {m === "login" ? "登录" : m === "register" ? "学生注册" : "家长注册"}
             </button>
           ))}
         </div>
@@ -72,9 +94,29 @@ export default function LoginPage() {
               <input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="你的名字" required />
             </div>
           )}
+          {mode === "parentRegister" && (
+            <>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">家长姓名</label>
+                <input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="家长称呼" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">孩子姓名</label>
+                <input className={input} value={form.studentName} onChange={(e) => setForm({ ...form, studentName: e.target.value })} placeholder="学生姓名" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">孩子学号</label>
+                <input className={input} value={form.studentNo} onChange={(e) => setForm({ ...form, studentNo: e.target.value })} placeholder="学生学号" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">与孩子关系（选填）</label>
+                <input className={input} value={form.relation} onChange={(e) => setForm({ ...form, relation: e.target.value })} placeholder="如 父亲 / 母亲 / 监护人" />
+              </div>
+            </>
+          )}
           <div>
-            <label className="mb-1 block text-sm text-slate-600">邮箱</label>
-            <input className={input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" required />
+            <label className="mb-1 block text-sm text-slate-600">邮箱 / 登录名</label>
+            <input className={input} type="text" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com 或 xuhexin" required />
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-600">密码</label>
@@ -87,10 +129,13 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
           >
-            {loading ? "请稍候..." : mode === "login" ? "登录" : "提交注册申请"}
+            {loading ? "请稍候..." : mode === "login" ? "登录" : mode === "parentRegister" ? "提交家长注册" : "提交注册申请"}
           </button>
           {mode === "register" && (
             <p className="text-center text-xs text-slate-400">公开注册仅创建学生账号，需教师审核通过后才能登录;老师账号请由管理员开通</p>
+          )}
+          {mode === "parentRegister" && (
+            <p className="text-center text-xs text-slate-400">家长注册需填写孩子的「姓名+学号」精确匹配已审核学生:匹配成功将自动通过并直接登录;未匹配则待班主任审批</p>
           )}
         </form>
       </div>

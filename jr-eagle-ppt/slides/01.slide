@@ -43,7 +43,7 @@
       textAlign: 'center',
       fontFamily: '"PingFang SC","Microsoft YaHei",sans-serif',
     }}>
-      金瑞金鹰系统
+      金瑞高中综合管理系统
     </Text>
     <Box style={{
       width: 120,
@@ -85,6 +85,6 @@
       background: '#D4AF37',
       borderRadius: '50%',
     }} />
-    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞升学 · 金鹰系统</Text>
+    <Text style={{ fontSize: 14, color: '#7A89A3' }}>金瑞高中综合管理系统</Text>
   </Box>
 </Slide>

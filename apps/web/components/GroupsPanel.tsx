@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { GroupSummary } from "@/lib/types";
+import type { GroupSummary, GroupAssignment } from "@/lib/types";
+import ExamAnalysisView from "@/components/ExamAnalysisView";
 
 interface StudentOption {
   id: string;
@@ -135,6 +136,36 @@ export default function GroupsPanel() {
     }
   }
 
+  // 抽屉:查看分组已布置的模考与作业
+  const [viewGroup, setViewGroup] = useState<GroupSummary | null>(null);
+  const [assignments, setAssignments] = useState<GroupAssignment[]>([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerErr, setDrawerErr] = useState("");
+  const [analysisExamId, setAnalysisExamId] = useState<string | null>(null);
+
+  function closeDrawer() {
+    setViewGroup(null);
+    setAssignments([]);
+    setAnalysisExamId(null);
+    setDrawerErr("");
+  }
+
+  async function openAssignments(g: GroupSummary) {
+    setViewGroup(g);
+    setAnalysisExamId(null);
+    setAssignments([]);
+    setDrawerErr("");
+    setDrawerLoading(true);
+    try {
+      const d = await api.get<{ groupId: string; groupName: string; list: GroupAssignment[] }>(`/teacher/groups/${g.id}/assignments`);
+      setAssignments(d.list || []);
+    } catch (e) {
+      setDrawerErr(e instanceof Error ? e.message : "加载布置记录失败");
+    } finally {
+      setDrawerLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -204,6 +235,9 @@ export default function GroupsPanel() {
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1.5 text-xs">
+                      <button onClick={() => openAssignments(g)} className="rounded border border-emerald-200 px-2 py-0.5 text-emerald-600 hover:bg-emerald-50">
+                        查看布置
+                      </button>
                       <button onClick={() => openManage(g)} className="rounded border border-indigo-200 px-2 py-0.5 text-indigo-600 hover:bg-indigo-50">
                         管理成员
                       </button>
@@ -280,6 +314,91 @@ export default function GroupsPanel() {
               <button onClick={saveMembers} disabled={savingMembers} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
                 {savingMembers ? "保存中..." : "保存成员"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 抽屉:查看分组已布置的模考与作业 */}
+      {viewGroup && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/40" onClick={closeDrawer}>
+          <div className="flex h-full w-full max-w-2xl flex-col bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-bold text-slate-800">{viewGroup.name} · 已布置</h2>
+                <p className="mt-0.5 text-xs text-slate-400">按组布置给该分组的模考与作业(共 {assignments.length} 项)</p>
+              </div>
+              <button onClick={closeDrawer} className="ml-3 shrink-0 text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {analysisExamId ? (
+                <div>
+                  <button
+                    onClick={() => setAnalysisExamId(null)}
+                    className="mb-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                  >
+                    ← 返回布置列表
+                  </button>
+                  <ExamAnalysisView examId={analysisExamId} />
+                </div>
+              ) : drawerLoading ? (
+                <p className="py-10 text-center text-sm text-slate-400">加载中…</p>
+              ) : drawerErr ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{drawerErr}</p>
+              ) : assignments.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">该分组还没有通过「按组布置」布置的模考或作业。在作业分发 / 考试管理中选组布置后,会在这里出现。</p>
+              ) : (
+                <div className="space-y-3">
+                  {assignments.map((a) => (
+                    <div key={a.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${a.mode === "EXAM" ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"}`}>
+                              {a.mode === "EXAM" ? "模考" : "作业"}
+                            </span>
+                            <span className="truncate font-medium text-slate-800">{a.title}</span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-slate-400">
+                            {a.paperTitle || "—"}
+                            {a.subject ? ` · ${a.subject}` : ""}
+                            {a.dueAt ? ` · DDL ${new Date(a.dueAt).toLocaleString("zh-CN", { hour12: false })}` : ""}
+                          </p>
+                        </div>
+                        {a.mode === "EXAM" && (
+                          <button
+                            onClick={() => setAnalysisExamId(a.id)}
+                            className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                          >
+                            查看考情
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                          <p className="text-slate-400">布置人数</p>
+                          <p className="mt-0.5 font-medium text-slate-700">{a.stats.total}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                          <p className="text-slate-400">已交 / 进行中 / 未交</p>
+                          <p className="mt-0.5 font-medium text-slate-700">
+                            {a.stats.submitted} / {a.stats.inProgress} / {a.stats.notSubmitted}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                          <p className="text-slate-400">平均正确率</p>
+                          <p className="mt-0.5 font-medium text-slate-700">{a.stats.avgAccuracy != null ? `${a.stats.avgAccuracy}%` : "—"}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                          <p className="text-slate-400">平均分</p>
+                          <p className="mt-0.5 font-medium text-slate-700">{a.stats.avgScore != null ? `${a.stats.avgScore}` : "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

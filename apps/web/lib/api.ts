@@ -14,7 +14,7 @@ export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
-export function getUser(): { id: string; name: string; role: string } | null {
+export function getUser(): { id: string; name: string; role: string; teacherRole?: string | null } | null {
   if (typeof window === "undefined") return null;
   try {
     return JSON.parse(localStorage.getItem(USER_KEY) || "null");
@@ -79,5 +79,5 @@ export const api = {
   post: <T>(p: string, data?: unknown) => request<T>(p, { method: "POST", body: JSON.stringify(data ?? {}) }),
   put: <T>(p: string, data?: unknown) => request<T>(p, { method: "PUT", body: JSON.stringify(data ?? {}) }),
   patch: <T>(p: string, data?: unknown) => request<T>(p, { method: "PATCH", body: JSON.stringify(data ?? {}) }),
-  del: <T>(p: string) => request<T>(p, { method: "DELETE" }),
+  del: <T>(p: string, data?: unknown) => request<T>(p, { method: "DELETE", ...(data !== undefined ? { body: JSON.stringify(data) } : {}) }),
 };

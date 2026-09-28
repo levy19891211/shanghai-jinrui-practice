@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import QuestionEditModal from "@/components/QuestionEditModal";
 import { renderRich, plainText } from "@/lib/rich";
 import { isAnswerOption, letterToOption } from "@/lib/answer";
-import type { PaperManageDetail, PaperRow, PaperStats, Question } from "@/lib/types";
+import { isEsatFamily, expandEsatFilters, showEsatFamilyBadge } from "@/lib/sourceFamily";
+import type { PaperManageDetail, PaperManageQuestion, PaperRow, PaperStats, Question } from "@/lib/types";
 
 interface Facets {
   subjects: { subject: string; count: number }[];
@@ -128,6 +129,10 @@ export default function TeacherPapersPage() {
   const [addKps, setAddKps] = useState<{ id: string; name: string }[]>([]);
   const [addKpFilter, setAddKpFilter] = useState("");
   const [addSaving, setAddSaving] = useState(false);
+  // 试卷预览(不显示正确选项),及单题解析弹窗
+  const [preview, setPreview] = useState<PaperManageDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [solQ, setSolQ] = useState<PaperManageQuestion | null>(null);
 
   const load = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -151,6 +156,11 @@ export default function TeacherPapersPage() {
   useEffect(() => {
     setPage(1);
   }, [subjectFilter, kindFilter, filter, sourceFilter, sortBy, pageSize]);
+
+  // 不同套题版块采用不同默认排序:模考套题按名称 Z→A,其他按最新优先
+  useEffect(() => {
+    setSortBy(kindFilter === "mock" ? "nameDesc" : "createdDesc");
+  }, [kindFilter]);
 
   // 切换科目时重新拉取可选项,并清空已选的知识点/难度(避免残留旧科目的值导致筛不到题)
   useEffect(() => {
@@ -191,8 +201,10 @@ export default function TeacherPapersPage() {
       arr = arr.filter((p) => p.kind === kindFilter);
     }
     // 题源点选筛选(多选,空 = 全部):TMUA / ESAT
+    // ESAT 选中时同时匹配 ENGAA / NSAA(家族归组,不改数据库)
     if (sourceFilter.length > 0) {
-      arr = arr.filter((p) => p.sourceType != null && sourceFilter.includes(p.sourceType));
+      const expanded = expandEsatFilters(sourceFilter);
+      arr = arr.filter((p) => p.sourceType != null && expanded.includes(p.sourceType));
     }
     if (sortBy === "nameAsc" || sortBy === "nameDesc") {
       const dir = sortBy === "nameAsc" ? 1 : -1;
@@ -278,6 +290,20 @@ export default function TeacherPapersPage() {
       setError(e instanceof Error ? e.message : "读取试卷失败");
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  // 试卷预览:复用 /manage 接口,但不渲染正确选项,只供教师按学生视角浏览
+  async function openPreview(id: string) {
+    setError("");
+    setPreviewLoading(true);
+    try {
+      const d = await api.get<PaperManageDetail>(`/papers/${id}/manage`);
+      setPreview(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "读取试卷失败");
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -772,7 +798,7 @@ export default function TeacherPapersPage() {
                     <tr key={p.id} className="border-b border-slate-50 align-middle transition hover:bg-slate-50/60">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="max-w-[240px] truncate font-medium text-slate-800" title={p.title}>
+                          <span className="whitespace-nowrap font-medium text-slate-800" title={p.title}>
                             {p.title}
                           </span>
                           {p.origin === "AUTO_SET" && (
@@ -781,20 +807,20 @@ export default function TeacherPapersPage() {
                             </span>
                           )}
                         </div>
-                        {p.source && (
-                          <p className="mt-0.5 max-w-[240px] truncate text-xs text-slate-400" title={p.source}>
-                            {p.source}
-                          </p>
-                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-1">
+                        <div className="flex flex-nowrap items-center gap-1">
                           <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-600">
                             {p.subject}
                           </span>
                           {p.sourceType && (
                             <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
                               {p.sourceType}
+                            </span>
+                          )}
+                          {showEsatFamilyBadge(p.sourceType) && (
+                            <span className="rounded bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600" title="属于 ESAT 题源家族">
+                              ESAT
                             </span>
                           )}
                         </div>
@@ -830,6 +856,12 @@ export default function TeacherPapersPage() {
                             className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
                           >
                             查看
+                          </button>
+                          <button
+                            onClick={() => openPreview(p.id)}
+                            className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                          >
+                            预览
                           </button>
                           {st === "DRAFT" && (
                             <button
@@ -938,7 +970,7 @@ export default function TeacherPapersPage() {
                         </button>
                       )}
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <div className="mt-2 flex flex-nowrap gap-2 text-xs">
                       <span className="rounded bg-teal-50 px-2 py-0.5 text-teal-600">{detail.subject}</span>
                       {detail.sourceType && (
                         <span className="rounded bg-indigo-50 px-2 py-0.5 text-indigo-600">{detail.sourceType}</span>
@@ -1211,9 +1243,12 @@ export default function TeacherPapersPage() {
                         className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <div className="flex flex-nowrap items-center gap-1.5 text-xs">
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">{q.subject}</span>
                           {q.sourceType && <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-600">{q.sourceType}</span>}
+                          {showEsatFamilyBadge(q.sourceType) && (
+                            <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-600" title="属于 ESAT 题源家族">ESAT</span>
+                          )}
                           <span className={`rounded px-1.5 py-0.5 ${Q_STATUS_BADGE[q.status ?? ""] ?? ""}`}>
                             {Q_STATUS_LABEL[q.status ?? ""] ?? q.status}
                           </span>
@@ -1306,6 +1341,110 @@ export default function TeacherPapersPage() {
           onClose={() => setEditQ(null)}
           onSaved={onQuestionSaved}
         />
+      )}
+
+      {/* 试卷预览:按学生视角浏览,不显示正确选项;每题下方可展开解析 */}
+      {(preview || previewLoading) && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={() => setPreview(null)}>
+          <div
+            className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1 pr-4">
+                <h2 className="text-lg font-bold text-slate-800">
+                  {preview ? `试卷预览 · ${preview.title}` : "试卷预览"}
+                </h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  仅展示题干与全部选项(不显示正确答案),点击题目下方的「查看解析」可查看该题解析。
+                </p>
+              </div>
+              <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            {previewLoading && !preview ? (
+              <p className="mt-8 text-sm text-slate-400">加载中...</p>
+            ) : preview ? (
+              <div className="mt-5 space-y-4">
+                {preview.questions.map((q) => (
+                  <div key={q.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                        {q.missing ? "缺题" : `第 ${q.index} 题`}
+                      </span>
+                      {!q.missing && (
+                        <span className="text-slate-400">{q.topic} · 难度 {q.difficulty}</span>
+                      )}
+                    </div>
+                    {q.missing ? (
+                      <p className="mt-2 text-xs text-slate-400">该题已从题库删除,无法预览。</p>
+                    ) : (
+                      <>
+                        <div className="mt-2 text-sm leading-relaxed text-slate-800">{renderRich(q.stem ?? "")}</div>
+                        <div className="mt-2 space-y-1">
+                          {(q.options ?? []).map((opt, i) => (
+                            <div
+                              key={i}
+                              className="flex gap-2 rounded px-2 py-1 text-sm text-slate-700"
+                            >
+                              <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                              <span className="flex-1">{renderRich(opt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setSolQ(q)}
+                          className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100"
+                        >
+                          查看解析
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* 单题解析弹窗 */}
+      {solQ && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setSolQ(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="text-base font-bold text-slate-800">
+                第 {solQ.index} 题 · 解析
+              </h3>
+              <button onClick={() => setSolQ(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm leading-relaxed text-slate-800">
+                {renderRich(solQ.stem ?? "")}
+              </div>
+              <div className="mt-3 space-y-1">
+                {(solQ.options ?? []).map((opt, i) => (
+                  <div key={i} className="flex gap-2 px-2 py-1 text-sm text-slate-700">
+                    <span className="font-medium">{String.fromCharCode(65 + i)}.</span>
+                    <span className="flex-1">{renderRich(opt)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="mb-1 text-xs font-medium text-indigo-600">解析</p>
+                <div className="text-sm leading-relaxed text-slate-800">
+                  {solQ.solution ? renderRich(solQ.solution) : <span className="text-slate-400">暂无解析</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

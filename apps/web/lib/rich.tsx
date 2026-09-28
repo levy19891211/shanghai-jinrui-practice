@@ -46,7 +46,11 @@ function escapeHtml(s: string): string {
 
 function renderMathExpr(expr: string, displayMode: boolean): string {
   try {
-    const html = katex.renderToString(expr, { throwOnError: false, displayMode });
+    // 行内公式默认按 textstyle 排版,\frac 的分子分母会被压到 script 尺寸、
+    // 分母里的上标更是"script 的 script",整体显得又小又挤(用户反馈"公式看起来很小")。
+    // 统一加 \displaystyle:分数/求和等按 display 尺寸渲染,但仍保持行内排版(不独占一行)。
+    const tex = displayMode ? expr : `\\displaystyle ${expr}`;
+    const html = katex.renderToString(tex, { throwOnError: false, displayMode });
     // KaTeX 渲染失败时返回的 HTML 含 katex-error(红框),此时退回显示原文,避免刺眼报错
     return html.includes("katex-error") ? escapeHtml(expr) : html;
   } catch {
@@ -225,15 +229,12 @@ export function latexify(s: string): string {
     )
     // 函数名 → LaTeX 命令(如 sin → \sin、3cos → 3\cos;前面不能是字母或已有反斜杠,避免 \log 变成 \\log)
     .replace(/(?<![a-zA-Z\\])(log|sin|cos|tan|ln|sec|csc|cot|exp|sqrt|sinh|cosh|tanh)(?=[^a-zA-Z₁₀₂₃]|$)/g, "\\$1")
-    // 简单分数:数字/π/θ/单变量的 A/B(如 3π/4、1/2、x/y、5650/79.5;分母至少 1 字符)
-    // 此时 π/上标已转(\pi、^{3} 形式);单字母变量前后不能是字母(避免 \pi 的 i 被误当变量)
-    .replace(/([0-9]*(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z])\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?|[a-zA-Z])(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
-    // 括号分子/数字分母:(\sqrt{5} − 1)/2 → \frac{\sqrt{5} − 1}{2}
-    .replace(/\(([^()]+)\)\s*\/\s*([0-9]+(?:\\pi|\\theta|π|θ)?)(?![a-zA-Z0-9])/g, "\\frac{$1}{$2}")
-    // 括号分数:A/(B) 或 (A)/(B) → \frac{A}{B}(容忍空格,如 "2 / (a + 2b)")
-    // A 前不能是 ^ 或 {(避免把 ^{2} 的上标数字当分子)
-    .replace(/(?<![\^{])([A-Za-z0-9][^()]*?)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}")
-    .replace(/\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g, "\\frac{$1}{$2}");
+    // ===== 简单/括号分数转换已禁用 =====
+    // 原转换会误伤真公式:如 `$d_2/m_1$` 里的 `d_2`/`m_1` 是单字母+数字下标,
+    // 但正则 A 部分 `[a-zA-Z]` 只看单字符,把 `d_2` 错认成 `d`,把 `d_2/m_1` 转成 `\frac{d}{m_1}`,
+    // KaTeX 渲染时下标 2 丢失→乱码(`d_{2}{m}_1`)。同理 23/05/1967 被吃成 `\frac{23}{05}1967`。
+    // 真分数请源里直接写 `\frac{}{}`;本函数不再做 `A/B → \frac{A}{B}` 自动转换。
+    // ===== 括号的分数转化 `_space.bracket` B 为空时还原表达式 (保留原表达式不做 / 转 \frac) =====
   return restoreTextBlocks(out, chunks);
 }
 
@@ -322,7 +323,17 @@ export function smartMath(text: string): React.ReactNode[] {
   };
   const flushText = () => {
     if (textBuf.length) {
-      parts.push(<span key={key++} className="whitespace-pre-wrap">{textBuf.join("")}</span>);
+      // inline 元素(<span>)里 \n 即便 white-space:pre-wrap 也不强制换行
+      // (CSS 行模型限制,pre-wrap 只能在 block 元素上保留换行)。把 \n 拆出来
+      // 替换为 <br> 才能可靠换行,避免题干里 I./II./III. 陈述列表挤成一行。
+      const raw = textBuf.join("");
+      const segs: React.ReactNode[] = [];
+      raw.split(/(\n)/).forEach((seg) => {
+        if (seg === "") return;
+        if (seg === "\n") segs.push(<br key={`br-${key++}`} />);
+        else segs.push(seg);
+      });
+      parts.push(<span key={key++} className="whitespace-pre-wrap">{segs}</span>);
       textBuf = [];
     }
   };
@@ -371,7 +382,15 @@ export function smartMath(text: string): React.ReactNode[] {
     const t = tokens[i];
     const kind = cls[i];
     if (kind === "space") {
-      (mathBuf.length ? mathBuf : textBuf).push(t);
+      // 含换行符的 space token 必须进 textBuf(flushText 会把它转成 <br>),
+      // 不能被吸入 mathBuf——否则 \n 在 LaTeX join(" ") 后变成空格,
+      // KaTeX 渲染时丢失,导致 I./II./III. 等陈述列表挤成一行。
+      if (t.includes("\n")) {
+        flushMath();
+        textBuf.push(t);
+      } else {
+        (mathBuf.length ? mathBuf : textBuf).push(t);
+      }
       continue;
     }
     if (kind === "math" || kind === "promoted") {

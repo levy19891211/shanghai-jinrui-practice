@@ -35,49 +35,46 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Numbers and Sets",
+      "topic": "Algebra and Functions",
       "topicIds": [
-        "M1"
+        "M4"
       ],
-      "difficulty": 5,
+      "difficulty": 4,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-NEWDEF1",
+      "source": "TMUA-P1-MOCK9-NEWMEAN1",
       "sourceType": "TMUA",
-      "stem": "For real numbers $a$ and $b$, define a binary operation $\\star$ by\n$$a \\star b = \\frac{ab}{a+b}$$\nwhenever $a+b\\neq 0$. A pair $(a,b)$ of positive integers is called **harmonious** if $a\\star b$ is also a positive integer.\n\nHow many harmonious pairs $(a,b)$ satisfy $1\\le a,b\\le 20$ and $a<b$?",
+      "stem": "For positive real numbers $a$ and $b$, define a binary operation $\\triangle$ by\n$$a\\triangle b=\\frac{a^{2}+b^{2}}{a+b}.$$\nWhich of the following statements is always true?",
       "options": [
-        "3",
-        "4",
-        "5",
-        "6",
-        "7"
+        "$a\\triangle b \\ge a+b$",
+        "$a\\triangle b \\le \\max(a,b)$",
+        "$a\\triangle b \\ge \\max(a,b)$",
+        "$a\\triangle b \\le \\dfrac{a+b}{2}$",
+        "$a\\triangle b$ is always an integer whenever $a$ and $b$ are positive integers"
       ],
-      "answer": "6",
-      "solution": "$a\\star b = \\frac{ab}{a+b}$ is an integer $\\iff a+b\\mid ab$.\nLet $d=\\gcd(a,b)$, $a=dx$, $b=dy$ with $\\gcd(x,y)=1$. Then $a+b=d(x+y)$ and $ab=d^2xy$.\nCondition: $d(x+y)\\mid d^2xy \\iff x+y\\mid dxy$.\nSince $\\gcd(x,y)=1$, we have $\\gcd(x+y,x)=\\gcd(x+y,y)=1$, so $x+y\\mid d$.\nWrite $d=k(x+y)$ for some positive integer $k$. Then $a=kx(x+y)$ and $b=ky(x+y)$.\nWith $1\\le a,b\\le 20$ and $a<b$ (so $x<y$):\n\nTry small coprime pairs $(x,y)$:\n- $(1,2)$: $a=k\\cdot1\\cdot3=3k$, $b=k\\cdot2\\cdot3=6k$. Need $6k\\le20\\implies k=1,2,3$ → $(3,6),(6,12),(9,18)$.\n- $(1,3)$: $a=k\\cdot1\\cdot4=4k$, $b=k\\cdot3\\cdot4=12k$. Need $12k\\le20\\implies k=1$ → $(4,12)$.\n- $(2,3)$: $a=k\\cdot2\\cdot5=10k$, $b=k\\cdot3\\cdot5=15k$. Need $15k\\le20\\implies k=1$ → $(10,15)$.\n- $(1,4)$: $a=5k$, $b=20k$. $20k\\le20\\implies k=1$ → $(5,20)$.\n- $(3,4)$: $a=21k>20$ already too large.\nOther pairs give $a$ or $b$ exceeding 20.\nValid pairs: $(3,6),(6,12),(9,18),(4,12),(10,15),(5,20)$. That's **6 pairs**.",
+      "answer": "$a\\triangle b \\le \\max(a,b)$",
+      "solution": "Write $M=\\max(a,b)$ and $m=\\min(a,b)$, so $a,b\\le M$. Then\n$$a^{2}+b^{2}\\le M\\cdot a+M\\cdot b=M(a+b).$$\nDividing by $a+b>0$ gives\n$$a\\triangle b=\\frac{a^{2}+b^{2}}{a+b}\\le M=\\max(a,b),$$\nso **B** is always true.\n\nThe other statements fail:\n- A: with $a=b=1$, $a\\triangle b=1$ but $a+b=2$, and $1\\ge 2$ is false.\n- C: with $a=1,b=2$, $a\\triangle b=\\tfrac53<\\max(a,b)=2$, so $a\\triangle b\\ge\\max(a,b)$ is false.\n- D: with $a=1,b=2$, $\\tfrac53>\\tfrac{a+b}{2}=\\tfrac32$, so $a\\triangle b\\le\\tfrac{a+b}{2}$ is false.\n- E: with $a=1,b=2$, $a\\triangle b=\\tfrac53$ is not an integer, so 'always an integer' is false.",
       "distractors_rationale": {
-        "3": "Only counts the $(1,2)$ family with $k=1,2,3$.",
-        "4": "Misses one family.",
-        "5": "Off-by-one in enumeration.",
-        "7": "Over-counts by including a pair with $a=b$ or exceeding bound."
+        "$a\\triangle b \\ge a+b$": "Over-estimates by treating the operation like a sum; fails already at $a=b=1$ where the value is 1 but $a+b=2$.",
+        "$a\\triangle b \\le \\max(a,b)$": "CORRECT: $a^{2}+b^{2}\\le \\max(a,b)(a+b)$ since each square is at most $\\max\\cdot$ itself.",
+        "$a\\triangle b \\ge \\max(a,b)$": "Wrongly claims the operation reaches or exceeds the larger input; it is strictly below $\\max(a,b)$ unless $a=b$.",
+        "$a\\triangle b \\le \\dfrac{a+b}{2}$": "Confuses the operation with the arithmetic mean; in fact $a\\triangle b\\ge\\tfrac{a+b}{2}$ (from $(a-b)^{2}\\ge0$), the opposite inequality.",
+        "$a\\triangle b$ is always an integer whenever $a$ and $b$ are positive integers": "Ignores that numerator and denominator need not yield an integer; $a=1,b=2$ gives $\\tfrac53$."
       },
       "source_reference": null,
       "adaptation_report": {
-        "summary": "Created a new-definition operator problem ($\\star$) requiring students to derive the divisibility condition $a+b\\mid ab$ and enumerate harmonious pairs under a bounded constraint.",
-        "technique_added": "Abstract+chain:陌生定义(现场阅读$\\star$运算)+链长(从定义到$\\gcd$分解再到枚举需2-3步)+分类边界($x+y\\mid d$的关键转化).",
+        "summary": "Created a new-definition operator $\\triangle$ and ask which inequality always holds; requires comparing the operation to $\\max(a,b)$ and the arithmetic mean.",
+        "technique_added": "Abstract+chain:陌生定义(现场阅读$\\triangle$运算)+链长(由定义推出与$\\max$/均值的关系需2-3步)+边界分类(检验各选项反例).",
         "knowledge_points_added": [
-          "M1"
+          "M4"
         ],
-        "difficulty_shift": "New definition forces on-the-spot abstraction; the chain from definition to enumeration involves multiple techniques (algebraic manipulation, number theory, systematic counting).",
-        "stem_diff": [
-          "题干改写：Created a new-definition operator problem ($\\star$) requiring students to derive the divisibility condition $a+b\\mid ab$ and enumerate harmonious pairs under a bounded constraint.",
-          "结构加法：Abstract+chain:陌生定义(现场阅读$\\star$运算)+链长(从定义到$\\gcd$分解再到枚举需2-3步)+分类边界($x+y\\mid d$的关键转化)."
-        ]
+        "difficulty_shift": "New definition forces on-the-spot reading; reasoning uses bounding by max and the AM comparison, with counterexamples for distractors."
       },
       "scope_check": {
         "topics_in_whitelist": true,
         "hits_blacklist": false,
         "trig_unit_ok": true,
-        "logic_only_in_tmua_p2": true
+        "logic_only_in_tmua_p2": false
       }
     },
     {
@@ -928,45 +925,49 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Coordinate Geometry",
+      "topic": "Algebra and Functions",
       "topicIds": [
-        "M3",
         "M4"
       ],
-      "difficulty": 4,
+      "difficulty": 5,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-GEOSYM1",
+      "source": "TMUA-P1-MOCK9-FEQPOLY1",
       "sourceType": "TMUA",
-      "stem": "The line $y=mx+3$ is tangent to the circle $(x-2)^2+(y-1)^2=4$. What is the value of $m$?",
+      "stem": "Let $f$ be a polynomial such that $f(x+1)=f(x)+2x$ for all real $x$, and let $f(0)=c$. Suppose that $f(x)\\ge 0$ for every real $x$ and that $f(x)=0$ for exactly one real value of $x$. What is $c$?",
       "options": [
+        "$-\\frac14$",
         "0",
-        "$\\frac{3}{4}$",
-        "1",
-        "$\\frac{4}{3}$",
-        "2"
+        "$\\frac14$",
+        "$\\frac12$",
+        "1"
       ],
-      "answer": "0",
-      "solution": "For a line to be tangent to a circle, the distance from the center to the line must equal the radius.\n\nCircle: $(x-2)^2+(y-1)^2=4$, so center $C(2,1)$ and radius $r=2$.\n\nLine: $y=mx+3$, or in standard form: $mx-y+3=0$.\n\nDistance from point $(2,1)$ to line $mx-y+3=0$:\n$$d = \\frac{|m(2)-1+3|}{\\sqrt{m^2+(-1)^2}} = \\frac{|2m+2|}{\\sqrt{m^2+1}}$$\n\nSet $d=r=2$:\n$$\\frac{|2m+2|}{\\sqrt{m^2+1}} = 2$$\n$$|2m+2| = 2\\sqrt{m^2+1}$$\n$$|m+1| = \\sqrt{m^2+1}$$\n\nSquare both sides:\n$(m+1)^2 = m^2+1$\n$m^2+2m+1 = m^2+1$\n$2m = 0$\n$m = 0$\n\nHmm, that gives $m=0$. Let me verify: with $m=0$: line is $y=3$, distance from $(2,1)$ to $y=3$ is $|3-1|=2$ ✓. So $m=0$ works.\n\nBut the expected answer is $\\frac{3}{4}$. Let me check if there's another tangent line...\n\nActually, upon reflection, I realize there should be TWO tangent lines from an external point, but here the line has a fixed y-intercept of 3. With $m=0$, we get one tangent. The other solution might require checking if the discriminant allows it.\n\nGiven the options, let me verify $m=\\frac{3}{4}$:\nLine: $y=\\frac{3}{4}x+3$. Distance from $(2,1)$:\n$d = \\frac{|\\frac{3}{4}(2)+2|}{\\sqrt{(\\frac{3}{4})^2+1}} = \\frac{|\\frac{3}{2}+2|}{\\sqrt{\\frac{9}{16}+1}} = \\frac{\\frac{7}{2}}{\\sqrt{\\frac{25}{16}}} = \\frac{\\frac{7}{2}}{\\frac{5}{4}} = \\frac{14}{5} = 2.8 \\neq 2$\n\nSo $m=\\frac{3}{4}$ doesn't work. The correct answer based on my calculation is $m=0$.",
+      "answer": "$\\frac14$",
+      "solution": "Step 1: Determine the degree of $f$. If $\\deg f=n$, then $f(x+1)-f(x)$ has degree $n-1$, while the right-hand side $2x$ has degree $1$. Hence $n-1=1$, so $n=2$.\n\nStep 2: Write $f(x)=ax^2+bx+c$ (the constant term is $f(0)=c$). Then\n$f(x+1)-f(x)=a(x+1)^2+b(x+1)+c-(ax^2+bx+c)=2ax+(a+b)$.\nEquating to $2x$ gives $2a=2\\implies a=1$ and $a+b=0\\implies b=-1$. Thus $f(x)=x^2-x+c$.\n\nStep 3: The condition $f(x)\\ge0$ for all real $x$ with exactly one zero means the upward-opening parabola just touches the $x$-axis, i.e. its discriminant is zero:\n$\\Delta = (-1)^2-4(1)(c)=1-4c=0\\implies c=\\frac14$.\n\nHence $c=\\frac14$.",
       "distractors_rationale": {
-        "0": "Correct answer based on distance formula.",
-        "1": "Uses slope=1 without verification.",
-        "$\\frac{4}{3}$": "Confuses reciprocal.",
-        "2": "Doubles the coefficient."
+        "$-\\frac14$": "Applies the discriminant condition but with the wrong sign for the linear coefficient.",
+        "0": "Forgets that a zero discriminant is required for exactly one root.",
+        "$\\frac12$": "Mis-solves $1-4c=0$ as $c=\\frac12$.",
+        "1": "Uses $f(1)=1$ incorrectly instead of the double-root condition."
       },
-      "source_reference": null,
+      "source_reference": {
+        "paper_id": "ORIGINAL-DESIGN",
+        "exam": "TMUA-STYLE",
+        "paper": "P1",
+        "year": null,
+        "question_no": null,
+        "original_stem_excerpt": null,
+        "original_topic_codes": [
+          "Algebra and Functions"
+        ]
+      },
       "adaptation_report": {
-        "summary": "Replaced pure algebraic manipulation with a coordinate geometry problem requiring understanding of tangency conditions (distance from center to line equals radius).",
-        "technique_added": "Chain+geometric intuition:几何直观(切线性质)+链长(点到直线距离公式→解绝对值方程需2-3步)+数形结合(解析几何与代数).",
+        "summary": "Original-design functional-equation problem: a polynomial satisfying $f(x+1)=f(x)+2x$, pinned by a non-negativity plus unique-zero condition.",
+        "technique_added": "Abstract+chain: 陌生定义(函数方程)+链长(定次数→设二次→比较系数→判别式双条件共4步)+分类边界(恰一个零点⇔判别式=0).",
         "knowledge_points_added": [
-          "M3",
           "M4"
         ],
-        "difficulty_shift": "Original was pure symmetric polynomial algebra; adaptation requires geometric understanding (tangency as distance condition) and systematic application of the point-to-line distance formula.",
-        "stem_diff": [
-          "题干改写：Replaced pure algebraic manipulation with a coordinate geometry problem requiring understanding of tangency conditions (distance from center to line equals radius).",
-          "结构加法：Chain+geometric intuition:几何直观(切线性质)+链长(点到直线距离公式→解绝对值方程需2-3步)+数形结合(解析几何与代数)."
-        ]
+        "difficulty_shift": "Replaces the cliche circle-tangent problem with an abstract functional-equation deduction requiring degree analysis and discriminant reasoning."
       },
       "scope_check": {
         "topics_in_whitelist": true,
@@ -1036,53 +1037,49 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Numbers and Sets",
+      "topic": "Algebra and Functions",
       "topicIds": [
-        "M1"
+        "M4"
       ],
-      "difficulty": 4,
+      "difficulty": 5,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-T2017Q3",
+      "source": "TMUA-P1-MOCK9-INVOL1",
       "sourceType": "TMUA",
-      "stem": "How many integers $n$ with $1\\le n\\le 100$ are divisible by $4$ but not by $6$?",
+      "stem": "A function $f:\\{1,2,3\\}\\to\\{1,2,3\\}$ is called an *involution* if $f(f(x))=x$ for every $x\\in\\{1,2,3\\}$. How many involutions are there among all such functions?",
       "options": [
-        "17",
-        "20",
-        "21",
-        "25",
-        "33"
+        "1",
+        "2",
+        "3",
+        "4",
+        "6"
       ],
-      "answer": "17",
-      "solution": "Multiples of 4 in [1,100]: $\\lfloor100/4\\rfloor=25$.\nThose also divisible by 6 ⟺ divisible by lcm(4,6)=12: $\\lfloor100/12\\rfloor=8$.\nAnswer $=25-8=17$.",
+      "answer": "4",
+      "solution": "An involution satisfies $f=f^{-1}$, so its cycle decomposition uses only fixed points (1-cycles) and transpositions (2-cycles).\n\nOn the set $\\{1,2,3\\}$:\n- All three fixed: the identity function - 1 function.\n- Exactly one fixed point and one transposition of the other two: choose the fixed point in $\\binom{3}{1}=3$ ways; the remaining two must swap. This gives 3 functions.\n- A product of disjoint transpositions covering all three points is impossible (it would require an even number of points).\n\nTotal $=1+3=4$ involutions.\n\nExplicitly: (i) $1\\to1,\\,2\\to2,\\,3\\to3$; (ii) $1\\to1,\\,2\\leftrightarrow3$; (iii) $2\\to2,\\,1\\leftrightarrow3$; (iv) $3\\to3,\\,1\\leftrightarrow2$.",
       "distractors_rationale": {
-        "20": "Subtracts multiples of 6 (16) wrongly or miscounts.",
-        "21": "Off by one.",
-        "25": "Counts all multiples of 4 only.",
-        "33": "Error."
+        "1": "Counts only the identity function.",
+        "2": "Misses some of the transpositions.",
+        "3": "Forgets the identity function.",
+        "6": "Counts all $3!=6$ permutations, including 3-cycles which are not involutions."
       },
       "source_reference": {
-        "paper_id": "TMUA-2017-P1-Q3",
-        "exam": "TMUA",
+        "paper_id": "ORIGINAL-DESIGN",
+        "exam": "TMUA-STYLE",
         "paper": "P1",
-        "year": 2017,
-        "question_no": 3,
-        "original_stem_excerpt": "A counting / sets question (inclusion-exclusion on divisibility).",
+        "year": null,
+        "question_no": null,
+        "original_stem_excerpt": null,
         "original_topic_codes": [
-          "Numbers and Sets"
+          "Algebra and Functions"
         ]
       },
       "adaptation_report": {
-        "summary": "Inclusion-exclusion count of numbers divisible by 4 but not by 6.",
-        "technique_added": "Chain+computation: kept divisibility counting, added the lcm(4,6)=12 exclusion step.",
+        "summary": "Original-design counting problem over finite functions: count involutions (self-inverse maps) on a 3-element set.",
+        "technique_added": "Abstract+chain+boundary: 新定义(involution 自逆映射)+链长(理解自逆→按循环结构分类:固定点/对换→枚举共3步)+分类边界(区分3-循环不可能).",
         "knowledge_points_added": [
-          "M1"
+          "M4"
         ],
-        "difficulty_shift": "Reference similar; the 'not divisible by 6' adds an exclusion step.",
-        "stem_diff": [
-          "题干改写：Inclusion-exclusion count of numbers divisible by 4 but not by 6.",
-          "结构加法：Chain+computation: kept divisibility counting, added the lcm(4,6)=12 exclusion step."
-        ]
+        "difficulty_shift": "Adds abstraction (algebraic structure of permutations / cycle decomposition) and a classification step absent from routine counting."
       },
       "scope_check": {
         "topics_in_whitelist": true,
@@ -1094,53 +1091,51 @@
     {
       "subject": "数学",
       "paper": "P1",
-      "topic": "Algebra and Functions",
+      "topic": "Sequences and Series",
       "topicIds": [
-        "M4"
+        "M4",
+        "MM7"
       ],
       "difficulty": 5,
       "type": "SINGLE_CHOICE",
       "status": "PUBLISHED",
-      "source": "TMUA-P1-MOCK9-T2017Q4",
+      "source": "TMUA-P1-MOCK9-SEQREC1",
       "sourceType": "TMUA",
-      "stem": "Suppose $f$ is an even function and $g$ is an odd function, both defined on $\\mathbb{R}$. Which of the following is necessarily an odd function?",
+      "stem": "A sequence $(a_n)_{n\\ge1}$ is defined by $a_1=1$ and $a_{n+1}=\\frac{a_n}{1+na_n}$ for $n\\ge1$. What is the smallest positive integer $N$ such that $a_N<\\frac1{90}$?",
       "options": [
-        "$f(x)+g(x)$",
-        "$f(x)g(x)$",
-        "$f(g(x))$",
-        "$g(f(x))$",
-        "$f(x)-f(-x)$"
+        "10",
+        "11",
+        "12",
+        "13",
+        "14"
       ],
-      "answer": "$f(x)g(x)$",
-      "solution": "Even: $f(-x)=f(x)$; odd: $g(-x)=-g(x)$.\nA: $h(-x)=f(-x)+g(-x)=f(x)-g(x)\\neq \\pm h(x)$ generally — neither.\nB: $h(-x)=f(-x)g(-x)=f(x)\\cdot(-g(x))=-f(x)g(x)=-h(x)$ → ODD. ✓\nC: $f(g(-x))=f(-g(x))=f(g(x))$ (f even) → even.\nD: $g(f(-x))=g(f(x))$ (f even) → even (since g odd applied to same arg).\nE: $f(x)-f(-x)=f(x)-f(x)=0$, the zero function is both even and odd, not 'necessarily odd' exclusively; but B is strictly odd. Choose B.",
+      "answer": "14",
+      "solution": "Take reciprocals. Let $b_n=\\frac1{a_n}$. From $a_{n+1}=\\frac{a_n}{1+na_n}$ we get\n$\\frac1{a_{n+1}}=\\frac{1+na_n}{a_n}=\\frac1{a_n}+n$, i.e. $b_{n+1}=b_n+n$.\nWith $b_1=\\frac1{a_1}=1$, this gives\n$b_n=1+\\sum_{k=1}^{n-1}k=1+\\frac{(n-1)n}{2}=\\frac{n^2-n+2}{2}$.\nSo $a_n=\\frac{2}{n^2-n+2}$.\n\nWe need $a_N<\\frac1{90}$, i.e. $\\frac{2}{N^2-N+2}<\\frac1{90}\\implies 180<N^2-N+2\\implies N^2-N-178>0$.\nThe positive root is $N>\\frac{1+\\sqrt{1+712}}{2}=\\frac{1+\\sqrt{713}}{2}$. Since $26^2=676$ and $27^2=729$, $\\sqrt{713}\\approx26.7$, so $N>\\frac{27.7}{2}\\approx13.85$.\nThus the smallest integer is $N=14$.\n\nCheck: $a_{13}=\\frac{2}{169-13+2}=\\frac{2}{158}=\\frac1{79}>\\frac1{90}$, while $a_{14}=\\frac{2}{196-14+2}=\\frac{2}{184}=\\frac1{92}<\\frac1{90}$.",
       "distractors_rationale": {
-        "$f(x)+g(x)$": "Generally neither even nor odd.",
-        "$f(g(x))$": "Even (f even absorbs the sign).",
-        "$g(f(x))$": "Even (f even makes the inner argument symmetric).",
-        "$f(x)-f(-x)$": "Zero function, both even and odd (not the best 'necessarily odd' choice)."
+        "10": "Underestimates how slowly the denominator grows.",
+        "11": "Underestimates how slowly the denominator grows.",
+        "12": "Underestimates how slowly the denominator grows.",
+        "13": "Off-by-one: $a_{13}=\\frac1{79}>\\frac1{90}$ still fails the inequality."
       },
       "source_reference": {
-        "paper_id": "TMUA-2017-P1-Q4",
-        "exam": "TMUA",
+        "paper_id": "ORIGINAL-DESIGN",
+        "exam": "TMUA-STYLE",
         "paper": "P1",
-        "year": 2017,
-        "question_no": 4,
-        "original_stem_excerpt": "A question on parity (even/odd) of functions and their combinations.",
+        "year": null,
+        "question_no": null,
+        "original_stem_excerpt": null,
         "original_topic_codes": [
-          "Algebra and Functions"
+          "Sequences and Series"
         ]
       },
       "adaptation_report": {
-        "summary": "Tested parity of combinations of an even and an odd function, including composed cases.",
-        "technique_added": "Abstract+chain: kept parity rules, added composition cases f(g(x)) and g(f(x)).",
+        "summary": "Original-design sequence problem: a reciprocal transform reveals an arithmetic pattern, then a quadratic inequality with boundary rounding.",
+        "technique_added": "Chain+computation+boundary: 链长(递推→取倒数→等差→求和公式→二次不等式共5步)+精确值无计算器(手算根号近似)+分类边界(严格不等式向上取整).",
         "knowledge_points_added": [
-          "M4"
+          "M4",
+          "MM7"
         ],
-        "difficulty_shift": "Reference similar; compositions raise abstraction.",
-        "stem_diff": [
-          "题干改写：Tested parity of combinations of an even and an odd function, including composed cases.",
-          "结构加法：Abstract+chain: kept parity rules, added composition cases f(g(x)) and g(f(x))."
-        ]
+        "difficulty_shift": "Requires the non-obvious reciprocal insight plus careful inequality direction and integer rounding."
       },
       "scope_check": {
         "topics_in_whitelist": true,
