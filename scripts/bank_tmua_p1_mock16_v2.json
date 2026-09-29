@@ -1,0 +1,414 @@
+{
+  "paper": {
+    "title": "TMUA Paper 1 模考16",
+    "subject": "数学",
+    "sourceKey": "数学::P1::TMUA-P1-MOCK16",
+    "source": "TMUA-P1-MOCK16",
+    "sourceType": "TMUA",
+    "paper": "P1",
+    "totalQuestions": 20,
+    "timeLimit": 75
+  },
+  "questions": [
+    {
+      "source": "TMUA-P1-MOCK16-Q1",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "The side lengths of a right-angled triangle form an arithmetic progression with common difference $d > 0$. The area of this triangle equals its perimeter. What is the length of the hypotenuse?",
+      "options": [
+        "5",
+        "8",
+        "10",
+        "12",
+        "15"
+      ],
+      "answer": "10",
+      "solution": "【解析】设三边为 $a-d$, $a$, $a+d$（$d>0$），斜边必为最大者 $a+d$。勾股定理：$(a-d)^2 + a^2 = (a+d)^2 \\Rightarrow a^2 - 4ad = 0 \\Rightarrow a = 4d$。故三边比为 $3d : 4d : 5d$，即所有边成等差的直角三角形必相似于 3-4-5 三角形（唯一排列）。\n面积 $= \\frac{1}{2} \\cdot 3d \\cdot 4d = 6d^2$；周长 $= 3d + 4d + 5d = 12d$。\n令面积 = 周长：$6d^2 = 12d \\Rightarrow d = 2$（$d > 0$）。斜边 $= 5d = 10$。\nV3 修正：原版使用内切圆/外接圆半径公式（超纲），现改为仅用勾股定理+面积公式+解方程，完全在考纲内。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q2",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "An arithmetic progression has first term $a$ and non-zero common difference $d$. Its 1st, 5th and 14th terms form a geometric progression in that order. The fourth term of this geometric progression equals $N$ for some positive integer $N$. If $d$ must be a positive integer, what is the smallest possible value of $N$?",
+      "options": [
+        "729",
+        "6561",
+        "531441",
+        "4782969",
+        "387420489"
+      ],
+      "answer": "729",
+      "solution": "【解析】设 AP 首项 $a$、公差 $d \\neq 0$。第 1, 5, 14 项为 $a$, $a+4d$, $a+13d$，成 GP：$(a+4d)^2 = a(a+13d) \\Rightarrow 16d^2 = 5ad \\Rightarrow a = \\frac{16d}{5}$。公比 $r = \\frac{a+4d}{a} = \\frac{9}{4}$。GP 第 4 项 $= a \\cdot r^3 = \\left(\\frac{16d}{5}\\right)\\left(\\frac{729}{64}\\right) = \\frac{729d}{20} = N$。故 $N = \\frac{729d}{20}$，为整数需 $20 \\mid d$（因 $\\gcd(729, 20) = 1$）。最小正整数 $d = 20$，得 $N = 729$。\n关键：从 GP 条件推出 $a/d$ 比 → 参数化第 4 项 → 整数性约束迫使 $d$ 取特定倍数。三层推理链。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q3",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "Evaluate $\\displaystyle\\sum_{r=1}^{89} \\sin r° \\cos r° \\tan(90-r)°$.",
+      "options": [
+        "$0$",
+        "$44$",
+        "$\\dfrac{89}{2}$",
+        "$45$",
+        "$89$"
+      ],
+      "answer": "$\\dfrac{89}{2}$",
+      "solution": "【解析】先化简通项：$\\tan(90-r)° = \\dfrac{\\cos r°}{\\sin r°}$，故 $\\sin r° \\cos r° \\tan(90-r)° = \\sin r° \\cos r° \\cdot \\dfrac{\\cos r°}{\\sin r°} = \\cos^2 r°$。于是所求 $= \\displaystyle\\sum_{r=1}^{89} \\cos^2 r°$。把 $r$ 与 $90-r$ 配对：$\\cos^2 r° + \\cos^2(90-r)° = \\cos^2 r° + \\sin^2 r° = 1$。$r = 1, \\ldots, 89$ 中 $r = 45$ 自配（$\\cos^2 45° = \\frac{1}{2}$），其余 88 个数配成 44 对。总和 $= 44 \\cdot 1 + \\frac{1}{2} = \\dfrac{89}{2}$。\n只用 $\\sin^2 + \\cos^2 = 1$ 与互补配对，不需倍角公式。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q4",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A square of area $A$ has a circle inscribed in it; a square is inscribed in that circle; a circle is inscribed in that square; and this process continues indefinitely.\nIn each square, the region outside its inscribed circle is shaded dark; in each circle, the region outside its inscribed square is shaded light.\n\nLet $D$ be the total dark area and $L$ the total light area (summed over all layers). What is $D/L$?",
+      "options": [
+        "$\\dfrac{\\pi - 2}{4 - \\pi}$",
+        "$\\dfrac{4 - \\pi}{\\pi - 2}$",
+        "$\\dfrac{4}{\\pi}$",
+        "$1$",
+        "$\\dfrac{4 - \\pi}{2\\pi - 4}$"
+      ],
+      "answer": "$\\dfrac{4 - \\pi}{\\pi - 2}$",
+      "solution": "【解析】设最外层正方形面积为 $A$。每向内一层，正方形面积减半（内接正方形面积 = 外接圆面积的一半 $\\times 2/\\pi$ … 实际上直接关系是：圆面积 $= \\pi A/4$，下一层正方形面积 $= A/2$）。\n第 $k$ 个正方形面积 $S_k = A \\cdot (1/2)^{k-1}$（$k=1,2,\\ldots$），第 $k$ 个圆面积 $C_k = \\dfrac{\\pi A}{4} \\cdot (1/2)^{k-1}$。\n深色（方内圆外）：$D = \\displaystyle\\sum_{k \\geq 1}(S_k - C_k) = A\\left(1 - \\dfrac{\\pi}{4}\\right) \\cdot \\sum (1/2)^{k-1} = A\\left(1 - \\dfrac{\\pi}{4}\\right) \\cdot 2 = A\\left(2 - \\dfrac{\\pi}{2}\\right)$。\n浅色（圆内方外）：$L = \\displaystyle\\sum_{k \\geq 1}(C_k - S_{k+1}) = A\\left(\\dfrac{\\pi}{4} - \\dfrac{1}{2}\\right) \\cdot 2 = A\\left(\\dfrac{\\pi}{2} - 1\\right)$。\n比值 $D/L = \\dfrac{2 - \\pi/2}{\\pi/2 - 1} = \\dfrac{(4-\\pi)/2}{(\\pi-2)/2} = \\dfrac{4 - \\pi}{\\pi - 2} \\approx 0.752$。\nV3 深化点：$A$ 在比值中完全消去——这是几何自相似性的体现，与初始尺寸无关。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q5",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "The quadratic equation $36x^2 + kx + 25 = 0$ has two distinct real roots, both of which are negative rational numbers. How many integer values of $k$ satisfy this condition?",
+      "options": [
+        "7",
+        "10",
+        "13",
+        "14",
+        "18"
+      ],
+      "answer": "13",
+      "solution": "【解析】判别式 $\\Delta = k^2 - 3600 > 0 \\Rightarrow |k| > 60$。两根之和 $= -k/36 < 0 \\Rightarrow k > 0$；两根之积 $= 25/36 > 0$ 恒成立。有理根要求 $\\Delta = m^2$（$m$ 为正整数），即 $k^2 - m^2 = 3600$，$(k-m)(k+m) = 3600$。$k, m$ 同奇偶，而 $2k = (k-m)+(k+m)$ 为偶数，故 $k-m$, $k+m$ 均为偶数。枚举 3600 的偶因子对 $(d,e)$ 使 $d < e$，得 $k = (d+e)/2 > 60$。共 13 组。\n关键：综合判别式、韦达定理符号条件、完全平方约束、因子分解——四层逻辑嵌套。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q6",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "Let $I = \\log_2(1^1 \\times 2^2 \\times 4^4 \\times 8^8 \\times 16^{16} \\times 32^{32} \\times 64^{64})$. What is the sum of all distinct prime factors of $I$?",
+      "options": [
+        "107",
+        "110",
+        "112",
+        "321",
+        "326"
+      ],
+      "answer": "112",
+      "solution": "【解析】$I = \\log_2(1^1 \\times 2^2 \\times 4^4 \\times 8^8 \\times 16^{16} \\times 32^{32} \\times 64^{64})$。\n写为 2 的幂：$1^1 = 2^0$，$2^2 = 2^2$，$4^4 = 2^8$，$8^8 = 2^{24}$，$16^{16} = 2^{64}$，$32^{32} = 2^{160}$，$64^{64} = 2^{384}$。\n指数之和 $= 0 + 2 + 8 + 24 + 64 + 160 + 384 = 642$。\n所以 $I = 642 = 2 \\times 3 \\times 107$，三个不同素因子之和 $= 2 + 3 + 107 = 112$。\n关键：V2 只求最大素因子 107；V3 要求全部素因子之和，必须完成完整分解。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q7",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "For a real parameter $a > 0$, let $N(a)$ denote the number of solutions in $[0, 2\\pi]$ of the equation $a + |2\\sin x| = |4 - \\cos x|$. What is the maximum value of $N(a)$ as $a$ varies?",
+      "options": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "6"
+      ],
+      "answer": "4",
+      "solution": "【解析】因 $4 - \\cos x \\geq 3 > 0$，方程化为 $|2\\sin x| = 4 - \\cos x - a$，需 RHS $\\geq 0$。\n支 1（$\\sin x \\geq 0$）：$2\\sin x + \\cos x = 4 - a$。左端在 $[0, \\pi]$ 上的值域为 $[-1, \\sqrt{5}]$，故该支有 2 解 $\\Leftrightarrow -1 < 4-a < \\sqrt{5}$。\n支 2（$\\sin x < 0$）：$-2\\sin x + \\cos x = 4 - a$。左端在 $(\\pi, 2\\pi)$ 上的值域同为 $[-1, \\sqrt{5}]$，故该支也有 2 解。\n当 $4 - \\sqrt{5} < a < 4$ 时两支各贡献 2 解 $\\Rightarrow N(a) = 4$（最大值）。\nV3 深化点：不再是固定 $a$ 数解，而是分析 $N(a)$ 作为 $a$ 的分段函数，用辅助角公式确定各支值域后得到精确的参数区间。最大值 4。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q8",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "As the real number $p$ varies, the vertex of the curve $y = x^2 - px + (p+1)$ traces out a curve $C$. What is the area of the region enclosed between $C$ and the $x$-axis?",
+      "options": [
+        "$\\dfrac{4\\sqrt{2}}{3}$",
+        "$\\dfrac{8}{3}$",
+        "$\\dfrac{8\\sqrt{2}}{3}$",
+        "$4\\sqrt{2}$",
+        "$\\dfrac{16\\sqrt{2}}{3}$"
+      ],
+      "answer": "$\\dfrac{8\\sqrt{2}}{3}$",
+      "solution": "【解析】$y = x^2 - px + (p+1)$ 的顶点横坐标 $x = p/2$，故 $p = 2x$；纵坐标 $y = (p+1) - p^2/4 = 2x + 1 - x^2$。即轨迹 $C: y = -x^2 + 2x + 1$（一条开口向下的抛物线）。\n与 $x$ 轴交点：$x^2 - 2x - 1 = 0 \\Rightarrow x = 1 \\pm \\sqrt{2}$。面积 $= \\displaystyle\\int_{1-\\sqrt{2}}^{1+\\sqrt{2}}(-x^2+2x+1)\\,\\mathrm{d}x = \\dfrac{8\\sqrt{2}}{3}$。\n结构：参数消元求轨迹（形式化变换）+ 定积分求面积，两个层次。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q9",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "In triangle $RQS$, the line $RT$ bisects $\\angle QRS$, with $T$ on $QS$. It is given that $QT : TS = 3 : 2$, the difference between the areas of triangles $RQT$ and $RTS$ is $4$, and $\\dfrac{QS}{\\sin\\angle QRS} = 10$.\n\nHow many possible values can $\\angle QRS$ take?",
+      "options": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "answer": "2",
+      "solution": "【解析】由角平分线定理：$QT/TS = RQ/RS = 3/2$。设 $RQ = 3k$, $RS = 2k$。\n面积差：$[RQT] - [RTS] = \\dfrac{3-2}{3+2}[RQS] = \\dfrac{1}{5}[RQS] = 4 \\Rightarrow [RQS] = 20$。\n面积公式：$20 = \\dfrac{1}{2} \\cdot 3k \\cdot 2k \\cdot \\sin\\theta = 3k^2 \\sin\\theta \\Rightarrow k^2 = \\dfrac{20}{3\\sin\\theta}$。\n题设给出 $QS/\\sin\\theta = 10$，即 $QS = 10\\sin\\theta$。余弦定理：$QS^2 = k^2(9+4-12\\cos\\theta) = k^2(13-12\\cos\\theta)$。\n联立：$100\\sin^2\\theta = \\dfrac{20}{3\\sin\\theta}(13-12\\cos\\theta) \\Rightarrow 15\\sin^3\\theta = 13 - 12\\cos\\theta$。\n该超越方程在 $(0, \\pi)$ 内恰有 2 个解，均使 $k^2 > 0$ 且构成合法三角形。答案：2 个可能值。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q10",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "In the expansion of $(k + (1+x)^3)^4$, where $k$ is a constant, the coefficient of $x^8$ is 315. What is the coefficient of $x^6$ in this expansion?",
+      "options": [
+        "$-606$",
+        "$-378$",
+        "$225$",
+        "$495$",
+        "$96$"
+      ],
+      "answer": "$-606$",
+      "solution": "【解析】令 $u = (1+x)^3$。展开验证：$c_8(k) = 36k + 495$。令 $36k + 495 = 315 \\Rightarrow k = -5$。代回展开得 $c_6(-5) = -606$。\n关键：需要先反推 $k = -5$，再代入求 $x^6$ 系数。两步运算，负 $k$ 带来符号陷阱。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q11",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "Find the complete set of real values of $x$ for which $x^3 + 3\\sqrt{3}\\,x^2 + 9x + 3\\sqrt{3} \\geq 2x^2 + 4\\sqrt{3}\\,x + 6$.",
+      "options": [
+        "$x \\geq 2 - \\sqrt{3}$",
+        "$x = -\\sqrt{3}$ or $x \\geq 2 - \\sqrt{3}$",
+        "$x \\geq -\\sqrt{3}$",
+        "$x > 2 - \\sqrt{3}$",
+        "$x \\leq -\\sqrt{3}$ or $x \\geq 2 - \\sqrt{3}$"
+      ],
+      "answer": "$x = -\\sqrt{3}$ or $x \\geq 2 - \\sqrt{3}$",
+      "solution": "【解析】观察两边的结构：$x^3 + 3\\sqrt{3}\\,x^2 + 9x + 3\\sqrt{3} = (x+\\sqrt{3})^3$，$2x^2 + 4\\sqrt{3}\\,x + 6 = 2(x+\\sqrt{3})^2$。（校验：$(x+\\sqrt{3})^3 = x^3 + 3\\sqrt{3}\\,x^2 + 9x + 3\\sqrt{3}$ ✓；$2(x+\\sqrt{3})^2 = 2x^2 + 4\\sqrt{3}\\,x + 6$ ✓）\n令 $u = x + \\sqrt{3}$，不等式化为 $u^3 \\geq 2u^2$，即 $u^2(u-2) \\geq 0$。因 $u^2 \\geq 0$，解为 $u \\geq 2$ 或 $u = 0$。\n回代：$x \\geq 2 - \\sqrt{3}$ 或 $x = -\\sqrt{3}$。\n关键：$u = 0$ 这个孤立点常被漏掉——不能直接除以 $u^2$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q12",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A continuous function $f$ satisfies $f(x+1) = -f(x)$ for every real $x$. It is given that $\\displaystyle\\int_0^1 f(x)\\,\\mathrm{d}x = 5$ and $\\displaystyle\\int_0^{1/2} f(x)\\,\\mathrm{d}x = 2$. What is $\\displaystyle\\int_0^{7/2} f(x)\\,\\mathrm{d}x$?",
+      "options": [
+        "0",
+        "3",
+        "5",
+        "8",
+        "10"
+      ],
+      "answer": "3",
+      "solution": "【解析】$f(x+1) = -f(x) \\Rightarrow f(x+2) = f(x)$，周期 2。$\\displaystyle\\int_0^2 f = 0$。系统方法：将 $[0, 7/2]$ 分成 7 个半周期，每个半周期交替取值。设 $A = \\int_0^1 f = 5$，$B = \\int_0^{1/2} f = 2$，则 $\\int_{1/2}^1 f = A - B = 3$。由周期 2：$\\int_0^{7/2} f = \\int_0^{3/2} f = \\int_0^1 f + \\int_1^{3/2} f = A + (-B) = 5 - 2 = 3$。\n关键：七个半周期的符号翻转追踪。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q13",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A geometric progression has first term 1 and common ratio $g^2 - 4g + 2$, where $g$ is real. The progression has a sum to infinity, and that sum is greater than 1. Find the complete set of possible values of $g$.",
+      "options": [
+        "$2-\\sqrt{3} < g < 2+\\sqrt{3}$",
+        "$2-\\sqrt{3} < g < 2-\\sqrt{2}$ or $2+\\sqrt{2} < g < 2+\\sqrt{3}$",
+        "$2-\\sqrt{2} < g < 2+\\sqrt{2}$",
+        "$2-\\sqrt{3} < g < 2-\\sqrt{2}$",
+        "$2+\\sqrt{2} < g < 2+\\sqrt{3}$"
+      ],
+      "answer": "$2-\\sqrt{3} < g < 2-\\sqrt{2}$ or $2+\\sqrt{2} < g < 2+\\sqrt{3}$",
+      "solution": "【解析】公比 $r = g^2 - 4g + 2$。级数有和须 $|r| < 1$，此时 $S_\\infty = \\dfrac{1}{1-r}$。\n$S_\\infty > 1 \\Leftrightarrow \\dfrac{1}{1-r} > 1$。因 $|r| < 1 \\Rightarrow 1-r > 0$，可乘：$1 > 1-r \\Rightarrow r > 0$。故条件等价于 $0 < r < 1$，即 $0 < g^2 - 4g + 2 < 1$。\n左端：$g^2 - 4g + 2 > 0 \\Leftrightarrow g < 2-\\sqrt{2}$ 或 $g > 2+\\sqrt{2}$。\n右端：$g^2 - 4g + 1 < 0 \\Leftrightarrow 2-\\sqrt{3} < g < 2+\\sqrt{3}$。\n取交集：$g \\in (2-\\sqrt{3},\\, 2-\\sqrt{2}) \\cup (2+\\sqrt{2},\\, 2+\\sqrt{3})$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q14",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "The tangents to the circle $x^2 + y^2 = 20$ at the points $A(4, 2)$ and $B(2, 4)$ meet at the point $P$. What is the area of the quadrilateral $OAPB$, where $O$ is the origin?",
+      "options": [
+        "$\\dfrac{10}{3}$",
+        "$\\dfrac{20}{3}$",
+        "$10$",
+        "$\\dfrac{40}{3}$",
+        "$20$"
+      ],
+      "answer": "$\\dfrac{20}{3}$",
+      "solution": "【解析】圆 $x^2+y^2=20$ 在点 $(x_0, y_0)$ 处的切线为 $x_0 x + y_0 y = 20$。\n在 $A(4,2)$：$4x+2y=20$，即 $2x+y=10$；在 $B(2,4)$：$2x+4y=20$，即 $x+2y=10$。\n联立：相减得 $x=y$，代入 $3x=10 \\Rightarrow P=(10/3, 10/3)$。\n$OAPB$ 由两个全等直角三角形 $OAP$、$OBP$ 组成（$OA \\perp AP$，$OA = OB = \\sqrt{20}$）。$AP = \\sqrt{(4-10/3)^2 + (2-10/3)^2} = \\sqrt{4/9 + 16/9} = \\sqrt{20}/3$。\n面积 $= 2 \\cdot \\frac{1}{2} \\cdot OA \\cdot AP = \\sqrt{20} \\cdot \\frac{\\sqrt{20}}{3} = \\frac{20}{3}$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q15",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A geometric progression with positive terms has sum to infinity equal to 1. What is the greatest possible value of (second term) + (third term)?",
+      "options": [
+        "$\\dfrac{1}{4}$",
+        "$\\dfrac{27}{4}$",
+        "$\\dfrac{2\\sqrt{3}}{9}$",
+        "$\\dfrac{1}{3}$",
+        "$\\dfrac{\\sqrt{3}}{9}$"
+      ],
+      "answer": "$\\dfrac{2\\sqrt{3}}{9}$",
+      "solution": "【解析】设首项 $a > 0$、公比 $r \\in (0,1)$。$S_\\infty = \\dfrac{a}{1-r} = 1 \\Rightarrow a = 1-r$。\n所求 $= ar + ar^2 = (1-r)(r+r^2) = (1-r)r(1+r) = r(1-r^2) = r - r^3$。\n令 $h(r) = r - r^3$，$h'(r) = 1 - 3r^2 = 0 \\Rightarrow r = \\dfrac{1}{\\sqrt{3}}$（在 $(0,1)$ 内），$h'' < 0$ 为极大。\n最大值 $h\\!\\left(\\dfrac{1}{\\sqrt{3}}\\right) = \\dfrac{1}{\\sqrt{3}} - \\dfrac{1}{3\\sqrt{3}} = \\dfrac{2}{3\\sqrt{3}} = \\dfrac{2\\sqrt{3}}{9}$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q16",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A circle of radius 5 has its centre on the $y$-axis and touches the curve $y = \\dfrac{1}{2}x^2$ at two distinct points. What is the distance between those two points of contact?",
+      "options": [
+        "$2\\sqrt{6}$",
+        "$4\\sqrt{6}$",
+        "$8$",
+        "$4\\sqrt{5}$",
+        "$10$"
+      ],
+      "answer": "$4\\sqrt{6}$",
+      "solution": "【解析】设圆心 $(0, c)$，圆 $x^2 + (y-c)^2 = 25$。用 $x^2 = 2y$（$y \\geq 0$）消去 $x$：$2y + (y-c)^2 = 25 \\Rightarrow y^2 + (2-2c)y + (c^2-25) = 0$。\n两个切点关于 $y$ 轴对称、$y$ 坐标相同，故此 $y$ 的二次方程必须有重根：判别式 $= (2-2c)^2 - 4(c^2-25) = 4 - 8c + 104 = 0 \\Rightarrow c = 13$。\n此时方程为 $y^2 - 24y + 144 = (y-12)^2 = 0 \\Rightarrow y = 12$，$x^2 = 2y = 24 \\Rightarrow x = \\pm 2\\sqrt{6}$。\n两切点 $(\\pm 2\\sqrt{6}, 12)$，距离 $= 4\\sqrt{6}$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q17",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "Let $f(t) = t^2 - 2$. How many distinct real values of $x$ satisfy $f(f(f(f(x)))) = 2$?",
+      "options": [
+        "8",
+        "9",
+        "15",
+        "16",
+        "17"
+      ],
+      "answer": "9",
+      "solution": "【解析】逐层反向求解。记 $y_3 = f(f(f(x)))$ 等。\n① $f(y_3) = 2 \\Rightarrow y_3^2 = 4 \\Rightarrow y_3 \\in \\{2, -2\\}$（2 个）。\n② $f(y_2) = 2 \\Rightarrow y_2 = \\pm 2$；$f(y_2) = -2 \\Rightarrow y_2^2 = 0 \\Rightarrow y_2 = 0$。故 $y_2 \\in \\{2, -2, 0\\}$（3 个）。\n③ $f(y_1) \\in \\{2, -2, 0\\} \\Rightarrow y_1 \\in \\{\\pm 2\\} \\cup \\{0\\} \\cup \\{\\pm\\sqrt{2}\\}$（5 个）。\n④ $f(x) \\in \\{2, -2, 0, \\sqrt{2}, -\\sqrt{2}\\}$：分别给出 2, 1, 2, 2, 2 个实根，共 9 个，且互不相同。\n个数序列 $2 \\to 3 \\to 5 \\to 9$。不使用倍角公式或 $x = 2\\cos\\theta$ 的超纲代换，纯靠函数行为分析。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q18",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A continuous function $f$ satisfies $f(x) + f(1-x) = 1$ for all real $x$. What is the value of $\\displaystyle\\int_0^1 x f(x)\\,\\mathrm{d}x$?",
+      "options": [
+        "$\\dfrac{1}{6}$",
+        "$\\dfrac{1}{4}$",
+        "$\\dfrac{1}{3}$",
+        "$\\dfrac{1}{2}$",
+        "$\\dfrac{3}{4}$"
+      ],
+      "answer": "$\\dfrac{1}{4}$",
+      "solution": "【解析】令 $I = \\displaystyle\\int_0^1 x f(x)\\,\\mathrm{d}x$。由 $f(x)+f(1-x)=1$，换元 $u=1-x$ 得 $I = \\displaystyle\\int_0^1 (1-x)f(1-x)\\,\\mathrm{d}x = \\int_0^1 (1-x)(1-f(x))\\,\\mathrm{d}x$。\n注意 $xf(x) + (1-x)f(1-x) = x$（因为 $f(1-x) = 1-f(x)$）。故 $2I = \\displaystyle\\int_0^1 x\\,\\mathrm{d}x = 1/2$，$I = 1/4$。\n关键：利用函数方程的对称性构造配对积分，不需要知道 $f$ 的具体形式。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q19",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "A particle starts at the origin and travels along a rectangular spiral: first 1 unit east, then 2 units north, then 3 units west, then 4 units south, then 5 units east, and so on, each straight section being one unit longer than the previous one.\n\nAfter completing segment $N$, the particle is at position $(x_N, y_N)$. What is the smallest positive integer $N$ for which $x_N + y_N \\geq 50$?",
+      "options": [
+        "49",
+        "50",
+        "51",
+        "52",
+        "53"
+      ],
+      "answer": "50",
+      "solution": "【解析】追踪坐标：段 $k$ 方向为 E, N, W, S 循环。$x_N + y_N$ 仅在 $N \\equiv 2 \\pmod{4}$ 时取较大正值（向北段结束后）。$N = 46$: $(23, 24)$, $s = 47$；$N = 50$: $(25, 26)$, $s = 51 \\geq 50$。故最小 $N = 50$。\n关键：需要发现坐标的模式（每 4 段一个循环，$x+y$ 在特定相位取峰值），然后定位到满足阈值的最小 $N$。"
+    },
+    {
+      "source": "TMUA-P1-MOCK16-Q20",
+      "subject": "数学",
+      "paper": "P1",
+      "sourceType": "TMUA",
+      "type": "SINGLE_CHOICE",
+      "topic": "",
+      "topicIds": [],
+      "difficulty": 4,
+      "stem": "Three fair ordinary dice are thrown. Given that the three scores obtained can be the side lengths of a triangle of positive area, what is the probability that this triangle is isosceles (an equilateral triangle counting as isosceles)?",
+      "options": [
+        "$\\dfrac{23}{37}$",
+        "$\\dfrac{69}{216}$",
+        "$\\dfrac{111}{216}$",
+        "$\\dfrac{14}{37}$",
+        "$\\dfrac{1}{3}$"
+      ],
+      "answer": "$\\dfrac{23}{37}$",
+      "solution": "【解析】三骰子 216 个等可能有序结果。先求「能构成正面积三角形」的个数（排序后 $a \\leq b \\leq c$ 需 $a+b > c$）。\n等边：6 个。\n恰两边相等 $(a,a,b)$，$b \\neq a$：逐个 $a = 1 \\ldots 6$ 计数，共 21 个无序型，每型 3 种排列 = 63。\n三边互异：$\\{2,3,4\\}, \\{2,4,5\\}, \\{2,5,6\\}, \\{3,4,5\\}, \\{3,4,6\\}, \\{3,5,6\\}, \\{4,5,6\\}$ 共 7 型，每型 6 排列 = 42。\n三角形总数 $= 6 + 63 + 42 = 111$；其中等腰（含等边）$= 6 + 63 = 69$。\n条件概率 $= \\dfrac{69}{111} = \\dfrac{23}{37}$。"
+    }
+  ]
+}
