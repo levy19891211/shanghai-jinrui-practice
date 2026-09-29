@@ -1,5 +1,14 @@
 # 版本历史
 
+## V2.4.111 (2026-09-29) — 课程管理表单精简：删学科/任课教师，适用年级改多选，周课时改参考值
+- 需求：① 课程管理的操作权限向教务老师开放；② 删去「学科」「任课教师」字段；③ 适用年级改为多选；④ 「周课时」改为「参考周课时数」。
+- 权限核实：教务老师（teacherRole=ACADEMIC）的写权限在 V2.4.110 即已开放（后端 `isAcademicAdmin` 放行 POST/PUT/DELETE，前端 `canManage` 显示新建/编辑/停用/删除），本次以接口级 E2E 实证（教务老师建/改/删通过、普通教师 403）。若教务老师界面仍显示只读，重新登录即可刷新本地缓存的用户信息。
+- 数据：`SchoolCourse` 迁移 —— **删除** `subject`、`teacherName` 列；`grade`(单值) 改为 `grades`(逗号分隔多选，空=全年级通用)；唯一键 `@@unique([name, grade])` 收敛为 `name` 单列唯一（一门课一条记录、可覆盖多个年级）。既有 1 条记录（A Level 进阶数学）的年级值已保留迁移到 `grades`。属**破坏性列变更**，已按规程三重备份后执行。
+- 后端：`normalizeSchoolCourse` 删 subject/teacherName 白名单项（旧客户端多传字段自动丢弃）、`grade` 单值校验改为 `grades` 多值归一化（数组或逗号串 → 去重逗号串，≤6 个）；GET 过滤 `grade` 精确匹配改为 `grades contains` 子串匹配；查重从「name+grade」改为「name 单列」（POST/PUT 409 文案同步）。
+- 前端 `TeacherSchoolCourses.tsx`：表格删「学科」「任课教师」两列，「周课时」表头改「参考周课时数」，适用年级渲染为多枚年级徽章（空=全年级）；弹窗删「学科」「任课教师」输入框，适用年级改为 高一/高二/高三 复选框多选（都不勾选=全年级通用），「周课时」标签改「参考周课时数」（占位提示"参考值,可留空"）；搜索框占位改为「课程名称 / 备注」；年级筛选对「全年级通用」课程恒命中。
+- 验证：`tsc --noEmit` 通过；`prisma validate` 通过；接口级 E2E 全部通过且零残留；`next build` `Compiled successfully`；产物核对最新 chunk 含新表头、旧字段串计 0。
+- 部署：DB 三重备份（md5 见工作日志）；`prisma db push --accept-data-loss` + `prisma generate`；`pm2 restart api+web`。
+
 ## V2.4.110 (2026-09-29) — 「课程管理」独立成模块；原「课程管理」更名为「班级管理」
 - 需求：教务管理里的「课程管理」实际管的是**班级**，名不副实；需另建一个真正的课程管理模块，用于新建和维护学校开设的所有课程。
 - 前端：`app/teacher/academics/page.tsx` 原 Tab 文案改为「班级管理」（key 仍为 `course`，列表/内容/权限完全不变），新增「课程管理」Tab（key=`catalog`，支持 `?tab=catalog` 直达）；新增组件 `components/TeacherSchoolCourses.tsx`（课程库表格 + 搜索/类别/年级/类型/状态筛选 + 新建·编辑弹窗 + 停用/启用 + 删除二次确认），样式统一接入 `globals.css` 的 `.ui-input` / `.ui-select`（不再手写局部 class 串）。

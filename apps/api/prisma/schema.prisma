@@ -709,20 +709,17 @@ model ParentLink {
 // category 建议值:学术核心 | 素养与综合 | 艺术与体育 | 研究与创新 | 人工智能与实践
 model SchoolCourse {
   id          String   @id @default(cuid())
-  name        String // 课程名称,如 "A Level 数学"
-  subject     String   @default("") // 学科归属,如 "数学" | "物理" | "跨学科"(空=未指定)
+  name        String @unique // 课程名称,如 "A Level 进阶数学"(全校唯一;一门课可覆盖多个年级)
   category    String   @default("学术核心") // 课程类别
   type        String   @default("ELECTIVE") // REQUIRED | ELECTIVE
-  grade       String   @default("") // 适用年级,如 "高一"(空=全年级通用)
-  weeklyHours Float? // 周课时(可空)
-  teacherName String   @default("") // 任课教师姓名(文本)
+  grades      String   @default("") // 适用年级,逗号分隔多选,如 "高一,高二"(空=全年级通用)
+  weeklyHours Float? // 参考周课时数(可空,仅作参考不驱动排课)
   sortOrder   Int      @default(0) // 展示排序,越小越靠前
   active      Boolean  @default(true) // 是否仍在开设(false=停用/软下架)
   note        String   @default("") // 备注 / 课程简介
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([name, grade])
   @@index([active, sortOrder])
 }
 

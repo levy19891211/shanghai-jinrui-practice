@@ -1872,7 +1872,7 @@ function normalizeSchoolCourse(body, { partial = false } = {}) {
     if (name.length > 80) return { error: "课程名称过长(最多 80 字)" };
     out.name = name;
   }
-  if (has("subject")) out.subject = str(b.subject).slice(0, 40);
+  // subject / teacherName 字段已废弃(V2.4.111):白名单归一化自动丢弃,不入库
   if (has("category")) {
     const c = str(b.category) || SCHOOL_COURSE_CATEGORIES[0];
     if (!SCHOOL_COURSE_CATEGORIES.includes(c)) return { error: `课程类别不合法:${c}` };
@@ -1883,8 +1883,17 @@ function normalizeSchoolCourse(body, { partial = false } = {}) {
     if (t !== "REQUIRED" && t !== "ELECTIVE") return { error: "课程类型仅支持 REQUIRED(必修) / ELECTIVE(选修)" };
     out.type = t;
   }
-  if (has("grade")) out.grade = str(b.grade).slice(0, 20);
-  if (has("teacherName")) out.teacherName = str(b.teacherName).slice(0, 40);
+  if (has("grades")) {
+    // 适用年级多选:接受数组或逗号分隔字符串,归一化为去重后的逗号串(空=全年级通用)
+    const raw = Array.isArray(b.grades) ? b.grades : str(b.grades).split(",");
+    const seen = [];
+    for (const g0 of raw) {
+      const g = str(g0).slice(0, 20);
+      if (g && !seen.includes(g)) seen.push(g);
+    }
+    if (seen.length > 6) return { error: "适用年级最多选择 6 个" };
+    out.grades = seen.join(",");
+  }
   if (has("note")) out.note = str(b.note).slice(0, 500);
   if (has("weeklyHours")) {
     // 注意:未传 / null / 空串 一律视为「不设周课时」;不能把 undefined 交给 Number() ——会得 NaN 而误判 400
@@ -1916,9 +1925,9 @@ router.get(
     const type = (req.query.type || "").toString().trim().toUpperCase();
     const active = (req.query.active || "").toString().trim();
     const where = {};
-    if (q) where.OR = [{ name: { contains: q } }, { subject: { contains: q } }, { teacherName: { contains: q } }];
+    if (q) where.OR = [{ name: { contains: q } }, { note: { contains: q } }];
     if (category) where.category = category;
-    if (grade) where.grade = grade;
+    if (grade) where.grades = { contains: grade }; // grades 为逗号串,子串匹配即可(高一/高二/高三互不为子串)
     if (type === "REQUIRED" || type === "ELECTIVE") where.type = type;
     if (active === "1" || active === "true") where.active = true;
     if (active === "0" || active === "false") where.active = false;
@@ -1938,8 +1947,8 @@ router.post(
     if (!isAcademicAdmin(req.user)) return fail(res, 403, "仅管理员或教务老师可维护课程库");
     const { data, error } = normalizeSchoolCourse(req.body);
     if (error) return fail(res, 400, error);
-    const dup = await prisma.schoolCourse.findFirst({ where: { name: data.name, grade: data.grade } });
-    if (dup) return fail(res, 409, `课程「${data.name}」${data.grade ? `(${data.grade})` : ""}已存在`);
+    const dup = await prisma.schoolCourse.findFirst({ where: { name: data.name } });
+    if (dup) return fail(res, 409, `课程「${data.name}」已存在`);
     const course = await prisma.schoolCourse.create({ data });
     ok(res, { course }, "已新增课程");
   })
@@ -1955,11 +1964,9 @@ router.put(
     if (!existing) return fail(res, 404, "课程不存在");
     const { data, error } = normalizeSchoolCourse(req.body, { partial: true });
     if (error) return fail(res, 400, error);
-    if (data.name !== undefined || data.grade !== undefined) {
-      const name = data.name ?? existing.name;
-      const grade = data.grade ?? existing.grade;
-      const dup = await prisma.schoolCourse.findFirst({ where: { name, grade, id: { not: existing.id } } });
-      if (dup) return fail(res, 409, `课程「${name}」${grade ? `(${grade})` : ""}已存在`);
+    if (data.name !== undefined) {
+      const dup = await prisma.schoolCourse.findFirst({ where: { name: data.name, id: { not: existing.id } } });
+      if (dup) return fail(res, 409, `课程「${data.name}」已存在`);
     }
     const course = await prisma.schoolCourse.update({ where: { id: existing.id }, data });
     ok(res, { course }, "已更新课程");
