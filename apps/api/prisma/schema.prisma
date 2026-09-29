@@ -695,6 +695,38 @@ model ParentLink {
 }
 
 // ============================================================
+// 学校开设课程目录(课程库) —— 「课程管理」模块维护全校开设的所有课程
+// 设计要点:
+//   - 与班级解耦:这里是"学校开哪些课"的主数据,不绑定班级/学期;
+//     班级维度的科目目录仍是 Course(班级×学年×学期×科目),两者互不影响
+//   - 与 GPA 课程体系 GpaCourse(按 学年+年级 配置权重) 职责不同:此处只维护课程本身
+//   - 用 active 做软下架(停用)而非直接删除,避免历史引用断裂
+//   - 任课教师存姓名文本 teacherName(可录外聘/兼职教师),不建 FK,避免人员变动耦合
+// ============================================================
+
+// 学校开设课程
+// type 合法值:REQUIRED(必修) | ELECTIVE(选修)
+// category 建议值:学术核心 | 素养与综合 | 艺术与体育 | 研究与创新 | 人工智能与实践
+model SchoolCourse {
+  id          String   @id @default(cuid())
+  name        String // 课程名称,如 "A Level 数学"
+  subject     String   @default("") // 学科归属,如 "数学" | "物理" | "跨学科"(空=未指定)
+  category    String   @default("学术核心") // 课程类别
+  type        String   @default("ELECTIVE") // REQUIRED | ELECTIVE
+  grade       String   @default("") // 适用年级,如 "高一"(空=全年级通用)
+  weeklyHours Float? // 周课时(可空)
+  teacherName String   @default("") // 任课教师姓名(文本)
+  sortOrder   Int      @default(0) // 展示排序,越小越靠前
+  active      Boolean  @default(true) // 是否仍在开设(false=停用/软下架)
+  note        String   @default("") // 备注 / 课程简介
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, grade])
+  @@index([active, sortOrder])
+}
+
+// ============================================================
 // 学生选课(选修/必修)
 // 设计要点:
 //   - 独立课程目录 Course:每个班每学期的科目及其类型(REQUIRED 必修 | ELECTIVE 选修)

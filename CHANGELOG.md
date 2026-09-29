@@ -1,5 +1,16 @@
 # 版本历史
 
+## V2.4.110 (2026-09-29) — 「课程管理」独立成模块；原「课程管理」更名为「班级管理」
+- 需求：教务管理里的「课程管理」实际管的是**班级**，名不副实；需另建一个真正的课程管理模块，用于新建和维护学校开设的所有课程。
+- 前端：`app/teacher/academics/page.tsx` 原 Tab 文案改为「班级管理」（key 仍为 `course`，列表/内容/权限完全不变），新增「课程管理」Tab（key=`catalog`，支持 `?tab=catalog` 直达）；新增组件 `components/TeacherSchoolCourses.tsx`（课程库表格 + 搜索/类别/年级/类型/状态筛选 + 新建·编辑弹窗 + 停用/启用 + 删除二次确认），样式统一接入 `globals.css` 的 `.ui-input` / `.ui-select`（不再手写局部 class 串）。
+- 后端：`routes/academics.js` 新增课程库 CRUD —— `GET/POST/PUT/DELETE /api/academics/school-courses`。读：ADMIN/TEACHER，其余 403；写：仅 `isAcademicAdmin`（管理员或教务老师）。校验：name 必填(≤80)、type 仅 REQUIRED|ELECTIVE、category 白名单、weeklyHours 0~60 可空、同名+同年级 409、不存在 404。
+- 数据：新增 `SchoolCourse` 模型（**附加式**迁移，不触碰既有 `Course`(班级课程目录) 与 `GpaCourse`(GPA 课程体系)）。字段 name/subject/category/type/grade/weeklyHours/teacherName/sortOrder/active/note + 时间戳；唯一键 `(name, grade)`；索引 `(active, sortOrder)`。任课教师存姓名字符串（可录外聘），不建 FK 以免人员变动耦合。
+- **修复（E2E 首轮抓到）**：后端 `normalizeSchoolCourse` 把未传的 `weeklyHours` 交给 `Number()` 得 `NaN` 而误判 400 —— 即「新建课程时不填周课时会失败」。已改为 `undefined / null / ""` 一律视为不设周课时。
+- **修复（实拍截图时发现）**：前端版本徽章漂移 —— `apps/web/lib/version.ts` 硬编码 `v2.4.105`，V2.4.106~109 连续四次发布均漏改，顶栏一直显示旧版本。已同步至 `v2.4.110`，并在文件内注明「三处同步」发布纪律。
+- 验证：`tsc --noEmit` 通过；双端 md5 一致（schema `52e34e69…`、academics.js `45160ebd…`、page.tsx `88a75816…`、TeacherSchoolCourses.tsx `4f6b15af…`）；`prisma validate` + `db push`（新表 13 字段 + 2 索引；既有数据完好：6 班级 / 10 课程 / 40 用户）；`next build` 30/30 `Compiled successfully`；`pm2 restart api+web` 后新接口无 token 401、页面 200；**接口级 E2E 30/30 通过、零残留**（越权 401/403、重复 409、非法入参 400、部分更新不误伤其它字段、搜索+年级过滤）；线上真实页面实拍截图（浏览器内拦截接口喂演示数据，**未注入任何真实凭据**）。
+- 部署：DB 三重备份（服务器备份目录 + 服务器 `.bak` + 本地下载，md5 均 `5a4ad2fa…`）。
+- 未决（待拍板）：课程库当前是「全校主数据」，**不含学年维度**；若需按学年分别维护开设课程，可加 `openYear` 字段（属附加式改动）。
+
 ## V2.4.109 (2026-09-29) — 「新建教师」弹窗两个下拉框视觉美化（统一到全局 ui-input/ui-select 范式）
 - 需求：新建/编辑教师弹窗中「角色」「状态」两个下拉露出系统原生灰底样式，与同一表单的输入框观感不一致。
 - 根因：`TeacherTeachersManage.tsx` 用了组件内局部 `input` 字符串（未含 `bg-white`、未加 `appearance-none`），是全站少数未接入 `globals.css` 全局范式（`.ui-input` / `.ui-select`，已有 33+ 处使用）的遗漏点。

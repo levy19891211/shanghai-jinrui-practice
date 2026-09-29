@@ -11,6 +11,7 @@ import { TeacherManageView } from "@/components/TeacherTeachersManage";
 import TeacherPlacementWorkbench from "@/components/TeacherPlacementWorkbench";
 import TeacherMyClasses from "@/components/TeacherMyClasses";
 import TeacherScheduling from "@/components/TeacherScheduling";
+import TeacherSchoolCourses from "@/components/TeacherSchoolCourses";
 
 // ============ 类型 ============
 interface Cls { id: string; name: string; grade?: string | null; academicYear: string; term: string; headTeacher: { id: string; name: string } | null; studentCount: number; subjectTeachers: { id: string; subject: string; role: string; teacher: { id: string; name: string } }[]; }
@@ -67,9 +68,12 @@ function buildSubjectColorMap(subjects: string[]): Map<string, { bg: string; tex
 }
 
 export default function TeacherAcademicsPage() {
-  // 教务管理子模块:「课程管理」= 原教务管理内容;「GPA管理」= 原 GPA 管理页;「教师管理」= 原教师管理页(仅管理员)
-  // 支持 /teacher/academics?tab=gpa 或 ?tab=teachers 直达对应子模块
-  const [sub, setSub] = useState<"course" | "gpa" | "teachers" | "placement" | "myclasses" | "scheduling">("course");
+  // 教务管理子模块:
+  //   「班级管理」(key=course) = 班级列表 + 班内管理(任课教师/考试/课程表/学情统计/选课管理);原名为「课程管理」
+  //   「课程管理」(key=catalog) = 学校开设课程库的维护(新建/编辑/停用/删除),见 components/TeacherSchoolCourses
+  //   「GPA管理」= 原 GPA 管理页;「教师管理」= 原教师管理页(管理员/教务老师可见)
+  // 支持 /teacher/academics?tab=gpa 或 ?tab=teachers 或 ?tab=catalog 直达对应子模块
+  const [sub, setSub] = useState<"course" | "catalog" | "gpa" | "teachers" | "placement" | "myclasses" | "scheduling">("course");
   const scope = useScopes();
   const isAdmin = !!scope?.isAdmin;
   const me = getUser();
@@ -77,7 +81,7 @@ export default function TeacherAcademicsPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (tab === "gpa" || (tab === "teachers" && (isAdmin || canManage)) || tab === "placement" || tab === "myclasses" || (tab === "scheduling" && canManage))
+    if (tab === "catalog" || tab === "gpa" || (tab === "teachers" && (isAdmin || canManage)) || tab === "placement" || tab === "myclasses" || (tab === "scheduling" && canManage))
       setSub(tab as typeof sub);
   }, [isAdmin, canManage]);
   const [classes, setClasses] = useState<Cls[]>([]);
@@ -109,13 +113,14 @@ export default function TeacherAcademicsPage() {
       <div className="flex flex-wrap gap-1 border-b border-slate-200 text-sm">
         {(
           [
-            { k: "course", l: "课程管理" },
+            { k: "course", l: "班级管理" },
+            { k: "catalog", l: "课程管理" },
             { k: "gpa", l: "GPA管理" },
             ...(canManage ? [{ k: "scheduling", l: "排课管理" }] : []),
             ...((isAdmin || canManage) ? [{ k: "teachers", l: "教师管理" }] : []),
             ...(canManage ? [{ k: "placement", l: "分层/选课分班" }] : []),
             { k: "myclasses", l: "我的教学班" },
-          ] as { k: "course" | "gpa" | "teachers" | "placement" | "myclasses" | "scheduling"; l: string }[]
+          ] as { k: "course" | "catalog" | "gpa" | "teachers" | "placement" | "myclasses" | "scheduling"; l: string }[]
         ).map((t) => (
           <button
             key={t.k}
@@ -127,6 +132,7 @@ export default function TeacherAcademicsPage() {
         ))}
       </div>
 
+      {sub === "catalog" && <TeacherSchoolCourses />}
       {sub === "gpa" && <GpaManageView />}
       {sub === "teachers" && <TeacherManageView />}
       {sub === "scheduling" && canManage && <TeacherScheduling />}

@@ -1,6 +1,7 @@
 // 教务管理模块(独立命名空间 /api/academics)
-// 与笔试题库/会话/作业/升学规划等完全隔离:仅读写 8 张新增表(Class / ClassSubjectTeacher /
-// ClassMembership / Exam / Score / TeacherFeedback / TimetableEntry / ParentLink),
+// 与笔试题库/会话/作业/升学规划等完全隔离:仅读写教务/班级相关新增表(Class / ClassSubjectTeacher /
+// ClassMembership / Exam / Score / TeacherFeedback / TimetableEntry / ParentLink /
+// Course / StudentCourseSelection / SchoolCourse(课程库) 等),
 // 不触碰任何现有业务 model/路由,不影响现有功能与数据。
 //
 // 响应统一走 {code,message,data} 信封(由 lib/res.js 的 ok/fail 提供),
@@ -1846,6 +1847,135 @@ router.delete(
     if (!existing || existing.classId !== id) return fail(res, 404, "课程不存在");
     await prisma.course.delete({ where: { id: courseId } });
     ok(res, { ok: true }, "已删除");
+  })
+);
+
+// ============================================================
+// 学校开设课程目录(课程库) —— 教务管理「课程管理」模块
+// 授权:ADMIN / TEACHER 可读;建、改、删仅 isAcademicAdmin(管理员 或 教务老师 teacherRole=ACADEMIC)
+// 与班级维度的 Course 目录解耦:这里维护的是「学校开哪些课」的主数据
+// ============================================================
+
+const SCHOOL_COURSE_CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践"];
+
+// 归一化课程库入参:仅取白名单字段,避免脏字段落库
+// partial=false(POST) 时 name 必填;partial=true(PUT) 时只处理显式传入的字段
+function normalizeSchoolCourse(body, { partial = false } = {}) {
+  const b = body || {};
+  const out = {};
+  const str = (v) => (v == null ? "" : String(v).trim());
+  const has = (k) => !partial || b[k] !== undefined;
+
+  if (has("name")) {
+    const name = str(b.name);
+    if (!name) return { error: "课程名称不能为空" };
+    if (name.length > 80) return { error: "课程名称过长(最多 80 字)" };
+    out.name = name;
+  }
+  if (has("subject")) out.subject = str(b.subject).slice(0, 40);
+  if (has("category")) {
+    const c = str(b.category) || SCHOOL_COURSE_CATEGORIES[0];
+    if (!SCHOOL_COURSE_CATEGORIES.includes(c)) return { error: `课程类别不合法:${c}` };
+    out.category = c;
+  }
+  if (has("type")) {
+    const t = (str(b.type) || "ELECTIVE").toUpperCase();
+    if (t !== "REQUIRED" && t !== "ELECTIVE") return { error: "课程类型仅支持 REQUIRED(必修) / ELECTIVE(选修)" };
+    out.type = t;
+  }
+  if (has("grade")) out.grade = str(b.grade).slice(0, 20);
+  if (has("teacherName")) out.teacherName = str(b.teacherName).slice(0, 40);
+  if (has("note")) out.note = str(b.note).slice(0, 500);
+  if (has("weeklyHours")) {
+    // 注意:未传 / null / 空串 一律视为「不设周课时」;不能把 undefined 交给 Number() ——会得 NaN 而误判 400
+    if (b.weeklyHours === null || b.weeklyHours === undefined || b.weeklyHours === "") out.weeklyHours = null;
+    else {
+      const n = Number(b.weeklyHours);
+      if (!Number.isFinite(n) || n < 0 || n > 60) return { error: "周课时需为 0~60 的数字(可留空)" };
+      out.weeklyHours = n;
+    }
+  }
+  if (b.sortOrder !== undefined) {
+    const n = Number(b.sortOrder);
+    if (!Number.isFinite(n)) return { error: "排序需为数字" };
+    out.sortOrder = Math.trunc(n);
+  }
+  if (b.active !== undefined) out.active = !!b.active;
+  return { data: out };
+}
+
+// GET /api/academics/school-courses —— 课程库列表(支持 q/category/grade/type/active 过滤)
+router.get(
+  "/school-courses",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (req.user.role !== "ADMIN" && req.user.role !== "TEACHER") return fail(res, 403, "无权查看课程库");
+    const q = (req.query.q || "").toString().trim();
+    const category = (req.query.category || "").toString().trim();
+    const grade = (req.query.grade || "").toString().trim();
+    const type = (req.query.type || "").toString().trim().toUpperCase();
+    const active = (req.query.active || "").toString().trim();
+    const where = {};
+    if (q) where.OR = [{ name: { contains: q } }, { subject: { contains: q } }, { teacherName: { contains: q } }];
+    if (category) where.category = category;
+    if (grade) where.grade = grade;
+    if (type === "REQUIRED" || type === "ELECTIVE") where.type = type;
+    if (active === "1" || active === "true") where.active = true;
+    if (active === "0" || active === "false") where.active = false;
+    const courses = await prisma.schoolCourse.findMany({
+      where,
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+    ok(res, { courses, categories: SCHOOL_COURSE_CATEGORIES });
+  })
+);
+
+// POST /api/academics/school-courses —— 新增课程
+router.post(
+  "/school-courses",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!isAcademicAdmin(req.user)) return fail(res, 403, "仅管理员或教务老师可维护课程库");
+    const { data, error } = normalizeSchoolCourse(req.body);
+    if (error) return fail(res, 400, error);
+    const dup = await prisma.schoolCourse.findFirst({ where: { name: data.name, grade: data.grade } });
+    if (dup) return fail(res, 409, `课程「${data.name}」${data.grade ? `(${data.grade})` : ""}已存在`);
+    const course = await prisma.schoolCourse.create({ data });
+    ok(res, { course }, "已新增课程");
+  })
+);
+
+// PUT /api/academics/school-courses/:id —— 更新课程(支持部分字段)
+router.put(
+  "/school-courses/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!isAcademicAdmin(req.user)) return fail(res, 403, "仅管理员或教务老师可维护课程库");
+    const existing = await prisma.schoolCourse.findUnique({ where: { id: req.params.id } });
+    if (!existing) return fail(res, 404, "课程不存在");
+    const { data, error } = normalizeSchoolCourse(req.body, { partial: true });
+    if (error) return fail(res, 400, error);
+    if (data.name !== undefined || data.grade !== undefined) {
+      const name = data.name ?? existing.name;
+      const grade = data.grade ?? existing.grade;
+      const dup = await prisma.schoolCourse.findFirst({ where: { name, grade, id: { not: existing.id } } });
+      if (dup) return fail(res, 409, `课程「${name}」${grade ? `(${grade})` : ""}已存在`);
+    }
+    const course = await prisma.schoolCourse.update({ where: { id: existing.id }, data });
+    ok(res, { course }, "已更新课程");
+  })
+);
+
+// DELETE /api/academics/school-courses/:id —— 删除课程(彻底删除;仅下架请改用 PUT active=false)
+router.delete(
+  "/school-courses/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!isAcademicAdmin(req.user)) return fail(res, 403, "仅管理员或教务老师可维护课程库");
+    const existing = await prisma.schoolCourse.findUnique({ where: { id: req.params.id } });
+    if (!existing) return fail(res, 404, "课程不存在");
+    await prisma.schoolCourse.delete({ where: { id: existing.id } });
+    ok(res, { ok: true }, "已删除课程");
   })
 );
 

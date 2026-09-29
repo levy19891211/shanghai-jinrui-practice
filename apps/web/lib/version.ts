@@ -1,3 +1,5 @@
-// 系统版本号(单一来源:根目录 VERSION 文件,这里供前端显示)
-// 每次发布更新版本号时同步修改此处 + 根 VERSION + CHANGELOG.md
-export const APP_VERSION = "v2.4.105";
+// 系统版本号(前端显示用)
+// ⚠️ 注意:这是根目录 VERSION 的**手工副本**,不是自动读取 —— 每次发布会漏改!
+// 历史事故:V2.4.106~109 四次发布均未同步此处,顶栏一直显示 v2.4.105。
+// 发布清单必须包含:根 VERSION + CHANGELOG.md + **本文件** 三处同步。
+export const APP_VERSION = "v2.4.110";
