@@ -811,8 +811,12 @@ router.put(
 // ============================================================
 
 // GET /api/academics/classes/:id/gradebook —— 只读:本班「课程 × 学生」成绩总览
-//   课程范围 = 班级课程目录(Course.name) ∪ 课表科目(TimetableEntry.subject) ∪ 已建考试科目(Exam.subject)
-//     三源并集去重(「有考试」的课程排前),因此「班级所涉及的所有课程」都会出现,没有成绩的课程也能看到。
+//   课程范围 = 课表科目(TimetableEntry.subject) ∪ 已建考试科目(Exam.subject)(「有考试」的课程排前)。
+//   刻意**不含「班级课程目录(Course)」**(V2.4.125 修正):
+//     Course 由「选课管理」维护,语义是"该班开设的可选课程池",不是"实际上课"的事实 —— 清空课表后它依然存在。
+//     若把它当课程源,就会出现「课表已清空,但『考试与成绩』里还列着一堆从没排过课的课程」,
+//     且与同班「任课教师」(纯课表派生,清空后为空)自相矛盾。Course 记录本身不删(选课仍需要),
+//     只是不再参与成绩册的课程列表。
 //   返回扁平的 courses/students/scores 三份数据,由前端分别拼成「按课程查看」「按学生查看」两个视图。
 //   作用域:沿用考试/成绩口径 —— 需可见该班;学科老师(非班主任)仅本人任教科目(课程与考试一并收窄)。
 //   本接口零写入(成绩录入仍走 PUT /exams/:id/scores)。
@@ -836,7 +840,7 @@ router.get(
     const subs = await visibleSubjects(req, id);
     const allow = (subject) => subs === null || subs.includes(subject);
 
-    const [exams, memberships, catalog, timetableEntries, naSubjects] = await Promise.all([
+    const [exams, memberships, timetableEntries, naSubjects] = await Promise.all([
       prisma.exam.findMany({
         where: { classId: id },
         orderBy: [{ examDate: "asc" }, { title: "asc" }],
@@ -846,7 +850,6 @@ router.get(
         where: { classId: id },
         select: { student: { select: { id: true, name: true, studentNo: true } } },
       }),
-      prisma.course.findMany({ where: { classId: id }, select: { name: true } }),
       prisma.timetableEntry.findMany({ where: { classId: id }, select: { subject: true } }),
       nonAcademicSubjectSet(),
     ]);
@@ -867,8 +870,8 @@ router.get(
       if (!examsBySubject.has(e.subject)) examsBySubject.set(e.subject, []);
       examsBySubject.get(e.subject).push(e);
     }
-    const subjects = new Set([...examsBySubject.keys()])
-    for (const c of catalog) if (c.name && !naSubjects.has(c.name)) subjects.add(c.name);
+    // 课程范围 = 已建考试科目 ∪ 课表已排科目(不含「班级课程目录 Course」,理由见接口头注释)
+    const subjects = new Set([...examsBySubject.keys()]);
     for (const t of timetableEntries) if (t.subject && !naSubjects.has(t.subject)) subjects.add(t.subject);
     const courses = Array.from(subjects)
       .filter((s) => allow(s))

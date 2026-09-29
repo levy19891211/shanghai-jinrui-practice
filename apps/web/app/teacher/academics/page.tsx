@@ -528,8 +528,8 @@ function ExamsTab({ cls }: { cls: Cls }) {
   return (
     <div className="space-y-4">
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-        本模块为<b>只读</b>视图:成绩按「本班涉及的全部课程」汇总展示,不支持新建考试或修改分数。
-        「非学术课程」不安排考试,不在此列。
+        本模块为<b>只读</b>视图:课程范围 = 本班<b>课表已排课程</b> + <b>已建考试</b>,不支持新建考试或修改分数。
+        「非学术课程」不安排考试,不在此列。课表变更后本页课程随之增减。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
@@ -557,7 +557,14 @@ function GradeByCourse({ data }: { data: Gradebook }) {
   const [examId, setExamId] = useState<string | null>(null);
   const course = data.courses.find((c) => c.subject === subject) || initial;
 
-  if (!course) return <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-400">本班暂无课程记录。</p>;
+  if (!course)
+    return (
+      <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-400">
+        本班暂无课程记录 —— 该班在「排课管理」里还没有已排课程,也没有已建考试。
+        <br />
+        <span className="text-xs">(课程列表取自课表与考试;选课管理里的「班级课程目录」不计入此表。)</span>
+      </p>
+    );
 
   const scoreMap = new Map(data.scores.map((s) => [scoreKey(s.examId, s.studentId), s]));
   const students = data.students;
