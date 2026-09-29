@@ -676,4 +676,113 @@ router.delete(
   })
 );
 
+// ————————————————————————————————————————————
+// 子模块二附:一键「冲突检查」
+// ————————————————————————————————————————————
+// GET /api/scheduling/conflicts?academicYear=&term=
+// 扫描课表条目(可按学年/学期过滤),按 学年+学期+星期+节次 分组,检出两类「同一时间」冲突:
+//   ① 教师冲突 —— 同一时间同一位老师出现在 ≥2 条课表条目(跨班 / 跨课程块,一个人无法同时上两门课)
+//   ② 教室冲突 —— 同一时间同一个教室被 ≥2 个不同课程块(条目)占用
+// 同格「选课走班」(同班同时段并行多门课)不是冲突;仅当占用同一教师或同一教室时才判为冲突。
+// 只读接口:不修改任何数据,仅返回明细 + 汇总,供前端一键查看。
+router.get(
+  "/conflicts",
+  asyncHandler(async (req, res) => {
+    const year = T(req.query.academicYear);
+    const term = T(req.query.term);
+    const where = {};
+    if (year) where.academicYear = year;
+    if (term) where.term = term;
+
+    const entries = await prisma.timetableEntry.findMany({
+      where,
+      orderBy: [{ academicYear: "asc" }, { term: "asc" }, { dayOfWeek: "asc" }, { period: "asc" }],
+      include: {
+        teacher: { select: { id: true, name: true } },
+        class: { select: { id: true, name: true, grade: true } },
+      },
+    });
+
+    const teacherMap = new Map(); // key: year|term|day|period|teacherId -> entries[]
+    const roomMap = new Map(); // key: year|term|day|period|room -> entries[]
+    for (const e of entries) {
+      const base = `${e.academicYear}|${e.term}|${e.dayOfWeek}|${e.period}`;
+      if (e.teacherId) {
+        const k = `${base}|${e.teacherId}`;
+        const arr = teacherMap.get(k) || [];
+        arr.push(e);
+        teacherMap.set(k, arr);
+      }
+      const room = T(e.room);
+      if (room) {
+        const k = `${base}|${room}`;
+        const arr = roomMap.get(k) || [];
+        arr.push(e);
+        roomMap.set(k, arr);
+      }
+    }
+
+    const brief = (e) => ({
+      entryId: e.id,
+      classId: e.classId,
+      className: e.class?.name || "",
+      grade: e.class?.grade || null,
+      subject: e.subject,
+      teacherId: e.teacherId,
+      teacherName: e.teacher?.name || null,
+      room: e.room || null,
+      courseBlockId: e.courseBlockId,
+      academicYear: e.academicYear,
+      term: e.term,
+    });
+
+    const teacherConflicts = [];
+    for (const [k, arr] of teacherMap) {
+      if (arr.length < 2) continue;
+      const [academicYear, t2, dayOfWeek, period, teacherId] = k.split("|");
+      teacherConflicts.push({
+        academicYear,
+        term: t2,
+        dayOfWeek: Number(dayOfWeek),
+        period: Number(period),
+        teacherId,
+        teacherName: arr[0].teacher?.name || null,
+        entries: arr.map(brief),
+      });
+    }
+    const roomConflicts = [];
+    for (const [k, arr] of roomMap) {
+      if (arr.length < 2) continue;
+      const [academicYear, t2, dayOfWeek, period, room] = k.split("|");
+      roomConflicts.push({
+        academicYear,
+        term: t2,
+        dayOfWeek: Number(dayOfWeek),
+        period: Number(period),
+        room,
+        entries: arr.map(brief),
+      });
+    }
+
+    const byTime = (a, b) =>
+      a.academicYear.localeCompare(b.academicYear) ||
+      a.term.localeCompare(b.term) ||
+      a.dayOfWeek - b.dayOfWeek ||
+      a.period - b.period;
+    teacherConflicts.sort(byTime);
+    roomConflicts.sort(byTime);
+
+    ok(res, {
+      teacherConflicts,
+      roomConflicts,
+      summary: {
+        teacherConflicts: teacherConflicts.length,
+        roomConflicts: roomConflicts.length,
+        total: teacherConflicts.length + roomConflicts.length,
+        scannedEntries: entries.length,
+      },
+    });
+  })
+);
+
 export default router;

@@ -260,7 +260,7 @@ function ClassPanel({ cls, isAdmin, canManage, onChanged, onGoScheduling }: { cl
       </div>
 
       {tab === "members" && isAdmin && <MembersTab cls={cls} onChanged={onChanged} />}
-      {tab === "teachers" && (isAdmin || canManage) && <TeachersTab cls={cls} onChanged={onChanged} />}
+      {tab === "teachers" && (isAdmin || canManage) && <TeachersTab cls={cls} onGoScheduling={onGoScheduling} />}
       {tab === "exams" && <ExamsTab cls={cls} />}
       {tab === "timetable" && <TimetableTab cls={cls} isAdmin={isAdmin} onGoScheduling={onGoScheduling} />}
       {tab === "analytics" && <ClassAnalytics classId={cls.id} />}
@@ -393,58 +393,82 @@ function MembersTab({ cls, onChanged }: { cls: Cls; onChanged: () => void }) {
   );
 }
 
-// ============ 任课教师管理(仅管理员) ============
-function TeachersTab({ cls, onChanged }: { cls: Cls; onChanged: () => void }) {
-  const [teachers, setTeachers] = useState<Tch[]>([]);
-  const [subject, setSubject] = useState(SUBJECTS[0]);
-  const [teacherId, setTeacherId] = useState("");
-  const [role, setRole] = useState("LEAD");
+// ============ 任课教师(只读:来源 = 排课管理 → 排课 的课表) ============
+// 完全按该班课表中已确认的课程生成,不可在此编辑;调整请到排课管理改课表 / 课程块任课教师。
+interface SubjectTeacherGroup {
+  subject: string;
+  periods: number;
+  teachers: { id: string | null; name: string | null; periods: number }[];
+  rooms: string[];
+}
+function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () => void }) {
+  const [items, setItems] = useState<SubjectTeacherGroup[]>([]);
+  const [summary, setSummary] = useState<{ subjects: number; teachers: number; entries: number } | null>(null);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.get<{ teachers: Tch[] }>("/academics/teachers").then((d) => { setTeachers(d.teachers); if (d.teachers[0]) setTeacherId(d.teachers[0].id); }).catch(() => {});
-  }, []);
-
-  async function add() {
+    setLoading(true);
     setErr("");
-    if (!teacherId) return setErr("请选择教师");
-    try { await api.post(`/academics/classes/${cls.id}/teachers`, { subject, teacherId, role }); onChanged(); }
-    catch (e: any) { setErr(e.message || "添加失败"); }
-  }
-  async function remove(linkId: string) {
-    try { await api.del(`/academics/classes/${cls.id}/teachers/${linkId}`); onChanged(); }
-    catch (e: any) { alert(e.message || "移除失败"); }
-  }
+    api
+      .get<{ items: SubjectTeacherGroup[]; summary: { subjects: number; teachers: number; entries: number } }>(`/academics/classes/${cls.id}/subject-teachers`)
+      .then((d) => { setItems(d.items || []); setSummary(d.summary || null); })
+      .catch((e: any) => setErr(e.message || "加载失败"))
+      .finally(() => setLoading(false));
+  }, [cls.id]);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-      {err && <p className="text-sm text-red-500">{err}</p>}
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="科目">
-          <Select value={subject} onChange={setSubject} options={SUBJECTS.map((s) => ({ value: s, label: s }))} />
-        </Field>
-        <Field label="教师">
-          <Select value={teacherId} onChange={setTeacherId} options={teachers.map((t) => ({ value: t.id, label: t.name }))} />
-        </Field>
-        <Field label="角色">
-          <Select value={role} onChange={setRole} options={[{ value: "LEAD", label: "主讲" }, { value: "CO", label: "协同" }, { value: "ASSISTANT", label: "助教" }]} />
-        </Field>
-        <button onClick={add} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700">添加任教</button>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-slate-600">
+        <span>
+          <b className="font-medium text-slate-700">只读</b>:任课教师完全按「排课管理 → 排课」中本班课表已确认的课程生成。
+          如需调整科目或教师,请到排课管理修改课表或课程块的任课教师。
+        </span>
+        {onGoScheduling && (
+          <button onClick={onGoScheduling} className="shrink-0 rounded-md border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 hover:bg-indigo-50">前往排课管理 →</button>
+        )}
       </div>
-      <table className="min-w-full text-sm">
-        <thead className="text-slate-500"><tr><th className="py-1 text-left">科目</th><th className="py-1 text-left">教师</th><th className="py-1 text-left">角色</th><th></th></tr></thead>
-        <tbody>
-          {cls.subjectTeachers.length === 0 && <tr><td colSpan={4} className="py-3 text-center text-slate-400">暂无任课教师</td></tr>}
-          {cls.subjectTeachers.map((st) => (
-            <tr key={st.id} className="border-t border-slate-100">
-              <td className="py-1.5">{st.subject}</td>
-              <td className="py-1.5">{st.teacher.name}</td>
-              <td className="py-1.5 text-slate-500">{st.role}</td>
-              <td className="py-1.5 text-right"><button onClick={() => remove(st.id)} className="text-sm text-red-500 hover:underline">移除</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        {loading ? (
+          <p className="text-sm text-slate-400">加载中…</p>
+        ) : err ? (
+          <p className="text-sm text-red-500">{err}</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+              <span>共 <b className="text-slate-700">{summary?.subjects ?? items.length}</b> 门课程</span>
+              <span><b className="text-slate-700">{summary?.teachers ?? 0}</b> 位任课教师</span>
+              <span>课表 <b className="text-slate-700">{summary?.entries ?? 0}</b> 个课时</span>
+            </div>
+            {items.length === 0 ? (
+              <p className="py-3 text-center text-sm text-slate-400">暂无任课教师 —— 该班课表里还没有已排课程。</p>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead className="text-slate-500"><tr><th className="py-1 text-left">课程(科目)</th><th className="py-1 text-left">任课教师</th><th className="py-1 text-left">课表课时</th><th className="py-1 text-left">教室</th></tr></thead>
+                <tbody>
+                  {items.map((g) => (
+                    <tr key={g.subject} className="border-t border-slate-100 align-top">
+                      <td className="py-1.5 font-medium text-slate-700">{g.subject}</td>
+                      <td className="py-1.5">
+                        <div className="flex flex-wrap gap-1">
+                          {g.teachers.map((t, i) => (
+                            <span key={i} className={`rounded px-1.5 py-0.5 text-xs ${t.name ? "bg-slate-100 text-slate-700" : "bg-amber-50 text-amber-600"}`}>
+                              {t.name || "未指定教师"}
+                              {g.teachers.length > 1 && t.periods ? ` · ${t.periods} 节` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-1.5 tabular-nums text-slate-500">{g.periods} 节</td>
+                      <td className="py-1.5 text-slate-500">{g.rooms.length ? g.rooms.join(" / ") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

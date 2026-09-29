@@ -297,6 +297,65 @@ router.get(
   })
 );
 
+// GET /api/academics/classes/:id/subject-teachers —— 班级任课教师(只读)
+// 数据来源:排课管理 → 排课 写入该班课表的 TimetableEntry(科目/教师已快照)。
+// 按「科目」聚合出「任课教师」清单(含各自课时数)与教室,完全以课表中已确认的课程为准。
+// 本接口**只读**,不提供任何写操作 —— 调整请到「排课管理」改课表 / 课程块的任课教师。
+router.get(
+  "/classes/:id/subject-teachers",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const ids = await visibleClassIds(req);
+    if (ids.length && !ids.includes(id)) return fail(res, 403, "无权访问该班级");
+    const cls = await prisma.class.findUnique({
+      where: { id },
+      select: { id: true, academicYear: true, term: true },
+    });
+    if (!cls) return fail(res, 404, "班级不存在");
+
+    const entries = await prisma.timetableEntry.findMany({
+      where: { classId: id, academicYear: cls.academicYear, term: cls.term },
+      orderBy: [{ subject: "asc" }, { dayOfWeek: "asc" }, { period: "asc" }],
+      include: { teacher: { select: { id: true, name: true } } },
+    });
+
+    // 按科目聚合:教师去重(各计课时)、教室去重、该科目课表总课时
+    const bySubject = new Map();
+    for (const e of entries) {
+      let g = bySubject.get(e.subject);
+      if (!g) {
+        g = { subject: e.subject, periods: 0, teachers: new Map(), rooms: new Set() };
+        bySubject.set(e.subject, g);
+      }
+      g.periods += 1;
+      const key = e.teacherId || "__none__"; // 未指定教师单独归并,避免多行 null 被合并丢失
+      const t = g.teachers.get(key) || { id: e.teacher?.id || null, name: e.teacher?.name || null, periods: 0 };
+      t.periods += 1;
+      g.teachers.set(key, t);
+      if (e.room) g.rooms.add(e.room);
+    }
+
+    const items = Array.from(bySubject.values()).map((g) => ({
+      subject: g.subject,
+      periods: g.periods,
+      teachers: Array.from(g.teachers.values()).sort(
+        (a, b) => b.periods - a.periods || String(a.name || "").localeCompare(String(b.name || ""), "zh")
+      ),
+      rooms: Array.from(g.rooms).sort(),
+    }));
+
+    ok(res, {
+      items,
+      summary: {
+        subjects: items.length,
+        teachers: new Set(entries.map((e) => e.teacherId).filter(Boolean)).size,
+        entries: entries.length,
+      },
+    });
+  })
+);
+
 // PUT /api/academics/classes/:id —— 教师/管理员(作用域):更新班级
 router.put(
   "/classes/:id",

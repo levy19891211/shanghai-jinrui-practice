@@ -55,6 +55,20 @@ interface BlocksData {
 // 目标格已被占用时的待决动作:等用户在「加入选课走班 / 替换该时段 / 取消」中选一个
 type Conflict = { kind: "place" | "move"; blockId?: string; entryId?: string; day: number; period: number; occupied: Entry[]; label: string };
 
+// 一键冲突检查结果(来自 GET /scheduling/conflicts)
+interface ConflictEntry {
+  entryId: string; classId: string; className: string; grade: string | null;
+  subject: string; teacherId: string | null; teacherName: string | null;
+  room: string | null; courseBlockId: string | null; academicYear: string; term: string;
+}
+interface TeacherConflict { academicYear: string; term: string; dayOfWeek: number; period: number; teacherId: string; teacherName: string | null; entries: ConflictEntry[] }
+interface RoomConflict { academicYear: string; term: string; dayOfWeek: number; period: number; room: string; entries: ConflictEntry[] }
+interface ConflictReport {
+  teacherConflicts: TeacherConflict[];
+  roomConflicts: RoomConflict[];
+  summary: { teacherConflicts: number; roomConflicts: number; total: number; scannedEntries: number };
+}
+
 // ============ 常量与配色 ============
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 // 组课「科目」下拉数据源 = 「课程管理」课程库(SchoolCourse,在开设的课程),不再用硬编码学科清单
@@ -473,6 +487,8 @@ function PlaceView({
   const [swapCell, setSwapCell] = useState<{ day: number; period: number } | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
+  const [report, setReport] = useState<ConflictReport | null>(null);
+  const [checking, setChecking] = useState(false);
   const [rowCount, setRowCount] = useState<string>("");
   const [showWeekend, setShowWeekend] = useState(false);
   const dragRef = useRef<{ kind: "block" | "entry"; id: string } | null>(null);
@@ -571,6 +587,21 @@ function PlaceView({
     } catch (e: any) { say(e.message || "移除失败", "err"); }
   }
 
+  // 一键冲突检查:扫全部班级课表(限当前班级学年/学期),检出教师/教室「同一时间」冲突
+  async function runConflictCheck() {
+    setChecking(true);
+    try {
+      const qs = new URLSearchParams();
+      if (klass) { qs.set("academicYear", klass.academicYear); qs.set("term", klass.term); }
+      const d = await api.get<ConflictReport>(`/scheduling/conflicts${qs.toString() ? "?" + qs.toString() : ""}`);
+      setReport(d);
+    } catch (e: any) {
+      say(e.message || "冲突检查失败", "err");
+    } finally {
+      setChecking(false);
+    }
+  }
+
   // 点击/拖拽落点:先判该格占用情况,再决定直接落库还是弹「走班 / 替换」选择卡
   function attempt(kind: "place" | "move", id: string, day: number, period: number) {
     const occupied = (cellMap.get(`${day}-${period}`) || []).filter((e) => e.id !== id);
@@ -659,6 +690,14 @@ function PlaceView({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2 pb-1">
+          <button
+            onClick={runConflictCheck}
+            disabled={checking}
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+            title="检查教师与教室在课表中是否存在同一时间的冲突"
+          >
+            {checking ? "检查中…" : "⚠ 冲突检查"}
+          </button>
           <button onClick={load} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">刷新</button>
           <button onClick={onGoGroup} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100">← 去组课</button>
         </div>
@@ -954,6 +993,87 @@ function PlaceView({
               >
                 加入选课走班
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 一键冲突检查结果 */}
+      {report && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => setReport(null)}>
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <h4 className="text-sm font-semibold text-slate-800">
+                冲突检查结果
+                {klass && <span className="ml-2 text-xs font-normal text-slate-400">{klass.academicYear} {klass.term}</span>}
+              </h4>
+              <button onClick={() => setReport(null)} className="rounded px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 text-sm">
+              {report.summary.total === 0 ? (
+                <div className="py-8 text-center">
+                  <div className="text-3xl">✅</div>
+                  <p className="mt-2 font-medium text-emerald-600">未发现冲突</p>
+                  <p className="mt-1 text-xs text-slate-400">已扫描 {report.summary.scannedEntries} 个课表条目,教师、教室均无同一时间重复。</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-md bg-red-50 px-2 py-1 text-red-600">教师冲突 {report.summary.teacherConflicts}</span>
+                    <span className="rounded-md bg-orange-50 px-2 py-1 text-orange-600">教室冲突 {report.summary.roomConflicts}</span>
+                    <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-500">扫描条目 {report.summary.scannedEntries}</span>
+                  </div>
+
+                  {report.teacherConflicts.length > 0 && (
+                    <section>
+                      <h5 className="mb-1.5 text-xs font-semibold text-red-600">① 教师冲突 —— 同一时间同一位老师被排了多门课</h5>
+                      <div className="space-y-2">
+                        {report.teacherConflicts.map((c, i) => (
+                          <div key={i} className="rounded-lg border border-red-100 bg-red-50/40 p-2">
+                            <div className="text-xs font-medium text-slate-700">
+                              {DAYS[c.dayOfWeek - 1]} 第 {c.period} 节 · <span className="text-red-600">{c.teacherName || "未命名教师"}</span>
+                              <span className="ml-1 text-slate-400">({c.academicYear} {c.term} · {c.entries.length} 门课)</span>
+                            </div>
+                            <ul className="mt-1 space-y-0.5">
+                              {c.entries.map((e) => (
+                                <li key={e.entryId} className="text-xs text-slate-600">
+                                  · {e.className}{e.grade ? `(${e.grade})` : ""} — {e.subject}{e.room ? ` @ ${e.room}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {report.roomConflicts.length > 0 && (
+                    <section>
+                      <h5 className="mb-1.5 text-xs font-semibold text-orange-600">② 教室冲突 —— 同一时间同一教室被多个课程块占用</h5>
+                      <div className="space-y-2">
+                        {report.roomConflicts.map((c, i) => (
+                          <div key={i} className="rounded-lg border border-orange-100 bg-orange-50/40 p-2">
+                            <div className="text-xs font-medium text-slate-700">
+                              {DAYS[c.dayOfWeek - 1]} 第 {c.period} 节 · <span className="text-orange-600">{c.room}</span>
+                              <span className="ml-1 text-slate-400">({c.academicYear} {c.term} · {c.entries.length} 个课程块)</span>
+                            </div>
+                            <ul className="mt-1 space-y-0.5">
+                              {c.entries.map((e) => (
+                                <li key={e.entryId} className="text-xs text-slate-600">
+                                  · {e.className}{e.grade ? `(${e.grade})` : ""} — {e.subject}{e.teacherName ? ` · ${e.teacherName}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end border-t border-slate-100 px-4 py-2.5">
+              <button onClick={() => setReport(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200">关闭</button>
             </div>
           </div>
         </div>
