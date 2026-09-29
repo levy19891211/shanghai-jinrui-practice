@@ -17,6 +17,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { ok, fail } from "../lib/res.js";
 import { asyncHandler } from "../lib/res.js";
 import { prisma } from "../lib/db.js";
+import { sortClassesByGrade } from "../lib/grade-order.js";
 
 const router = express.Router();
 
@@ -209,7 +210,8 @@ router.get(
       },
     });
     ok(res, {
-      classes: classes.map((c) => ({
+      // 年级从低到高(Pre高一 → 高一 → 高二 → 高三),同年级按班号自然序
+      classes: sortClassesByGrade(classes).map((c) => ({
         id: c.id,
         name: c.name,
         grade: c.grade,
@@ -1832,7 +1834,7 @@ router.get(
       return ok(res, { classes: [] });
     }
     ok(res, {
-      classes: classes.map((c) => ({
+      classes: sortClassesByGrade(classes).map((c) => ({
         id: c.id,
         name: c.name,
         grade: c.grade,

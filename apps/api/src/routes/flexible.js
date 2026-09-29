@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { cmpGrade } from "../lib/grade-order.js";
 
 // ============================================================
 // 走班(分层 / 选课)教务接口
@@ -623,7 +624,19 @@ router.get(
         _count: { select: { enrollments: true, exams: true } },
       },
     });
-    ok(res, list);
+    // 年级从低到高(Pre高一 → 高一 → 高二 → 高三),同年级按科目 → 层级
+    ok(
+      res,
+      list.slice().sort((a, b) => {
+        const y = String(b.academicYear || "").localeCompare(String(a.academicYear || ""));
+        if (y !== 0) return y;
+        const g = cmpGrade(a.grade, b.grade);
+        if (g !== 0) return g;
+        const s = String(a.subject || "").localeCompare(String(b.subject || ""), "zh-Hans-CN");
+        if (s !== 0) return s;
+        return (a.tierOrder ?? 99) - (b.tierOrder ?? 99);
+      })
+    );
   })
 );
 

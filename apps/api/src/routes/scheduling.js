@@ -25,6 +25,7 @@ import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth } from "../middleware/auth.js";
+import { cmpGrade, sortClassesByGrade } from "../lib/grade-order.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -56,13 +57,18 @@ const MAX_GRADES = 6; // 开设年级多选上限
 const BASE_GRADE_OPTIONS = ["Pre高一", "高一", "高二", "高三"];
 // 年级展示顺序:衔接年级在前,其余按学年递进(未知年级置后)
 const GRADE_ORDER = ["Pre高一", "高一", "高二", "高三"];
+// 排序统一走 lib/grade-order:已知年级按 GRADE_ORDER,其余(初一/初二/初三/9年级 等)按学段语义排,未知置后
 function sortGrades(arr) {
   return arr.slice().sort((a, b) => {
     const ia = GRADE_ORDER.indexOf(a), ib = GRADE_ORDER.indexOf(b);
-    if (ia === -1 && ib === -1) return a.localeCompare(b, "zh");
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
+    if (ia !== -1 || ib !== -1) {
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }
+    const c = cmpGrade(a, b);
+    if (c !== 0) return c;
+    return a.localeCompare(b, "zh-Hans-CN");
   });
 }
 
@@ -211,7 +217,8 @@ router.get(
     const years = Array.from(new Set(list.map((c) => c.academicYear).filter(Boolean))).sort();
     const terms = Array.from(new Set(list.map((c) => c.term).filter(Boolean))).sort();
     ok(res, {
-      classes: list.map((c) => ({
+      // 年级从低到高(Pre高一 → 高一 → 高二 → 高三),同年级按班号自然序
+      classes: sortClassesByGrade(list).map((c) => ({
         id: c.id,
         name: c.name,
         grade: c.grade,

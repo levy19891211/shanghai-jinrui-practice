@@ -1,5 +1,13 @@
 # 版本历史
 
+## V2.4.117 (2026-09-29) — 班级列表按年级从低到高自动排序
+- 需求：教务管理「全部班级」左栏此前按班级名字符串排序,出现「高一2 → 高一3 → 高一4 → 高三1 → 高二2」这类反直觉顺序(字符串比较下「高三 < 高二」);要求自动按年级从低到高排序。
+- 新增共享工具 `apps/api/src/lib/grade-order.js`：`cmpGrade` / `sortClassesByGrade` / `termSortKey`。规则:① 学段递增 小学 < 初中 < 高中;② 段内年级序号递增 高一 < 高二 < 高三;③ 衔接年级 `Pre高一`/`预高一` 排在对应年级**之前**(故 Pre高一 位于高一之前、全部年级最前);④ 纯数字年级按国内口径折算(1-6→小学段,7-9→初中段,10-12→高中段);⑤ 无法识别的年级一律置后;⑥ 班级名用 `numeric` 自然序,保证「高一2班」在「高一10班」之前;⑦ 空年级字段回退用班级名推断年级,避免脏数据打乱整表。
+- 后端 `academics.js`：`GET /api/academics/classes`(全部班级/我的任教班级)与 `GET /api/academics/course-classes` 结果统一走 `sortClassesByGrade`(学年新→旧 → 年级低→高 → 班级名自然序 → 学期)。
+- 后端 `scheduling.js`：`GET /api/scheduling/classes` 同步走 `sortClassesByGrade`;`sortGrades`(gradeOptions 展示顺序)改用 `cmpGrade` 兜底,初一/初二/初三 等非高中年级也能按学段语义排在 Pre高一 之前,未知年级不再乱序。
+- 后端 `flexible.js`：`GET /api/flexible/my-classes`(我的教学班)同步按「年级低→高 → 科目 → 层级」排序。
+- 无 DB / schema 变更;全部为只读接口的展示顺序调整。验证：`node --check` 四个文件通过;排序单测(16 组年级 + 11 个班级用例)与线上接口 E2E 见工作日志。
+
 ## V2.4.116 (2026-09-29) — 班级「任课教师」改为只读(来自排课课表) + 排课「一键冲突检查」
 - 需求：① 班级管理下的「任课教师」不可编辑,完全按「排课管理 → 排课」课表里已确认的课程列出对应课程与对应老师；② 排课模块新增一键「冲突检查」,检出教师冲突(同一时间同一老师有 ≥2 门课)与教室冲突(同一时间同一教室被 ≥2 个课程块占用)并列出全部冲突。
 - 后端 - 任课教师(`academics.js`)：新增 `GET /api/academics/classes/:id/subject-teachers`(**只读**)。以该班课表条目 `TimetableEntry`(科目/教师已快照)为唯一数据源,按科目聚合出「任课教师(含各自课时数)/课表课时/教室」,未指定教师单独归并。附 `summary{subjects,teachers,entries}`。权限同班级详情(requireAuth + 可见性校验)。
