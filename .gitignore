@@ -69,3 +69,6 @@ apps/api/scripts/extract_figures.py
 /tmua_missing.json
 /verify.exp
 /verify2.exp
+
+# 生产数据库快照(破坏性变更前的本地备份,约 18MB,不入库)
+/.db-backups/

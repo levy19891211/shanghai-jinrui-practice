@@ -1,8 +1,10 @@
 // 排课管理模块(独立命名空间 /api/scheduling)
 //
-// 两大子模块:
+// 三大子模块:
 //   1) 组课 —— 把「科目 + 任课教师」绑定成一个课程块(CourseBlock),并声明「预计每周课时数」与「开设年级」。
 //   2) 排课 —— 选定班级后,把课程块拖进课表 slot;可删除、可替换、可移动到别的 slot。
+//   3) 一日安排 —— 全校统一的作息模板(DayPeriodTemplate):一天几节课、每节的名称与时间段;
+//      所有班级的排课网格行头与默认节数都由它驱动,课间休息由相邻两节的时间自动推导。
 //
 // 授权:整体前置 requireScheduler —— 仅「管理员(ADMIN)」或「教务老师(teacherRole=ACADEMIC)」。
 //       (学科教师/学生/家长均不可访问,即便知道接口路径)
@@ -36,6 +38,9 @@ function canSchedule(user) {
 }
 const requireScheduler = (req, res, next) => {
   if (!req.user) return fail(res, 401, "未认证");
+  // 例外:只读的「一日安排」模板 —— 全校统一作息表,任何已登录用户都要能读
+  // (班级课表 / 成绩单等处要展示节次时间,普通教师也需要);写操作仍限教务老师或管理员。
+  if (req.method === "GET" && req.path === "/day-template") return next();
   if (!canSchedule(req.user)) return fail(res, 403, "仅教务老师或管理员可执行排课管理操作");
   next();
 };
@@ -145,9 +150,97 @@ async function findTeacher(teacherId) {
   return { teacher: t };
 }
 
-// 该班级该节次的「节次名 / 时间段」基准:
-// 课表常由网格导入,行头(如"第一节 8:15-8:55")存在条目上;排课时沿用同一节次已有元数据,保证行头一致。
+// ————————————————————————————————————————————
+// 「一日安排」模板(全校统一作息表)工具
+// ————————————————————————————————————————————
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/; // HH:mm(24 小时制,含前导零)
+const MAX_PERIODS_PER_DAY = 24; // 一天节数上限(防止误填 200 节撑爆网格)
+
+// 时间归一化:接受 "7:45" / "07:45",统一补零成 "07:45";空串 = 未设置(null)
+function normTime(v) {
+  const s = T(v);
+  if (!s) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (!m) return { error: `时间「${s}」格式应为 HH:mm(如 07:45)` };
+  const out = `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+  return TIME_RE.test(out) ? out : { error: `时间「${s}」超出 00:00–23:59 范围` };
+}
+const toMin = (t) => {
+  const [h, m] = String(t).split(":");
+  return Number(h) * 60 + Number(m);
+};
+// "07:45" → "7:45":展示时去掉小时前导零,与教师习惯写法一致
+const pretty = (t) => (t ? String(t).replace(/^0(\d:)/, "$1") : "");
+// 节次时间段展示:"7:45-8:15";只设了一端时退回单值
+function rangeLabel(p) {
+  if (p.startTime && p.endTime) return `${pretty(p.startTime)}-${pretty(p.endTime)}`;
+  return pretty(p.startTime || p.endTime || "");
+}
+
+// 课间休息由相邻两节推导(上一节结束 → 下一节开始),不单独存字段,避免两处数据打架
+function buildBreaks(periods) {
+  const out = [];
+  for (let i = 0; i < periods.length - 1; i++) {
+    const a = periods[i], b = periods[i + 1];
+    if (!a.endTime || !b.startTime) continue;
+    const minutes = toMin(b.startTime) - toMin(a.endTime);
+    if (minutes > 0) out.push({ afterPeriod: a.period, from: a.endTime, to: b.startTime, minutes });
+  }
+  return out;
+}
+
+function shapeTemplate(rows) {
+  const periods = rows.map((r) => ({
+    period: r.period,
+    label: r.label || null,
+    startTime: r.startTime || null,
+    endTime: r.endTime || null,
+    range: rangeLabel(r),
+  }));
+  const breaks = buildBreaks(periods);
+  const first = periods.find((p) => p.startTime);
+  const last = [...periods].reverse().find((p) => p.endTime);
+  return {
+    configured: periods.length > 0,
+    periods,
+    breaks,
+    count: periods.length,
+    firstStart: first ? first.startTime : null,
+    lastEnd: last ? last.endTime : null,
+    // 一天跨度(第一节开始 → 最后一节结束),用于「共 N 节 · 跨度 X」
+    spanMinutes: first && last ? toMin(last.endTime) - toMin(first.startTime) : null,
+  };
+}
+
+async function loadTemplate(academicYear, term) {
+  if (!academicYear || !term) return shapeTemplate([]);
+  try {
+    const rows = await prisma.dayPeriodTemplate.findMany({
+      where: { academicYear, term },
+      orderBy: { period: "asc" },
+    });
+    return shapeTemplate(rows);
+  } catch {
+    // client 未生成 / 表不存在时的降级:视为"未配置模板",排课走旧回退逻辑
+    return shapeTemplate([]);
+  }
+}
+
+// 该班级该节次的「节次名 / 时间段」基准(往 TimetableEntry 写快照时用):
+//   ① 优先「一日安排」模板 —— 全校统一作息,由教务在排课管理里设定;
+//   ② 无模板时回落到"该节次已有条目携带的元数据"(兼容历史网格导入的课表)。
 async function periodMetaFor(classId, period, academicYear, term) {
+  try {
+    const tpl = await prisma.dayPeriodTemplate.findUnique({
+      where: { academicYear_term_period: { academicYear, term, period } },
+    });
+    if (tpl && (tpl.label || tpl.startTime || tpl.endTime)) {
+      return { periodLabel: tpl.label || `第${period}节`, periodTime: rangeLabel(tpl) || null };
+    }
+  } catch {
+    /* 模板不可用 → 走下面的旧逻辑 */
+  }
   const row = await prisma.timetableEntry.findFirst({
     where: {
       classId,
@@ -234,6 +327,102 @@ router.get(
       // 基础年级范围(Pre高一/高一/高二/高三)并入实际班级年级,确保衔接年级始终可选
       gradeOptions: sortGrades(grades),
     });
+  })
+);
+
+// ————————————————————————————————————————————
+// 子模块三:一日安排 —— 全校统一的作息模板(一天几节课 / 每节时间段)
+// ————————————————————————————————————————————
+// 设定后,所有班级的排课网格都按此模板渲染行头(节次名 + 时间段)与默认节数。
+// 课间休息不单独配置:由相邻两节的时间自动推导 —— 即"改课间"等价于"改下一节的开始时间",
+// 不会出现「休息 10 分钟」与「下一节 8:55 开始」互相矛盾的两份数据。
+
+// 已排课表里"节次超出模板节数"的条目数(把节数改小时,这些格子会落到网格之外) —— 只提示,不阻止
+async function countOutOfRange(academicYear, term, count) {
+  if (!count) return 0;
+  try {
+    return await prisma.timetableEntry.count({
+      where: { academicYear, term, period: { gt: count } },
+    });
+  } catch {
+    return 0;
+  }
+}
+
+// GET /api/scheduling/day-template?academicYear=&term=
+// 只读:任何已登录用户都能读(班级课表/成绩单等处要显示节次时间)。返回节次表 + 推导出的课间休息。
+router.get(
+  "/day-template",
+  asyncHandler(async (req, res) => {
+    const academicYear = T(req.query.academicYear);
+    const term = T(req.query.term);
+    if (!academicYear || !term) return fail(res, 400, "请指定学年与学期");
+    const template = await loadTemplate(academicYear, term);
+    const outOfRange = await countOutOfRange(academicYear, term, template.count);
+    ok(res, { academicYear, term, ...template, outOfRangeEntries: outOfRange });
+  })
+);
+
+// POST /api/scheduling/day-template —— 全量保存(替换)某学年学期的作息模板
+// body: { academicYear, term, periods: [{ label?, startTime?, endTime? }, ...] }
+//   数组顺序即节次顺序,服务端重排为 period = 1..N;periods: [] = 清空模板(回到"未配置"状态)。
+// 用「全量替换」而非逐条增删改:作息表是一张整体表,前端编辑后一次提交,不会留下半套数据。
+router.post(
+  "/day-template",
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const academicYear = T(b.academicYear);
+    const term = T(b.term);
+    if (!academicYear) return fail(res, 400, "学年必填");
+    if (!term) return fail(res, 400, "学期必填");
+    if (!Array.isArray(b.periods)) return fail(res, 400, "periods 必须是数组");
+    if (b.periods.length > MAX_PERIODS_PER_DAY) return fail(res, 400, `一天最多 ${MAX_PERIODS_PER_DAY} 节`);
+
+    const rows = [];
+    const errors = [];
+    b.periods.forEach((p, i) => {
+      const no = i + 1;
+      const label = T(p?.label).slice(0, 20) || null;
+      const st = normTime(p?.startTime);
+      const et = normTime(p?.endTime);
+      if (st && st.error) errors.push(`第 ${no} 节开始时间:${st.error}`);
+      if (et && et.error) errors.push(`第 ${no} 节结束时间:${et.error}`);
+      const startTime = st && !st.error ? st : null;
+      const endTime = et && !et.error ? et : null;
+      if (startTime && endTime && toMin(startTime) >= toMin(endTime)) {
+        errors.push(`第 ${no} 节的结束时间必须晚于开始时间`);
+      }
+      rows.push({ period: no, label, startTime, endTime });
+    });
+    if (errors.length) return fail(res, 400, errors.join(";"));
+
+    // 软校验(只提示不阻断):作息允许任意形态,但时间倒挂多半是填错了
+    const warnings = [];
+    const timed = rows.filter((r) => r.startTime);
+    for (let i = 0; i < timed.length - 1; i++) {
+      if (toMin(timed[i + 1].startTime) <= toMin(timed[i].startTime)) {
+        warnings.push(`第 ${timed[i + 1].period} 节的开始时间不比第 ${timed[i].period} 节晚`);
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.dayPeriodTemplate.deleteMany({ where: { academicYear, term } });
+      if (rows.length) {
+        await tx.dayPeriodTemplate.createMany({
+          data: rows.map((r) => ({ ...r, academicYear, term, createdById: req.user.id })),
+        });
+      }
+    });
+
+    const template = await loadTemplate(academicYear, term);
+    const outOfRange = await countOutOfRange(academicYear, term, template.count);
+    if (rows.length && !timed.length) warnings.push("所有节次都没填时间,排课网格只会显示「第 N 节」");
+    if (outOfRange) warnings.push(`已有 ${outOfRange} 处已排课程位于第 ${template.count} 节之后,网格里看不到它们`);
+    ok(
+      res,
+      { academicYear, term, ...template, outOfRangeEntries: outOfRange, warnings },
+      rows.length ? "一日安排已保存,所有班级的排课将按此作息显示" : "已清空该学年学期的一日安排"
+    );
   })
 );
 
@@ -471,8 +660,14 @@ router.get(
       return { ...shapeBlock(b), placed: cells.length, cells };
     });
 
-    // 行头元数据:每个节次的名称/时间段(取自课表条目,兼容网格导入)
+    // 行头元数据:优先「一日安排」模板(全校统一作息),无模板时回退到课表条目快照(兼容历史导入的网格课表)
+    const dayTemplate = await loadTemplate(academicYear, term);
     const periodMeta = {};
+    for (const p of dayTemplate.periods) {
+      if (p.label || p.range) {
+        periodMeta[p.period] = { label: p.label || `第${p.period}节`, time: p.range || null };
+      }
+    }
     for (const e of entries) {
       if (!periodMeta[e.period] && (e.periodLabel || e.periodTime))
         periodMeta[e.period] = { label: e.periodLabel, time: e.periodTime };
@@ -495,6 +690,8 @@ router.get(
       entries: entries.map(shapeEntry),
       otherTermBlocks,
       periodMeta,
+      // 一日安排模板:排课网格的节次名/时间段/默认节数都由它驱动(未配置时 periods 为空数组)
+      dayTemplate,
       stats: {
         planned,
         placedTotal,

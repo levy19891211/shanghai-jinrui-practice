@@ -43,11 +43,31 @@ interface BoardData {
   klass: { id: string; name: string; grade: string | null; academicYear: string; term: string };
   grade: string; blocks: Block[]; entries: Entry[]; otherTermBlocks: number;
   periodMeta: Record<string, { label: string | null; time: string | null }>;
+  // 一日安排模板(全校统一作息):排课网格的行头与默认节数由它驱动
+  dayTemplate: DayTemplate;
   stats: {
     planned: number; placedTotal: number; remaining: number; over: number;
     electiveCells: number; electiveCourses: number;
     entries: number; occupiedCells: number; blocks: number;
   };
+}
+
+// 「一日安排」模板(来自 GET /scheduling/day-template)
+interface DayPeriod {
+  period: number; label: string | null; startTime: string | null; endTime: string | null;
+  range: string; // 展示用时间段,如 "7:45-8:15"
+}
+interface DayBreak { afterPeriod: number; from: string; to: string; minutes: number }
+interface DayTemplate {
+  configured: boolean;
+  periods: DayPeriod[];
+  breaks: DayBreak[]; // 课间休息(由相邻两节时间推导,不单独存)
+  count: number;
+  firstStart: string | null;
+  lastEnd: string | null;
+  spanMinutes: number | null;
+  outOfRangeEntries?: number; // 已排课表里"节次超出模板节数"的条目数
+  warnings?: string[];
 }
 interface BlocksData {
   blocks: Block[]; teachers: Tch[]; gradeOptions: string[]; years: string[]; terms: string[];
@@ -91,6 +111,12 @@ const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周�
 const TERM_OPTIONS = ["第一学期", "第二学期", "全年"];
 const FALLBACK_COLOR = { bg: "#eef2ff", text: "#4338ca" };
 
+// ============ 「一日安排」时间小工具 ============
+// 时间统一存 "HH:mm";展示时去掉小时前导零("07:45" → "7:45"),与教师习惯的写法一致
+const prettyTime = (t: string | null | undefined) => (t ? String(t).replace(/^0(\d:)/, "$1") : "");
+const toMinutes = (t: string) => { const [h, m] = String(t).split(":"); return Number(h) * 60 + Number(m); };
+const fromMinutes = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
 // 与课表/成绩单一致:黄金角步进旋转色相,同科目恒同色,科目数不限
 function subjectColorByIndex(i: number) {
   const h = Math.round((i * 137.508) % 360);
@@ -115,7 +141,7 @@ function gradesLabel(grades: string): string {
 
 // ============ 主组件 ============
 export default function TeacherScheduling() {
-  const [sub, setSub] = useState<"group" | "place">("group");
+  const [sub, setSub] = useState<"group" | "place" | "day">("group");
 
   // 元数据(班级/年级/学年/学期/教师)
   const [meta, setMeta] = useState<{ classes: Klass[]; gradeOptions: string[]; years: string[]; terms: string[] }>({
@@ -125,7 +151,8 @@ export default function TeacherScheduling() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("sub") === "place") setSub("place");
+    const s = new URLSearchParams(window.location.search).get("sub");
+    if (s === "place" || s === "day" || s === "group") setSub(s);
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -150,7 +177,7 @@ export default function TeacherScheduling() {
         <div>
           <h2 className="text-base font-semibold text-slate-800">排课管理</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            先「组课」把课程与教师绑成课程块,再「排课」把课程块拖进班级课表。
+            先「组课」把课程与教师绑成课程块,再「排课」把课程块拖进班级课表;一天几节课、每节几点,先在「一日安排」里设定好。
             <span className="ml-1 text-violet-600">同一格可放多门课程 —— 即「选课走班」。</span>
           </p>
         </div>
@@ -158,6 +185,7 @@ export default function TeacherScheduling() {
           {([
             { k: "group", l: "① 组课" },
             { k: "place", l: "② 排课" },
+            { k: "day", l: "③ 一日安排" },
           ] as const).map((t) => (
             <button
               key={t.k}
@@ -178,8 +206,10 @@ export default function TeacherScheduling() {
 
       {sub === "group" ? (
         <GroupView meta={meta} onMetaReload={loadMeta} say={say} onGoPlace={() => setSub("place")} />
+      ) : sub === "place" ? (
+        <PlaceView meta={meta} say={say} onGoGroup={() => setSub("group")} onGoDay={() => setSub("day")} />
       ) : (
-        <PlaceView meta={meta} say={say} onGoGroup={() => setSub("group")} />
+        <DayPlanView meta={meta} say={say} onGoPlace={() => setSub("place")} />
       )}
     </div>
   );
@@ -497,11 +527,12 @@ function GroupView({
 // 子模块二:排课
 // ==================================================================
 function PlaceView({
-  meta, say, onGoGroup,
+  meta, say, onGoGroup, onGoDay,
 }: {
   meta: { classes: Klass[]; gradeOptions: string[]; years: string[]; terms: string[] };
   say: (t: string, k?: "ok" | "err") => void;
   onGoGroup: () => void;
+  onGoDay: () => void;
 }) {
   const [classId, setClassId] = useState("");
   const [board, setBoard] = useState<BoardData | null>(null);
@@ -546,7 +577,11 @@ function PlaceView({
   // 网格:行(节次) × 列(星期)
   const maxEntryPeriod = entries.reduce((m, e) => Math.max(m, e.period), 0);
   const maxEntryDay = entries.reduce((m, e) => Math.max(m, e.dayOfWeek), 0);
-  const periods = rowCount ? Number(rowCount) : Math.max(8, maxEntryPeriod);
+  // 一天节数:优先「一日安排」模板;未配置模板时退回历史默认(8 节)
+  const dayTpl = board?.dayTemplate;
+  const tplCount = dayTpl?.periods?.length || 0;
+  const autoPeriods = tplCount ? Math.max(tplCount, maxEntryPeriod) : Math.max(8, maxEntryPeriod);
+  const periods = rowCount ? Number(rowCount) : autoPeriods;
   const dayCount = Math.max(showWeekend ? 7 : 5, maxEntryDay);
 
   // 单元格 -> 条目
@@ -699,7 +734,7 @@ function PlaceView({
           />
         </Field>
         <Field label="显示节次">
-          <Select value={rowCount} onChange={setRowCount} placeholder={`自动（${Math.max(8, maxEntryPeriod)} 节）`} options={[6, 8, 10, 12].map((n) => ({ value: String(n), label: `${n} 节` }))} />
+          <Select value={rowCount} onChange={setRowCount} placeholder={`自动（${autoPeriods} 节）`} options={[6, 8, 10, 12].map((n) => ({ value: String(n), label: `${n} 节` }))} />
         </Field>
         <button
           onClick={() => setShowWeekend((v) => !v)}
@@ -747,6 +782,29 @@ function PlaceView({
             {stats.blocks} 个课程块 · 已占用 {stats.occupiedCells} 个格子
             {stats.electiveCourses > 0 && ` · 走班课程 ${stats.electiveCourses} 门`}
           </span>
+        </div>
+      )}
+
+      {/* 一日安排提示:网格行头的节次名/时间段来自全校统一模板 */}
+      {classId && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs">
+          <span className="text-slate-400">行头作息</span>
+          {dayTpl?.configured ? (
+            <span className="text-slate-600">
+              按「一日安排」模板显示 —— 共 <b className="font-medium">{dayTpl.count}</b> 节
+              {dayTpl.firstStart && dayTpl.lastEnd && (
+                <span className="ml-1 text-slate-400">（{prettyTime(dayTpl.firstStart)}–{prettyTime(dayTpl.lastEnd)}）</span>
+              )}
+            </span>
+          ) : (
+            <span className="text-amber-600">尚未设定,当前用默认节次</span>
+          )}
+          <button
+            onClick={onGoDay}
+            className="ml-auto shrink-0 rounded-md border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
+          >
+            一日安排设定 →
+          </button>
         </div>
       )}
 
@@ -856,11 +914,14 @@ function PlaceView({
                   {Array.from({ length: periods }).map((_, pi) => {
                     const p = pi + 1;
                     const meta2 = periodLabel(p);
+                    const rp = dayTpl?.periods?.find((x) => x.period === p);
                     return (
                       <div key={p} className="grid gap-1.5" style={{ gridTemplateColumns: `76px repeat(${dayCount}, minmax(0,1fr))` }}>
                         <div className="flex flex-col items-center justify-center rounded-md bg-slate-50 px-1 py-1 text-center">
-                          <span className="text-xs font-medium text-slate-600">第 {p} 节</span>
-                          {meta2 && <span className="mt-0.5 text-[10px] leading-tight text-slate-400">{meta2}</span>}
+                          <span className="text-xs font-medium text-slate-600">{rp?.label || `第 ${p} 节`}</span>
+                          {(rp?.range || meta2) && (
+                            <span className="mt-0.5 text-[10px] leading-tight text-slate-400">{rp?.range || meta2}</span>
+                          )}
                         </div>
                         {Array.from({ length: dayCount }).map((_, di) => {
                           const day = di + 1;
@@ -1273,6 +1334,288 @@ function ClearTimetableDialog({
             className="rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
             {busy ? "清空中…" : preview && preview.entries === 0 ? "无课表可清空" : "确认清空"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================================================================
+// 子模块三:一日安排(全校统一作息模板)
+// ==================================================================
+//
+// 教务在这里设定「一天几节课、每节叫什么、几点到几点」,保存后**所有班级**的排课网格行头
+// (节次名 + 时间段)与默认节数都按这套模板显示,不必逐班重复填时间。
+//   · 课间休息不单独配置 —— 由相邻两节的时间自动推导(上一节结束 → 下一节开始);
+//     想调课间就直接改下一节的开始时间,不会出现"休息 10 分钟"与"下节 8:55 开始"打架的两份数据。
+//   · 保存是「全量替换」:前端编辑整张表,一次提交;节次清空后保存 = 回到"未配置"状态。
+//   · 节数被改小时,已排在第 N 节之后的课程不会被动删除,只是网格里看不到 —— 保存时会给出提示。
+type DayRow = { label: string; startTime: string; endTime: string };
+
+function DayPlanView({
+  meta, say, onGoPlace,
+}: {
+  meta: { classes: Klass[]; gradeOptions: string[]; years: string[]; terms: string[] };
+  say: (t: string, k?: "ok" | "err") => void;
+  onGoPlace: () => void;
+}) {
+  // 学年候选 = 实际有班级的学年 ∪ 当前学年(即使还没建班级,也能先把作息设好)
+  const yearOptions = useMemo(
+    () => Array.from(new Set([...(meta.years || []), defaultYear()])).sort(),
+    [meta.years]
+  );
+  const [year, setYear] = useState("");
+  const [term, setTerm] = useState("");
+  const [rows, setRows] = useState<DayRow[]>([]);
+  const [saved, setSaved] = useState<DayTemplate | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [gen, setGen] = useState({ start: "07:45", duration: "40", gap: "10", count: "8" });
+
+  useEffect(() => {
+    if (year || !yearOptions.length) return;
+    setYear(yearOptions.includes(defaultYear()) ? defaultYear() : yearOptions[0]);
+  }, [yearOptions, year]);
+  useEffect(() => { if (!term) setTerm(meta.terms[0] || TERM_OPTIONS[0]); }, [meta.terms, term]);
+
+  const load = useCallback(() => {
+    if (!year || !term) return;
+    setLoading(true);
+    api
+      .get<DayTemplate>(`/scheduling/day-template?academicYear=${encodeURIComponent(year)}&term=${encodeURIComponent(term)}`)
+      .then((d) => {
+        setSaved(d);
+        setRows((d.periods || []).map((p) => ({ label: p.label || "", startTime: p.startTime || "", endTime: p.endTime || "" })));
+        setWarnings([]);
+      })
+      .catch((e: any) => say(e.message || "加载一日安排失败", "err"))
+      .finally(() => setLoading(false));
+  }, [year, term, say]);
+  useEffect(() => { load(); }, [load]);
+
+  const snapshot = (list: DayRow[]) => list.map((r) => `${r.label}|${r.startTime}|${r.endTime}`).join(";");
+  const dirty = useMemo(
+    () => snapshot(rows) !== snapshot((saved?.periods || []).map((p) => ({ label: p.label || "", startTime: p.startTime || "", endTime: p.endTime || "" }))),
+    [rows, saved]
+  );
+
+  // 编辑中的课间休息(本地即时推导,不必等保存即可预览)
+  const localBreaks = useMemo<DayBreak[]>(() => {
+    const out: DayBreak[] = [];
+    for (let i = 0; i < rows.length - 1; i++) {
+      const a = rows[i], b = rows[i + 1];
+      if (!a.endTime || !b.startTime) continue;
+      const m = toMinutes(b.startTime) - toMinutes(a.endTime);
+      if (m > 0) out.push({ afterPeriod: i + 1, from: a.endTime, to: b.startTime, minutes: m });
+    }
+    return out;
+  }, [rows]);
+
+  const timed = rows.filter((r) => r.startTime && r.endTime);
+  const totalMinutes = timed.reduce((s, r) => s + Math.max(0, toMinutes(r.endTime) - toMinutes(r.startTime)), 0);
+
+  const setRow = (i: number, patch: Partial<DayRow>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const delRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+  const moveRow = (i: number, d: number) =>
+    setRows((rs) => {
+      const j = i + d;
+      if (j < 0 || j >= rs.length) return rs;
+      const copy = [...rs];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
+  // 追加一节:自动沿上一节的时长,并从上一节结束后隔 10 分钟开始(手动微调更方便)
+  const addRow = () =>
+    setRows((rs) => {
+      const last = rs[rs.length - 1];
+      if (last && last.startTime && last.endTime) {
+        const dur = toMinutes(last.endTime) - toMinutes(last.startTime);
+        const start = toMinutes(last.endTime) + 10;
+        if (dur > 0 && start + dur <= 24 * 60) {
+          return [...rs, { label: "", startTime: fromMinutes(start), endTime: fromMinutes(start + dur) }];
+        }
+      }
+      return [...rs, { label: "", startTime: "", endTime: "" }];
+    });
+
+  function applyGenerator() {
+    const dur = Math.max(5, Math.min(180, Number(gen.duration) || 40));
+    const gap = Math.max(0, Math.min(120, Number(gen.gap) || 0));
+    const n = Math.max(1, Math.min(20, Number(gen.count) || 8));
+    let cur = toMinutes(gen.start || "07:45");
+    const next: DayRow[] = [];
+    for (let i = 0; i < n; i++) {
+      if (cur + dur > 24 * 60) break;
+      next.push({ label: "", startTime: fromMinutes(cur), endTime: fromMinutes(cur + dur) });
+      cur += dur + gap;
+    }
+    if (!next.length) { say("起始时间太晚,生成不出任何节次", "err"); return; }
+    setRows(next);
+    say(`已生成 ${next.length} 节(每节 ${dur} 分钟 · 课间 ${gap} 分钟),确认无误后点「保存并应用」`);
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      const d = await api.post<DayTemplate>("/scheduling/day-template", { academicYear: year, term, periods: rows });
+      setSaved(d);
+      setRows((d.periods || []).map((p) => ({ label: p.label || "", startTime: p.startTime || "", endTime: p.endTime || "" })));
+      setWarnings(d.warnings || []);
+      say(d.count ? `一日安排已保存(共 ${d.count} 节),所有班级的排课将按此作息显示` : "已清空该学年学期的一日安排");
+    } catch (e: any) {
+      say(e.message || "保存失败", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 工具栏 */}
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3">
+        <Field label="学年">
+          <Select value={year} onChange={setYear} placeholder="请选择学年" options={yearOptions.map((y) => ({ value: y, label: y }))} />
+        </Field>
+        <Field label="学期">
+          <Select
+            value={term}
+            onChange={setTerm}
+            placeholder="请选择学期"
+            options={(meta.terms.length ? meta.terms : TERM_OPTIONS).map((t) => ({ value: t, label: t }))}
+          />
+        </Field>
+        <div className="pb-1 text-xs text-slate-500">
+          {loading && !rows.length ? "加载中…" : rows.length ? (
+            <>共 <b className="font-medium text-slate-700">{rows.length}</b> 节{timed.length > 0 && <> · 上课合计 {totalMinutes} 分钟</>}</>
+          ) : (
+            "尚未设定"
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-2 pb-1">
+          <button onClick={load} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">刷新</button>
+          <button onClick={onGoPlace} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100">去看排课 →</button>
+        </div>
+      </div>
+
+      {/* 说明 */}
+      <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs leading-relaxed text-slate-600">
+        这里设定的是<b className="font-medium text-slate-700">全校统一作息模板</b> —— 保存后所有班级的排课网格行头(节次名与时间段)与默认节数都按它显示,不必逐班重复填。
+        <span className="ml-1 text-slate-500">课间休息由相邻两节的时间自动算出,要调课间就直接改下一节的开始时间。</span>
+      </div>
+
+      {/* 快速生成 */}
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">
+          快速生成
+          <span className="ml-1.5 text-xs font-normal text-slate-400">一次填好整天的节次,之后可逐节微调</span>
+        </h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="第一节开始">
+            <input type="time" className="ui-input w-[112px]" value={gen.start} onChange={(e) => setGen({ ...gen, start: e.target.value })} />
+          </Field>
+          <Field label="每节时长(分钟)">
+            <input type="number" className="ui-input w-20" value={gen.duration} onChange={(e) => setGen({ ...gen, duration: e.target.value })} />
+          </Field>
+          <Field label="课间休息(分钟)">
+            <input type="number" className="ui-input w-20" value={gen.gap} onChange={(e) => setGen({ ...gen, gap: e.target.value })} />
+          </Field>
+          <Field label="一天节数">
+            <input type="number" className="ui-input w-20" value={gen.count} onChange={(e) => setGen({ ...gen, count: e.target.value })} />
+          </Field>
+          <button
+            onClick={applyGenerator}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100"
+          >
+            生成节次表
+          </button>
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">生成只会覆盖下方表格(保存前不影响线上),大课间可以在生成后单独把某一节的开始时间往后调。</p>
+      </div>
+
+      {/* 节次表 */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+          <h3 className="text-sm font-semibold text-slate-700">
+            节次表
+            <span className="ml-1.5 text-xs font-normal text-slate-400">{year} {term}</span>
+          </h3>
+          <button onClick={addRow} className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">+ 添加一节</button>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {rows.length === 0 && (
+            <p className="px-3 py-6 text-center text-xs text-slate-400">
+              还没有节次。用上面的「快速生成」一次填好,或点「+ 添加一节」逐节添加。
+            </p>
+          )}
+          {rows.map((r, i) => {
+            const br = localBreaks.find((b) => b.afterPeriod === i + 1);
+            const mins = r.startTime && r.endTime && toMinutes(r.endTime) > toMinutes(r.startTime) ? toMinutes(r.endTime) - toMinutes(r.startTime) : 0;
+            return (
+              <div key={i}>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                  <span className="w-14 shrink-0 text-xs font-medium text-slate-500">第 {i + 1} 节</span>
+                  <input
+                    className="ui-input w-32"
+                    placeholder={`第${i + 1}节`}
+                    value={r.label}
+                    onChange={(e) => setRow(i, { label: e.target.value })}
+                    title="节次名(留空则显示「第 N 节」)"
+                  />
+                  <input type="time" className="ui-input w-[112px]" value={r.startTime} onChange={(e) => setRow(i, { startTime: e.target.value })} />
+                  <span className="text-xs text-slate-300">—</span>
+                  <input type="time" className="ui-input w-[112px]" value={r.endTime} onChange={(e) => setRow(i, { endTime: e.target.value })} />
+                  {mins > 0 && <span className="text-xs text-slate-400">{mins} 分钟</span>}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button onClick={() => moveRow(i, -1)} disabled={i === 0} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="上移">↑</button>
+                    <button onClick={() => moveRow(i, 1)} disabled={i === rows.length - 1} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="下移">↓</button>
+                    <button onClick={() => delRow(i)} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-red-500 hover:bg-red-50">删除</button>
+                  </div>
+                </div>
+                {br && (
+                  <div className="flex items-center gap-2 bg-slate-50/70 px-3 py-1 text-xs text-slate-400">
+                    <span className="w-14 shrink-0" />
+                    <span>课间休息 · {prettyTime(br.from)}–{prettyTime(br.to)} · {br.minutes} 分钟</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 保存提示 */}
+      {warnings.length > 0 && (
+        <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+          <b className="font-medium">保存提示</b>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+      {!warnings.length && saved?.outOfRangeEntries ? (
+        <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+          已有 {saved.outOfRangeEntries} 处已排课程位于第 {saved.count} 节之后,排课网格里看不到它们(课程不会丢失,把节数调回来即可)。
+        </div>
+      ) : null}
+
+      {/* 底部操作 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <span className={`text-xs ${dirty ? "text-amber-600" : "text-slate-400"}`}>
+          {dirty ? "有未保存的改动" : saved?.configured ? "已保存,所有班级排课按此显示" : "尚未设定,排课网格使用默认节次"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={load} disabled={!dirty || busy} className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40">
+            放弃改动
+          </button>
+          <button
+            onClick={save}
+            disabled={!dirty || busy}
+            className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+          >
+            {busy ? "保存中…" : "保存并应用"}
           </button>
         </div>
       </div>

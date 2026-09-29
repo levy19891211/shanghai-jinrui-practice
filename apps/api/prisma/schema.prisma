@@ -1000,3 +1000,24 @@ model CourseBlock {
   @@index([academicYear, term])
   @@index([subject])
 }
+
+// 「一日安排」模板 —— 全校统一的作息表:一天有几节课、每节课的名称与时间段。
+// 维度:学年 + 学期(不同学期的作息可能不同);period 即排课网格的行序(1..N)。
+// 排课网格的行头(节次名 / 时间段)与默认节数都由本表驱动,所有班级共用同一套模板。
+// 「课间休息」不单独存字段:由相邻两节的 endTime → 下一节 startTime 的空档推导,
+// 避免"休息时长"与"下一节开始时间"两处数据互相打架(改下一节开始时间即等于改课间)。
+model DayPeriodTemplate {
+  id           String   @id @default(cuid())
+  academicYear String
+  term         String
+  period       Int // 节次序号 1..N,与 TimetableEntry.period 对齐
+  label        String? // 节次名,如 "第1节" / "早读" / "午休";空 = 前端显示"第 N 节"
+  startTime    String? // "07:45"(HH:mm);空 = 该节未设时间
+  endTime      String? // "08:15"
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([academicYear, term, period])
+  @@index([academicYear, term])
+}

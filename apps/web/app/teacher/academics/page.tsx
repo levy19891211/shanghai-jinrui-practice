@@ -854,9 +854,14 @@ function FeedbackTab({ cls }: { cls: Cls }) {
 }
 
 // ============ 课程表(管理员可编辑+导入;教师只读) ============
+// 「一日安排」模板的节次(来自 GET /api/scheduling/day-template)——课表行头优先用它
+interface DayTplPeriod { period: number; label: string | null; startTime: string | null; endTime: string | null; range: string }
+interface DayTpl { periods: DayTplPeriod[] }
+
 function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boolean; onGoScheduling?: () => void }) {
   const [entries, setEntries] = useState<TimetableItem[]>([]);
   const [teachers, setTeachers] = useState<Tch[]>([]);
+  const [dayTpl, setDayTpl] = useState<DayTpl | null>(null);
   const [form, setForm] = useState({ dayOfWeek: 1, period: 1, subject: SUBJECTS[0], teacherId: "", room: "", academicYear: cls.academicYear, term: cls.term });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -866,6 +871,15 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
     load();
     if (isAdmin) api.get<{ teachers: Tch[] }>("/academics/teachers").then((d) => { setTeachers(d.teachers); if (d.teachers[0]) setForm((f) => ({ ...f, teacherId: f.teacherId || d.teachers[0].id })); }).catch(() => {});
   }, [cls.id, load, isAdmin]);
+  // 一日安排模板(全校统一作息):行头节次名与时间段以它为准,拿不到(如权限或未配置)则回退到条目快照
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<DayTpl>(`/scheduling/day-template?academicYear=${encodeURIComponent(cls.academicYear)}&term=${encodeURIComponent(cls.term)}`)
+      .then((d) => { if (alive) setDayTpl(d.periods && d.periods.length ? d : null); })
+      .catch(() => { if (alive) setDayTpl(null); });
+    return () => { alive = false; };
+  }, [cls.academicYear, cls.term]);
 
   async function add() {
     setBusy(true); setErr("");
@@ -885,6 +899,9 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
   // 行头节次名/时间:取该节次任一条目的 periodLabel/periodTime(导入网格时携带)
   const periodMeta: Record<number, { label?: string | null; time?: string | null }> = {};
   entries.forEach((e) => { if (!periodMeta[e.period] && (e.periodLabel || e.periodTime)) periodMeta[e.period] = { label: e.periodLabel, time: e.periodTime }; });
+  // 行头与行数:配置了「一日安排」就按模板走;同时保证所有已排条目所在节次都能显示出来
+  const tplPeriods = dayTpl?.periods || [];
+  const rowCount = tplPeriods.length ? Math.max(tplPeriods.length, maxPeriod) : maxPeriod;
   // 预计算每列的跨行合并信息(连堂课合并为 rowSpan 大格)
   const spanByDay: Record<number, { runs: Record<number, { len: number; items: TimetableItem[] }>; covered: Record<number, boolean> }> = {};
   for (let d = 1; d <= 7; d++) spanByDay[d] = columnSpanRuns(grid[d] || {}, maxPeriod);
@@ -918,11 +935,15 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
           <table className="min-w-full text-sm">
             <thead className="text-slate-500"><tr><th className="px-2 py-1 text-left">节次</th>{DAYS.map((d) => <th key={d} className="px-2 py-1 text-center">{d}</th>)}</tr></thead>
             <tbody>
-              {Array.from({ length: maxPeriod }, (_, i) => i + 1).map((p) => (
+              {Array.from({ length: rowCount }, (_, i) => i + 1).map((p) => {
+                const tp = tplPeriods.find((x) => x.period === p);
+                const headLabel = tp?.label || periodMeta[p]?.label || `第 ${p} 节`;
+                const headTime = tp?.range || periodMeta[p]?.time || "";
+                return (
                 <tr key={p} className="border-t border-slate-100">
                   <td className="whitespace-nowrap px-2 py-1 text-slate-500">
-                    <div>{periodMeta[p]?.label || `第 ${p} 节`}</div>
-                    {periodMeta[p]?.time && <div className="text-[10px] text-slate-400">{periodMeta[p].time}</div>}
+                    <div>{headLabel}</div>
+                    {headTime && <div className="text-[10px] text-slate-400">{headTime}</div>}
                   </td>
                   {DAYS.map((_, di) => {
                     const d = di + 1;
@@ -961,7 +982,8 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}

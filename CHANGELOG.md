@@ -1,5 +1,20 @@
 # 版本历史
 
+## V2.4.122 (2026-09-29) — 排课管理新增「③ 一日安排」:全校统一作息模板,所有班级排课照此显示
+- 需求（附截图）：除了「组课」「排课」两个子模块，再增加一个「一日安排设定」模块，用于设置一天有几节课、每节课的时间段、课间休息的时间段等；设定好后所有班级排课都按这个模板走。
+- **数据模型**（`apps/api/prisma/schema.prisma` 新增 `DayPeriodTemplate`）：`academicYear + term + period(1..N) → label / startTime / endTime`，唯一键 `@@unique([academicYear, term, period])`。
+  - **课间休息刻意不存字段**：由相邻两节的 `endTime → 下一节 startTime` 自动推导。这样「休息 10 分钟」与「下一节 8:55 开始」不可能出现两份互相矛盾的数据 —— 要调课间就等于改下一节的开始时间。
+- **后端**（`apps/api/src/routes/scheduling.js`，+205 行）：
+  - 新增只读 **`GET /api/scheduling/day-template?academicYear=&term=`**，**任何已登录用户可读**（班级课表等处要显示节次时间，普通教师也需要）；`requireScheduler` 对该路径放行，写操作仍仅限教务老师/管理员。返回节次表 + 推导出的 `breaks` + 起止/跨度统计 + `outOfRangeEntries`（已排在第 N 节之后的条目数）。
+  - 新增 **`POST /api/scheduling/day-template`**（**全量替换**）：数组顺序即节次顺序，服务端重排为 `period = 1..N`；`periods: []` = 清空模板回到「未配置」。时间接受 `7:45` / `07:45` 两种写法并统一归一为 `HH:mm`；结束时间 ≤ 开始时间 → 400；节次时间倒挂只给 warning 不阻断（作息允许任意形态）；节数被改小时提示「已有 N 处已排课程位于网格之外」，**不删任何课程数据**。
+  - `GET /board` 新增返回 `dayTemplate`，`periodMeta` **优先取模板**、无模板才回退到课表条目快照（兼容历史网格导入的课表）。
+  - `periodMetaFor()` 改为**优先按模板**写 `TimetableEntry` 的 `periodLabel/periodTime` 快照（模板表不可用时 try/catch 降级到旧逻辑）。
+- **前端**：
+  - `apps/web/components/TeacherScheduling.tsx`（+361 行）：顶部分段控件加「③ 一日安排」（`?sub=day` 可直达）；新增 `DayPlanView` —— 学年/学期选择、**快速生成**（第一节开始 + 每节时长 + 课间时长 + 一天节数 → 一键生成整张节次表）、节次表逐行编辑（节次名 / 开始 / 结束 / 上移下移 / 删除）、**只读的「课间休息」行**（编辑中即时推导）、脏状态提示 + 「保存并应用」、保存后的 warnings 区。
+  - 排课网格：行头节次名改用模板 `label`（留空则显示「第 N 节」）、第二行时间段用模板 `range`；**默认节数改为模板节数**（未配置时仍为 8）；工具栏「显示节次」的「自动（N 节）」随之变化；新增一行「行头作息」提示条（已配置 → 显示共 N 节与起止时间；未配置 → 琥珀色提醒 + 「一日安排设定 →」快捷入口）。
+  - `apps/web/app/teacher/academics/page.tsx`（班级管理 →「课程表」Tab）：行头同样优先用模板（读取失败则回退条目快照），行数取 `max(模板节数, 已排最大节次)`，保证已排课程不会被藏起来。
+- 验证：`prisma validate` + `node --check` + `tsc --noEmit` 均通过；服务器 `prisma db push` + **`prisma generate`**（新增模型必须先 generate，否则运行时报「client 不认识该 model」）；生产 E2E 用隔离学年自建自清。
+
 ## V2.4.121 (2026-09-29) — 排课管理新增一键「清空课表」:课程块池保留,排课结果归零后重新排课
 - 需求：排课管理里可以一键「清空课表」，然后重新排课。
 - 后端 `apps/api/src/routes/scheduling.js`：
