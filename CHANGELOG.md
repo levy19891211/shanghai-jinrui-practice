@@ -1,5 +1,45 @@
 # 版本历史
 
+## V2.4.126 (2026-09-30) — 雅思评分引擎上线:口径唯一 + 全真卷算分修复 + 错题本闭环
+- 背景:`docs/IELTS_LANGUAGE_UPGRADE_DESIGN.md` 提出 4 期升级方案;审查后先交付 **P1(地基与测评引擎)**
+  ——审查报告见 `docs/IELTS_LANGUAGE_UPGRADE_REVIEW.md`(逐项核证 9/9,并新增 8 项发现)。
+- 🔴 **修复 H1(严重):全真连考卷的听力/阅读分数被完全丢弃**。
+  旧逻辑 submit 时混合卷把 `session.band` 置 null,而 grade 里 `hasObjective && session.band ? (session.band+主观平均)/2 : 主观平均`
+  因此**永远走右侧分支** ⇒ 最终 Band **只剩写作/口语的平均分**,客观题一道都没算进去(左侧是死代码)。
+  现改为:交卷即落**分项** `skillBands`(每技能自带 correct/total),批改后由 `composeOverall` 合成
+  `overallBand`;任一分项待批改则合成结果为 null 并明示缺失项,不再产生"缺项的平均数"。
+- ✅ **口径唯一(G2)**:删除前端 `LangGrowthPanel.estimateBand`(阶梯估算)与后端硬编码 `LISTENING_BAND`(比例查表)两套算法,
+  统一由新增的 `apps/api/src/lib/lang-scoring.js` 产出,随 `scoringVersion = 2026.09-p1` 落库;前端不再估算,
+  缺分就是 null(显示"待批改")。同时更正设计文档的一处判断:`Math.round(avg*2)/2` **已经**等价 IELTS 官方进位规则
+  (.25→半分、.75→整分),无需另写一套,现保留该算式并以单测锁定语义。
+- 🟠 **H2**:`total` 含主观题导致正确率被稀释 ⇒ 改为按技能分项统计分子分母。
+- 🟠 **H3**:换算表补 `maxRaw` 维度 —— 官方量表只对 40 题有效,10 题练习卷直接查表会虚高。
+  现在题量≠maxRaw 时按比例折算并标记 `scaled=true`(页面上如实标注"专项题量已折算至 40 题量纲")。
+- 🟡 **H4**:雅思多选允许任意顺序,原判分对顺序/分隔符敏感;`"B,D"` / `"D,B"` / `"BD"` 现在等价。
+- 🟡 **H6/H8**:批改池不再 include 全量题目字段(take 200→100、字段瘦身);新增 `?scope=mine`
+  (默认 `all` 保持既有行为,避免破坏现有批改工作流)。
+- 🟡 **H7**:新增 `POST /language/scoring/rescore`(ADMIN,`dryRun` 默认 true、`confirm` 必填、严格幂等),
+  供日后择机把历史会话对齐到新口径 —— **本次未执行**,历史数据保留原值。
+- **G1 错题本闭环**:`LanguageWrongBook` 此前只写不读(写了数据、无任何 GET 端点、前端零引用)。
+  新增 `GET /wrong-book` + `master` 标记 + `DELETE`,并新增学生端页面 `/app/language/wrong`
+  (按技能/题型错因分布 + 薄弱题型榜 + 解析展开 + 标记掌握)。
+- **G3**:教师端题型下拉补 `YES_NO_NG`(后端判分早已支持,只是 UI 无法录入)。
+- **G4**:`docs/API.md` 新增「语言学习模块」章节 §9(评分口径、端点清单、数据结构、判分规则)。
+- **新增能力**:
+  - 四维评分:写作 TR/CC/LR/GRA、口语 FC/LR/GRA/Pron(量表版本 `ielts-4dim-v1`),
+    批改时可填四维自动合成该题 Band,并记录 `gradedBy`/`gradedAt`(H5 审计)。
+  - 目标分 `LanguageGoal`(`GET/PUT /language/goals`),交卷快照到会话用于达标判定。
+  - 学生端四维报告页 `/app/language/report/[sessionId]`:分项雷达 + 四维明细 + 逐题回顾 + 错因分布 + 目标差距建议。
+  - 教师端批改台:会话级合成总分展示 + 四维打分面板 + 批改时间。
+  - 个人空间成长看板:Band 轨迹加目标分参考线;全真连考会话现在会同时给听/读/写/口各记一次分项。
+- **数据模型**:新增 `LanguageBandTable`、`LanguageGoal` 两张表;Language* 五张表均为**纯附加可空列**
+  (`topic/tags/answerFormat/sourceRef/estSec`、`kind/chartSpec/audioUrl`、`testType/officialRef`、
+  `skillBands/overallBand/goalBand/scoringVersion/scaled`、`subscores/rubricVersion/aiPreScore/gradedBy/gradedAt`)。
+  **未采纳**设计文档中的 `LanguagePaper.bandTableId` —— 会与「按 examType+skill+生效时间定位」形成双源真相。
+- **隔离性**:改动全部限于 `Language*` 表与 `/api/language`;学科表与非语言路由零改动;既有列语义未变。
+- **验证**:评分引擎单测 **31 PASS / 0 FAIL**;`tsc --noEmit` 通过;`node --check` 通过;
+  接口级 E2E(临时学生/题目/卷/会话自建自清)**全过且零残留**;build 通过;实抓 served chunk 核对版本号。
+
 ## V2.4.125 (2026-09-30) — 修复:「清空课表」后『考试与成绩』仍列出已无课表的课程
 - 需求（附截图）：「高三1班里课表已经清空了，但是考试和成绩里还是显示有很多课程，请修复这个 bug」。截图现状：10 门课程 · 1 场考试，其中 9 门「暂无」（无考试）。
 - **根因**：`GET /academics/classes/:id/gradebook` 的课程列表是**三源并集** ——

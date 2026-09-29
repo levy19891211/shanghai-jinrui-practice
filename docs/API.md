@@ -388,6 +388,77 @@
 
 ---
 
+## 语言学习模块(`/api/language`)— 雅思为主
+
+> 本节为 V2.4.126 补录(G4)。语言模块的**所有 Band 一律由后端评分引擎产出**(`apps/api/src/lib/lang-scoring.js`),前端不得自行估算 —— 这是本模块最硬的一条契约。
+
+### 9.1 评分口径(必读)
+
+| 概念 | 规则 |
+|------|------|
+| 单一来源 | Band 只由评分引擎计算,并随 `scoringVersion` 落库;当前版本 `2026.09-p1` |
+| Band 换算表 | 听力与阅读**各一张**(容错曲线不同),取 `isDefault` 且 `effectiveFrom <= now` 的最近一条;表可被教师编辑 |
+| 量纲 | 每张表带 `maxRaw`(官方 IELTS = 40)。**题量 ≠ maxRaw 时按比例折算再查表**,并在会话上标记 `scaled = true` |
+| 半分进位 | 四维平均 / 四技能平均后按 IELTS 规则进位:`.25 → 上一个半分`、`.75 → 上一个整分`(等价于 `Math.round(x*2)/2`) |
+| 全真卷合成 | 先算**分项** `skillBands`,四项全部有值时才合成 `overallBand`;任一项待批改则 `overallBand = null`,不产生"缺项的平均数" |
+| 目标判定 | `overallBand >= goalBand` 判达标;`goalBand` 是交卷时对目标分的**快照**,事后改目标不影响历史判定 |
+| 历史会话 | 保留原口径不回填;`scoringVersion` 为空即引擎上线前的老数据。可用 `POST /scoring/rescore` 择机对齐 |
+
+四维量表 `rubricVersion = ielts-4dim-v1`:
+
+| 技能 | 维度 |
+|------|------|
+| WRITING | `TR` 任务回应 / `CC` 连贯衔接 / `LR` 词汇资源 / `GRA` 语法多样与准确 |
+| SPEAKING | `FC` 流利与连贯 / `LR` 词汇资源 / `GRA` 语法多样与准确 / `Pron` 发音 |
+
+### 9.2 端点清单
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/language/scoring-config` | 当前评分口径、版本、换算表、四维维度定义 | 已登录 |
+| GET | `/language/band-tables?examType=IELTS` | Band 换算表列表 | TEACHER/ADMIN |
+| PUT | `/language/band-tables/:id` | 编辑换算表(`rows` 须为非空 `[{raw,band}]`,`band` ∈ [0,9];自动按 raw 降序归一) | TEACHER/ADMIN |
+| POST | `/language/band-tables/reset` | 恢复官方默认表,**必须 `confirm:true`** | ADMIN |
+| GET | `/language/goals?examType=&studentId=` | 目标分(不带 studentId = 本人) | 本人 / TEACHER,ADMIN |
+| PUT | `/language/goals` | 写入目标分(字段 ∈ `overall/listening/reading/writing/speaking/targetDate`) | 本人 / TEACHER,ADMIN |
+| GET | `/language/wrong-book?skill=&qType=&mastered=` | 错题本列表 + 按技能/题型聚合(V2.4.126 新增,此前该表只写不读) | 本人 |
+| POST | `/language/wrong-book/:questionId/master` | 标记/取消已掌握(`{mastered?:boolean}`,缺省取反) | 本人 |
+| DELETE | `/language/wrong-book/:questionId` | 移出错题本 | 本人 |
+| GET | `/language/sessions/:id/report` | 四维报告(分项 Band / 四维 / 逐题 / 错因 / 目标差距) | 本人 / TEACHER,ADMIN |
+| POST | `/language/scoring/rescore` | 按当前口径重算历史会话;`dryRun` 默认 true,**写库须 `confirm:true`** | ADMIN |
+| GET | `/language/review-pool?scope=` | 待批改会话;`scope=mine` 只看自己布置的作业(默认 `all`,保持既有行为) | TEACHER/ADMIN |
+| POST | `/language/review-pool/:sessionId/grade` | 批改:**支持 `subscores` 四维**,给出后四维自动合成该题 Band;同时重算会话 `skillBands`/`overallBand` | TEACHER/ADMIN |
+
+### 9.3 关键数据结构
+
+`LanguageSession` 评分相关字段:
+
+```json
+{
+  "skillBands": { "READING": { "band": 6.5, "correct": 26, "total": 40, "scaled": false },
+                  "WRITING": { "band": null, "pending": true } },
+  "overallBand": null,
+  "goalBand": 7,
+  "scoringVersion": "2026.09-p1",
+  "scaled": false
+}
+```
+
+`LanguageAnswerRecord` 主观题评分字段:
+
+```json
+{ "subscores": { "TR": 6.5, "CC": 6, "LR": 7, "GRA": 6 },
+  "rubricVersion": "ielts-4dim-v1", "band": 6.5, "gradedBy": "...", "gradedAt": "..." }
+```
+
+### 9.4 判分规则(客观题)
+
+- `FILL_BLANK`:可接受答案用 `|` 分隔;忽略大小写与首尾空格;容错复数 ±s 与连字符归一。
+- `MULTIPLE_CHOICE`(V2.4.126):**答案顺序无关**,并归一分隔符 —— `"B,D"` / `"D,B"` / `"BD"` 等价。
+- 其余题型:大小写归一后全文比对。
+
+---
+
 ## 变更记录
 
 | 日期 | 变更 | 提出方 |
@@ -395,4 +466,4 @@
 | 2026-08-07 | 建立刷题系统完整契约(认证/题库/会话/成绩/学情) | WB |
 | 2026-09-23 | 补录考试管理/考情分析契约;`GET /api/exams/:id/student/:studentId` 的 `perQuestion[]` 新增 `answeredAt`(ISO 8601,该题首次作答时刻),用于考情明细的时间分配甘特图 | WB |
 | 2026-09-23 | 新增 `POST /api/sessions/:id/visits`(分段停留上报,回答「一题多段」);`AnswerRecord` 新增 `visits` 字段;`perQuestion[]` 新增 `visits: [{start,end,seconds}]｜null`。老会话无 `visits`,前端回退单段渲染 | WB |
-| 2026-09-24 | 补充 `visits` 的两条真实世界口径:① 与 `timeSpent` 的差异还可能来自**会话跨版本/跨标签页**(采集自上线起)⇒ 净停留总时长一律以 `timeSpent` 为准,渲染以 `visits` 优先;② 段 `start` 可能落在会话墙钟区间外(不限时练习会话长期挂着),甘特图横轴为「各段首尾相接的累计轴」故不受影响 | WB |
+| 2026-09-30 | **V2.4.126 补录语言模块完整契约(§9)**:评分口径唯一来源(听读分离的可配换算表 + IELTS 半分进位 + 全真卷分项合成 + 目标判定)、新端点(`scoring-config`/`band-tables`/`goals`/`wrong-book`/`sessions/:id/report`/`scoring/rescore`)、`grade` 四维扩展、`skillBands`/`subscores` 数据结构、客观题判分规则 | WB |

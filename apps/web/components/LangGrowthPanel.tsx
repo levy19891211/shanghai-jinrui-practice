@@ -1,10 +1,12 @@
 "use client";
 // 个人空间 - 学情分析·语言成长:全部以雅思 9 分(Band)标准呈现
-// 真实 Band 用教师评分;无评分时按正确率估算(带 * 标记),写作/口语以教师评分 Band 为准
+// V2.4.126(G2):Band 一律来自后端评分引擎 —— 本组件**不再自行估算**。
+// 旧实现用 estimateBand(正确率阶梯)兜底,与后端 bandOf(比例查表)口径不同,
+// 同一份作答在列表与详情会读出两个数。现在无引擎分就是 null,老实显示"待批改/已提交"。
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from "recharts";
 
 export type LangSession = {
@@ -19,6 +21,12 @@ export type LangSession = {
   startedAt: string;
   submittedAt: string | null;
   paper: { title: string } | null;
+  // V2.4.126:评分引擎产出
+  skillBands?: Record<string, { band: number | null; correct?: number; total?: number; scaled?: boolean; pending?: boolean }> | null;
+  overallBand?: number | null;
+  goalBand?: number | null;
+  scoringVersion?: string | null;
+  scaled?: boolean;
 };
 
 export type LangAssignment = {
@@ -44,24 +52,6 @@ const SKILL_COLOR: Record<string, string> = {
 
 type Milestone = { id: string; title: string; desc: string; date: string; icon: string; highlight: boolean };
 
-// 正确率 → 雅思 Band(9 分制)估算
-function estimateBand(correct: number | null | undefined, total: number | null | undefined): number | null {
-  if (correct == null || !total || total <= 0) return null;
-  const r = correct / total;
-  if (r >= 0.9) return 9;
-  if (r >= 0.85) return 8.5;
-  if (r >= 0.8) return 8;
-  if (r >= 0.75) return 7.5;
-  if (r >= 0.7) return 7;
-  if (r >= 0.65) return 6.5;
-  if (r >= 0.6) return 6;
-  if (r >= 0.55) return 5.5;
-  if (r >= 0.5) return 5;
-  if (r >= 0.45) return 4.5;
-  if (r >= 0.4) return 4;
-  return 3;
-}
-
 const bandColor = (b: number | null) => (b == null ? "#94a3b8" : b >= 7 ? "#059669" : b >= 5.5 ? "#d97706" : "#dc2626");
 
 export default function LangGrowthPanel({
@@ -76,19 +66,24 @@ export default function LangGrowthPanel({
   const router = useRouter();
   const [hlOpen, setHlOpen] = useState(true);
 
-  // 已提交的语言练习/模考(有成绩),并给出有效 Band(真实评分优先,否则按正确率估算)
+  // 已提交的语言练习/模考 —— Band 只取后端评分引擎产出,前端不做任何估算。
+  // est 语义随之改变:不再是"估算标记",而是"该项 Band 由专项题量折算而来"(见后端 H3 的 scaled)。
   const done = useMemo(
     () =>
       sessions
         .filter((s) => s.submittedAt)
         .map((s) => {
-          // est 非空表示 Band 为按正确率估算(真实评分时置 null)
-          const est = s.band != null ? null : estimateBand(s.correctCount, s.total);
-          const band = s.band != null ? s.band : est;
-          return { ...s, band, est };
+          const band = s.overallBand != null ? s.overallBand : s.band != null ? s.band : null;
+          return { ...s, band, est: s.scaled ? true : null };
         }),
     [sessions],
   );
+
+  // 快照于这批会话上的目标分(后端在 submit 时写入,事后改目标不影响历史判定)
+  const goalBand = useMemo(() => {
+    for (const s of sessions) if (s.goalBand != null) return s.goalBand;
+    return null;
+  }, [sessions]);
 
   // 概览统计(全部以 Band 为准)
   const overview = useMemo(() => {
@@ -125,15 +120,23 @@ export default function LangGrowthPanel({
   );
 
   // 各技能聚合(平均 Band)
+  // 各技能聚合 —— 优先按会话的**分项 Band** 归集:
+  // 这样一张全真连考卷(FULL)会同时给听力/阅读/写作/口语各记一次,而不是只落在"全真"桶里。
   const bySkill = useMemo(() => {
     const map = new Map<string, { skill: string; sessions: number; bandSum: number; bandCount: number }>();
-    for (const s of done) {
-      if (s.band == null) continue;
-      const cur = map.get(s.skill) || { skill: s.skill, sessions: 0, bandSum: 0, bandCount: 0 };
+    const put = (skill: string, band: number | null) => {
+      const cur = map.get(skill) || { skill, sessions: 0, bandSum: 0, bandCount: 0 };
       cur.sessions += 1;
-      cur.bandSum += s.band;
-      cur.bandCount += 1;
-      map.set(s.skill, cur);
+      if (band != null) { cur.bandSum += band; cur.bandCount += 1; }
+      map.set(skill, cur);
+    };
+    for (const s of done) {
+      const sb = s.skillBands && typeof s.skillBands === "object" ? s.skillBands : null;
+      if (sb && Object.keys(sb).length > 0) {
+        for (const [k, v] of Object.entries(sb)) put(k, v?.band ?? null);
+      } else {
+        put(s.skill, s.band);
+      }
     }
     return Array.from(map.values())
       .map((x) => ({
@@ -223,7 +226,7 @@ export default function LangGrowthPanel({
         for (const t of [6, 6.5, 7, 7.5, 8]) {
           if (s.band >= t && !reachedBand.has(t)) {
             reachedBand.add(t);
-            const est = s.est != null && s.band === s.est ? "（按正确率估算）" : "";
+            const est = s.est ? "（专项题量折算）" : "";
             ms.push({ id: `band${t}`, title: `Band ${t} 达成${est}`, desc: `估分达到 ${t},离目标更近一步。`, date, icon: "🏅", highlight: t >= 7 });
           }
         }
@@ -312,7 +315,8 @@ export default function LangGrowthPanel({
           <h2 className="text-sm font-semibold text-slate-700">成长图谱 · Band 轨迹</h2>
           <span className="text-xs text-slate-400">
             {done.length} 次练习 · 最高 {overview.bestBand == null ? "—" : `${overview.bestBand} Band`}
-            <span className="ml-2 text-slate-300">* 为按正确率估算</span>
+            {goalBand != null && <span className="ml-2 text-indigo-400">目标 {goalBand}</span>}
+            <span className="ml-2 text-slate-300">* 为由专项题量折算至 40 题量纲</span>
           </span>
         </div>
         <p className="mt-1 text-xs text-slate-400">每次语言练习/模考的雅思 Band 变化（最近 20 次，0–9 分制）</p>
@@ -322,11 +326,14 @@ export default function LangGrowthPanel({
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis domain={[0, 9]} tick={{ fontSize: 11 }} />
+              {goalBand != null && (
+                <ReferenceLine y={goalBand} stroke="#6366f1" strokeDasharray="4 4" label={{ value: `目标 ${goalBand}`, position: "insideTopRight", fontSize: 11, fill: "#6366f1" }} />
+              )}
               <Tooltip
                 formatter={(v: number) => [`${v} Band`, "Band"]}
                 labelFormatter={(l, payload) => {
                   const p = payload?.[0]?.payload;
-                  return p ? `${p.title} · ${p.skill} · ${p.mode}${p.est ? "（估算）" : ""}` : `第 ${l} 次`;
+                  return p ? `${p.title} · ${p.skill} · ${p.mode}${p.est ? "（折算）" : ""}` : `第 ${l} 次`;
                 }}
               />
               <Line type="monotone" dataKey="band" name="Band" stroke="#b8860b" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls />
@@ -514,6 +521,13 @@ export default function LangGrowthPanel({
                 ) : (
                   <p className="mt-0.5 text-xs text-slate-400">写作/口语 · 教师评分</p>
                 )}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/app/language/report/${s.id}`)}
+                  className="mt-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-[11px] font-medium text-indigo-600 transition hover:bg-indigo-50"
+                >
+                  查看四维报告 →
+                </button>
               </div>
             </div>
           ))}

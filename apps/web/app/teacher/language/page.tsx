@@ -83,7 +83,8 @@ const SKILLS = ["LISTENING", "READING", "WRITING", "SPEAKING"];
 const SKILL_CHIPS = ["READING", "LISTENING", "WRITING", "SPEAKING"];
 const QTYPES: Record<string, string[]> = {
   LISTENING: ["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING"],
-  READING: ["TRUE_FALSE_NG", "FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"],
+  // V2.4.126(G3):后端判分早已支持 YES_NO_NG,但下拉里没有 ⇒ 阅读 YNNG 题根本无法录入
+  READING: ["TRUE_FALSE_NG", "YES_NO_NG", "FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING"],
   WRITING: ["TASK1", "TASK2"],
   SPEAKING: ["PART1", "PART2", "PART3"],
 };
@@ -91,12 +92,20 @@ const EXAM_LABEL: Record<string, string> = { IELTS: "雅思", TOEFL: "托福", K
 const SKILL_LABEL: Record<string, string> = { LISTENING: "听力", READING: "阅读", WRITING: "写作", SPEAKING: "口语", FULL: "全真连考" };
 const QTYPE_LABEL: Record<string, string> = {
   FILL_BLANK: "填空", SINGLE_CHOICE: "单选", MULTIPLE_CHOICE: "多选", MATCHING: "配对",
-  TRUE_FALSE_NG: "判断T/F/NG", HEADING: "段落标题", TASK1: "写作Task1", TASK2: "写作Task2",
+  TRUE_FALSE_NG: "判断T/F/NG", YES_NO_NG: "判断Y/N/NG", HEADING: "段落标题", TASK1: "写作Task1", TASK2: "写作Task2",
   PART1: "口语Part1", PART2: "口语Part2", PART3: "口语Part3",
 };
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "草稿", PENDING_REVIEW: "待审核", PUBLISHED: "已发布", REJECTED: "已退回", ARCHIVED: "已下架",
 };
+
+// V2.4.126:写作/口语四维量表(必须与后端 lang-scoring.js 的 dimsForSkill 保持一致)
+const WRITING_DIMS: [string, string][] = [["TR", "任务回应 TR"], ["CC", "连贯衔接 CC"], ["LR", "词汇资源 LR"], ["GRA", "语法多样 GRA"]];
+const SPEAKING_DIMS: [string, string][] = [["FC", "流利连贯 FC"], ["LR", "词汇资源 LR"], ["GRA", "语法多样 GRA"], ["Pron", "发音 Pron"]];
+const dimsOf = (skill: string) => (skill === "WRITING" ? WRITING_DIMS : SPEAKING_DIMS);
+const BAND_STEPS = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9];
+// IELTS 官方进位:平均后 .25→半分、.75→整分;Math.round(x*2)/2 与之等价
+const roundHalf = (x: number) => Math.round(x * 2) / 2;
 
 const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString("zh-CN", { hour12: false }) : "—");
 
@@ -675,21 +684,56 @@ function PaperForm({ allQuestions, passages, initial, onClose, onSaved }: { allQ
 function GradingModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const [data, setData] = useState<any>(null);
   const [scores, setScores] = useState<Record<string, { band: string; feedback: string }>>({});
+  // V2.4.126:四维分数按 recordId → { dim: value }
+  const [subs, setSubs] = useState<Record<string, Record<string, string>>>({});
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.get(`/language/review-pool/${sessionId}`).then(setData).catch((e) => setErr(e.message));
+    setSubs({});
+    setScores({});
+    api.get(`/language/review-pool/${sessionId}`).then((d) => {
+      setData(d);
+      // 已批改过的四维回显
+      const init: Record<string, Record<string, string>> = {};
+      for (const it of (d as any).items || []) {
+        if (it.subscores) {
+          init[it.recordId] = Object.fromEntries(Object.entries(it.subscores).map(([k, v]) => [k, String(v)]));
+        }
+      }
+      setSubs(init);
+    }).catch((e) => setErr(e.message));
   }, [sessionId]);
+
+  // 四维已填时的建议 Band(不落任何数据,纯前端提示,最终仍以后端合成值为准)
+  const avgOf = (recordId: string, skill: string): number | null => {
+    const s = subs[recordId] || {};
+    const vals = dimsOf(skill).map(([d]) => Number(s[d])).filter((v) => Number.isFinite(v) && v > 0);
+    if (vals.length === 0) return null;
+    return roundHalf(vals.reduce((a, x) => a + x, 0) / vals.length);
+  };
 
   async function grade(recordId: string) {
     const s = scores[recordId];
-    if (!s || !s.band) return;
+    const sub = subs[recordId];
+    const hasSub = sub && Object.values(sub).some((v) => v !== "" && v !== undefined);
+    if (!s || (!s.band && !hasSub)) return;
     try {
-      await api.post(`/language/review-pool/${sessionId}/grade`, { recordId, band: Number(s.band), feedback: s.feedback || null });
-      setData((d: any) => ({
-        ...d,
-        items: d.items.map((it: any) => (it.recordId === recordId ? { ...it, band: Number(s.band), feedback: s.feedback } : it)),
-      }));
+      await api.post(`/language/review-pool/${sessionId}/grade`, {
+        recordId,
+        // 四维优先:给了四维就以四维自动合成该题 Band,避免"维度与总分自相矛盾"
+        subscores: hasSub
+          ? Object.fromEntries(Object.entries(sub).filter(([, v]) => v !== "" && v !== undefined).map(([k, v]) => [k, Number(v)]))
+          : undefined,
+        band: hasSub ? undefined : Number(s.band),
+        feedback: s.feedback || null,
+      });
+      const r = await api.get(`/language/review-pool/${sessionId}`);
+      setData(r);
+      const init: Record<string, Record<string, string>> = {};
+      for (const it of (r as any).items || []) {
+        if (it.subscores) init[it.recordId] = Object.fromEntries(Object.entries(it.subscores).map(([k, v]) => [k, String(v)]));
+      }
+      setSubs(init);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "批改失败");
     }
@@ -707,6 +751,23 @@ function GradingModal({ sessionId, onClose }: { sessionId: string; onClose: () =
               学生:<b>{data.student.name}</b> ({data.student.email}) · {EXAM_LABEL[data.examType]} {SKILL_LABEL[data.skill]} · {data.paperTitle || ""}
               <br />提交于 {fmtDate(data.submittedAt)} · 客观题: {data.objectiveSummary?.correctCount}/{data.objectiveSummary?.total}
             </p>
+            {/* V2.4.126:会话级合成结果 —— 全真卷现在会带上听力/阅读客观分,不再是"只剩作文口语分" */}
+            {(data.overallBand != null || (data.skillBands && Object.keys(data.skillBands).length > 0)) && (
+              <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+                <p className="text-xs font-medium text-indigo-800">
+                  会话总分:<b className="text-base">{data.overallBand != null ? data.overallBand : "待各项批改完成后合成"}</b>
+                  {data.goalBand != null && <span className="ml-2 text-indigo-500">目标 {data.goalBand}</span>}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {Object.entries(data.skillBands || {}).map(([k, v]: [string, any]) => (
+                    <span key={k} className="rounded-lg bg-white px-2 py-0.5 text-[11px] text-slate-600 ring-1 ring-indigo-100">
+                      {SKILL_LABEL[k] || k}: <b>{v?.band != null ? v.band : "待批改"}</b>
+                    </span>
+                  ))}
+                </div>
+                {data.scoringVersion && <p className="mt-1.5 text-[11px] text-indigo-300">口径 {data.scoringVersion}</p>}
+              </div>
+            )}
             {data.items.map((it: any, i: number) => (
               <div key={it.recordId} className="mb-4 rounded-xl border border-slate-200 p-4">
                 <div className="mb-2 flex items-center gap-2">
@@ -725,6 +786,41 @@ function GradingModal({ sessionId, onClose }: { sessionId: string; onClose: () =
                     <div className="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 text-xs text-slate-500">{it.solution}</div>
                   </details>
                 )}
+                {/* V2.4.126:四维打分面板 —— 填了维度就按 IELTS 半分规则自动给建议 Band */}
+                <div className="mb-2 rounded-xl bg-slate-50 p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-slate-600">四维评分</span>
+                    <span className="text-[11px] text-slate-400">填任意一项后自动折算建议分;留空则走下方直接打分</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {dimsOf(it.skill).map(([d, label]) => (
+                      <label key={d} className="block">
+                        <span className="mb-1 block text-[11px] text-slate-500">{label}</span>
+                        <select
+                          className="ui-select py-1 text-[13px]"
+                          value={subs[it.recordId]?.[d] ?? ""}
+                          onChange={(e) =>
+                            setSubs((p) => ({ ...p, [it.recordId]: { ...(p[it.recordId] || {}), [d]: e.target.value } }))
+                          }
+                        >
+                          <option value="">未评</option>
+                          {BAND_STEPS.map((v) => (
+                            <option key={v} value={v} className="text-[13px]">{v}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  {(() => {
+                    const avg = avgOf(it.recordId, it.skill);
+                    if (avg == null) return null;
+                    return (
+                      <p className="mt-2 text-xs text-indigo-700">
+                        四维平均 {avg} → 提交后本题记为 <b>{avg} Band</b>(按 IELTS 半分进位规则)
+                      </p>
+                    );
+                  })()}
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="number" min={0} max={9} step={0.5}
@@ -741,6 +837,7 @@ function GradingModal({ sessionId, onClose }: { sessionId: string; onClose: () =
                   />
                   <button className="rounded-lg bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-700" onClick={() => grade(it.recordId)}>提交批改</button>
                   {it.band !== null && it.band !== undefined && <span className="text-xs text-emerald-600">已评 Band {it.band}</span>}
+                  {it.gradedAt && <span className="text-[11px] text-slate-300">批改于 {fmtDate(it.gradedAt)}</span>}
                 </div>
               </div>
             ))}

@@ -54,6 +54,7 @@ model User {
   assignments      AssignmentStudent[]
   languageSessions LanguageSession[]
   languageWrongBook LanguageWrongBook[]
+  languageGoals    LanguageGoal[] // V2.4.126:目标分(反向关系)
   favorites        FavoriteQuestion[]
   groups           Group[] // 老师创建的学生分组
   groupMemberships GroupStudent[] // 学生所属分组(反向关系)
@@ -372,6 +373,10 @@ model LanguageMaterial {
   skill     String   @default("READING")
   title     String? // 材料标题,如 "Passage 1: The Return of Artemisia"
   content   String // 材料正文(长文本)
+  // —— V2.4.126 新增(纯附加可空列,不影响存量数据) ——
+  kind      String? // ARTICLE 阅读文章 | CHART 写作 Task1 图表 | CUE_CARD 口语题卡 | PROMPT 写作/口语提示
+  chartSpec String? // Task1 图表数据 JSON({type,title,xLabel,yLabel,labels,series[]})
+  audioUrl  String? // 材料级音频(口语样例/听力场景音)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   questions LanguageQuestion[]
@@ -399,6 +404,12 @@ model LanguageQuestion {
   createdBy  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  // —— V2.4.126 新增(纯附加可空列,不影响存量数据) ——
+  topic        String? // 话题标签(教育/环境/科技/健康…),供学情切片
+  tags         String? // 技巧标签 JSON 数组(paraphrase/主谓一致…)
+  answerFormat String? // 答案书写规则提示(ONE_WORD / NO_MORE_THAN_TWO_WORDS / A_LETTER…)
+  sourceRef    String? // 原文出处句/段落标识,供"点题定位原文"
+  estSec       Int?    // 建议用时(秒),支持分段计时分配
   records    LanguageAnswerRecord[]
   wrongBook  LanguageWrongBook[]
 }
@@ -418,6 +429,11 @@ model LanguagePaper {
   source      String?
   kind        String   @default("CUSTOM") // OFFICIAL 官方原版 | CUSTOM 组卷
   status      String   @default("READY") // DRAFT | READY | ARCHIVED
+  // —— V2.4.126 新增(纯附加可空列) ——
+  // 注:原设计方案提议的 bandTableId 未采纳 —— 换算表由 (examType+skill+生效时间) 唯一定位,
+  //     若允许单卷再绑一张表会形成"双源真相",同一道客观题在不同卷里落到不同量纲,历史无法横向比较。
+  testType    String   @default("SECTIONAL") // SECTIONAL 专项 | FULL 全真 | MOCK 模考
+  officialRef String?  // 官方卷出处(如 "Cambridge 18 Test 2")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
   sessions    LanguageSession[]
@@ -445,6 +461,15 @@ model LanguageSession {
   band         Float? // 折算后的 Band(0-9,0.5 进制)
   startedAt    DateTime @default(now())
   submittedAt  DateTime?
+  // —— V2.4.126 新增(纯附加可空列) ——
+  // 分项 Band 是全真卷合成与单技能学情的基础:JSON,如
+  //   { "LISTENING": {"band":6.5,"correct":26,"total":40,"scaled":false}, "WRITING": {"band":null,"pending":true} }
+  // 单技能卷只含一个键;FULL 卷含多个键。所有技能均有 band 后才合成 overallBand。
+  skillBands     String?
+  overallBand    Float?  // 四技能合成总分 IELTS 口径(.25→半分,.75→整分)
+  goalBand       Float?  // 作答时快照的目标分(便于事后判断达标,不受目标分后续修改影响)
+  scoringVersion String? // 评分引擎口径版本(可追溯,历史数据不回填)
+  scaled         Boolean @default(false) // 是否由非标准题量折算到量表量纲(见 LangBandTable.maxRaw)
   records      LanguageAnswerRecord[]
 }
 
@@ -464,6 +489,14 @@ model LanguageAnswerRecord {
   audioUrl   String? // 口语录音地址
   timeSpent  Int?
   createdAt  DateTime @default(now())
+  // —— V2.4.126 新增(纯附加可空列) ——
+  // 主观题四维评分:subscores 存 JSON,如写作 {"TR":6.5,"CC":6,"LR":7,"GRA":6},
+  // 口语 {"FC":6.5,"LR":6,"GRA":6.5,"Pron":7};band 仍存由四维自动合成后的最终 Band。
+  subscores     String?
+  rubricVersion String?   // 四维量表版本
+  aiPreScore    String?   // AI 预评 JSON(仅参考,不参与定分;P3 才会写入)
+  gradedBy      String?   // 批改人(审计)
+  gradedAt      DateTime? // 批改时间(审计)
 
   @@unique([sessionId, questionId])
 }
@@ -481,6 +514,48 @@ model LanguageWrongBook {
   updatedAt  DateTime @updatedAt
 
   @@unique([studentId, questionId])
+}
+
+// ============================================================
+// V2.4.126 新增:雅思评分引擎 —— Band 换算表(可配置、听读分离、版本化)
+// ============================================================
+// rows 存 JSON 数组,为**降序阈值**:[{raw, band}, ...],语义是"原始分 ≥ raw 时取该 band",如
+//   [{"raw":40,"band":9},{"raw":39,"band":8.5},{"raw":37,"band":8}, ... ,{"raw":4,"band":2.5}]
+// maxRaw 是该量表对应的**满分题数**(官方 IELTS 听/读 = 40)。
+// 题目数不等于 maxRaw 的练习卷会按比例折算到该量纲再查表,并在会话上标记 scaled=true 诚实披露。
+// 定位规则:同一 (examType, skill) 取 isDefault 且 effectiveFrom <= now 的最近一条 —— 保证口径唯一。
+model LanguageBandTable {
+  id            String   @id @default(cuid())
+  examType      String   @default("IELTS")
+  skill         String // LISTENING | READING
+  name          String   @default("官方默认表")
+  maxRaw        Int      @default(40)
+  rows          String // JSON 数组 [{raw, band}] 降序阈值
+  isDefault     Boolean  @default(true)
+  effectiveFrom DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([examType, skill, effectiveFrom])
+}
+
+// V2.4.126 新增:学生目标分(仅语言模块用,与升学规划模块解耦)
+// 单技能目标可空,只设 overall 亦可。作答时快照进 LanguageSession.goalBand。
+model LanguageGoal {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id])
+  examType   String   @default("IELTS")
+  overall    Float?
+  listening  Float?
+  reading    Float?
+  writing    Float?
+  speaking   Float?
+  targetDate DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studentId, examType])
 }
 
 // ============================================================

@@ -34,14 +34,42 @@ const SKILL_GROUPS = [
   { skill: "FULL", icon: "📝", label: "全真连考", color: SKILL_COLOR.FULL },
 ];
 
+// V2.4.126:目标分展示口径(0-9,0.5 一档)
+const GOAL_OPTIONS = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9];
+
 export default function StudentLanguagePage() {
   const router = useRouter();
   const [papers, setPapers] = useState<LangPaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [startingId, setStartingId] = useState<string | null>(null);
-
   const [examType, setExamType] = useState("");
+
+  // V2.4.126:目标分 + 错题待巩固数(作答快照到会话里,用于报告页的达标判定)
+  const [goal, setGoal] = useState<number | null>(null);
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [wrongPending, setWrongPending] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.get<{ goal: { overall: number | null } | null }>("/language/goals")
+      .then((d) => setGoal(d.goal?.overall ?? null))
+      .catch(() => {});
+    api.get<{ pending: number }>("/language/wrong-book")
+      .then((d) => setWrongPending(d.pending ?? 0))
+      .catch(() => {});
+  }, []);
+
+  async function setGoalBand(v: number | null) {
+    setGoalSaving(true);
+    try {
+      await api.put("/language/goals", { overall: v });
+      setGoal(v);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "目标分保存失败");
+    } finally {
+      setGoalSaving(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -105,6 +133,33 @@ export default function StudentLanguagePage() {
       </div>
 
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+      {/* V2.4.126:目标分 + 错题本入口 */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-slate-400">我的目标总分</span>
+          <select
+            className="ui-select w-[104px] py-1 text-[13px]"
+            value={goal ?? ""}
+            disabled={goalSaving}
+            onChange={(e) => setGoalBand(e.target.value === "" ? null : Number(e.target.value))}
+          >
+            <option value="">未设置</option>
+            {GOAL_OPTIONS.map((v) => (
+              <option key={v} value={v} className="text-[13px]">{v}</option>
+            ))}
+          </select>
+          <span className="text-xs text-slate-400">设置后,每次交卷会把它快照下来用于达标判定</span>
+        </div>
+        <span className="hidden flex-1 sm:block" />
+        <button
+          onClick={() => router.push("/app/language/wrong")}
+          className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+        >
+          错题本{wrongPending ? ` · 待巩固 ${wrongPending}` : ""} →
+        </button>
+      </div>
+
       {loading && <p className="py-10 text-center text-slate-400">加载中...</p>}
 
       {!loading && (

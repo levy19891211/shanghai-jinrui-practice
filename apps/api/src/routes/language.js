@@ -15,21 +15,21 @@ const router = Router();
 
 // —— 工具 ——
 
-// 雅思听/读客观题 原始分(40 题) → Band 官方换算表(学术类通用近似表)
-// 映射:题数 -> Band(0.5 进制)。正式机考每套卷微调,此处用官方主流换算
-const LISTENING_BAND = [
-  40, 39, 37, 35, 32, 30, 26, 23, 18, 16, 13, 10,
-].map((raw, idx) => ({ raw, band: 9 - idx * 0.5 }));
-function bandOf(rawScore, maxScore) {
-  if (!maxScore || maxScore <= 0) return null;
-  const rate = rawScore / maxScore;
-  // 按比例折算到 40 题量纲,再查表
-  const raw40 = Math.round(rate * 40);
-  const table = LISTENING_BAND;
-  for (const row of table) {
-    if (raw40 >= row.raw) return row.band;
-  }
-  return 1.0;
+// —— Band 换算:全部交由评分引擎处理(V2.4.126,G2/H1/H3) ——
+// 历史问题:此处曾硬编码 LISTENING_BAND 一张表给听读共用,且按比例折算到 40 题;
+// 它与前端 LangGrowthPanel.estimateBand 的阶梯算法、grade 接口的平均算法互不相等
+// ⇒ 同一份作答在不同页面读出不同 Band。现在口径唯一来源 = apps/api/src/lib/lang-scoring.js。
+import {
+  SCORING_VERSION, RUBRIC_VERSION,
+  ensureDefaultBandTables, loadBandTable, lookupBand, roundIeltsBand, parseRows,
+  bandFromSubscores, parseSubscores, parseSkillBands, composeOverall, goalGap,
+  scoringConfig, dimsForSkill, SKILL_CN, WRITING_DIMS, SPEAKING_DIMS,
+  OBJECTIVE_QTYPES, SUBJECTIVE_QTYPES,
+} from "../lib/lang-scoring.js";
+
+function safeSeedTables() {
+  // 播种默认换算表:失败也不阻断主流程(引擎自带内置常量兜底)
+  return ensureDefaultBandTables().catch(() => null);
 }
 
 // 雅思客观题判分(填空/单选/多选/判断/配对/标题)
@@ -59,7 +59,18 @@ function isAnswerCorrect(question, selected) {
     }
     return false;
   }
-  // 判断 T/F/NG、单选、多选、配对、标题:直接比对字母(大写归一)
+  // 多选(V2.4.126,H4):雅思「五选二」等题型允许任意顺序作答,且书写分隔符不统一。
+  // 归一方式:按常见分隔符切分 → 取首个字母 → 排序 → 逗号拼接,两侧同法处理后比较。
+  // 例:答案 "B,D" ←→ 学生答 "D,B" / "BD" / "D, B" 均判对。
+  // 仅当答案为单字母时不进入此分支,走下面的直接比对,行为与原逻辑完全一致。
+  if (q === "MULTIPLE_CHOICE") {
+    const norm = (s) =>
+      String(s).toUpperCase().split(/[^A-Z]+/).filter(Boolean).map((x) => x[0]).sort().join(",");
+    const a = norm(expect);
+    const b = norm(sel);
+    if (a.includes(",") || b.includes(",")) return a === b;
+  }
+  // 判断 T/F/NG、单选、配对、标题:直接比对字母(大写归一)
   return expect.toLowerCase() === sel.toLowerCase();
 }
 
@@ -1023,26 +1034,67 @@ router.post(
 
     const records = await prisma.languageAnswerRecord.findMany({
       where: { sessionId: session.id },
-      include: { question: { select: { id: true, qType: true, answer: true } } },
+      include: { question: { select: { id: true, qType: true, answer: true, skill: true } } },
     });
-    const objective = records.filter((r) => ["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING", "TRUE_FALSE_NG", "YES_NO_NG"].includes(r.question.qType));
-    const subjective = records.filter((r) => !["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING", "TRUE_FALSE_NG", "YES_NO_NG"].includes(r.question.qType));
+    const objective = records.filter((r) => OBJECTIVE_QTYPES.includes(r.question.qType));
+    const subjective = records.filter((r) => !OBJECTIVE_QTYPES.includes(r.question.qType));
     const correct = objective.filter((r) => r.isCorrect).length;
     const total = records.length;
     const score = correct;
 
-    // 客观题 → 自动折算 Band;主观题存在且未批改 → band 置空,待教师批改
-    let band = null;
-    if (objective.length && subjective.length === 0) {
-      band = bandOf(correct, objective.length);
-    } else if (objective.length && subjective.length) {
-      // 混合卷:客观部分折算(主观部分教师批改后合成,此处不覆盖)
-      band = null;
+    await safeSeedTables();
+
+    // —— 按技能分别计分(H2) ——
+    // 旧实现用 records.length 当分母估算 Band,一旦卷里混了写作/口语,阅读正确率的分母
+    // 平白多出主观题数 ⇒ 分数必然偏低。这里给每个技能自带 correct/total。
+    const bySkill = new Map();
+    for (const r of objective) {
+      const k = r.question.skill || session.skill || "READING";
+      const it = bySkill.get(k) || { correct: 0, total: 0 };
+      it.total += 1;
+      if (r.isCorrect) it.correct += 1;
+      bySkill.set(k, it);
+    }
+    const skillBands = {};
+    let scaled = false;
+    for (const [k, v] of bySkill.entries()) {
+      const { rows, maxRaw } = await loadBandTable(session.examType, k);
+      const res2 = lookupBand(rows, v.correct, v.total, maxRaw);
+      skillBands[k] = { band: res2.band, correct: v.correct, total: v.total, scaled: res2.scaled };
+      if (res2.scaled) scaled = true;
+    }
+    // 主观技能占位:等教师批改后再回填 band(composeOverall 见到 null 就不合成总分)
+    for (const r of subjective) {
+      const k = r.question.skill || session.skill;
+      if (!skillBands[k]) skillBands[k] = { band: null, pending: true };
+    }
+
+    // 目标分快照(事后目标改了也不影响这批作答的达标判定)
+    const goal = await prisma.languageGoal
+      .findUnique({ where: { studentId_examType: { studentId: req.user.id, examType: session.examType } } })
+      .catch(() => null);
+    const goalBand = goal && goal.overall !== null && goal.overall !== undefined ? goal.overall : null;
+
+    const { overallBand } = composeOverall(skillBands);
+    // session.band 语义统一为"本会话的主分数":
+    //   多技能卷 → 合成总分;单技能卷 → 该技能 Band(保持与旧前端兼容)
+    let band = overallBand;
+    if (band === null) {
+      const keys = Object.keys(skillBands);
+      if (keys.length === 1) band = skillBands[keys[0]].band ?? null;
     }
 
     const updated = await prisma.languageSession.update({
       where: { id: session.id },
-      data: { score, correctCount: correct, total, band, submittedAt: new Date() },
+      data: {
+        score, correctCount: correct, total, band,
+        skillBands: JSON.stringify(skillBands),
+        overallBand,
+        goalBand,
+        scoringVersion: SCORING_VERSION,
+        scaled,
+        submittedAt: new Date(),
+      },
     });
 
     // 作业回写已交(逾期则标记补交)
@@ -1069,6 +1121,11 @@ router.post(
     ok(res, {
       score, total, correctCount: correct,
       band,
+      skillBands,
+      overallBand,
+      goalBand,
+      scaled,
+      scoringVersion: SCORING_VERSION,
       needsReview: subjective.length > 0,
       timedOut: false,
       details: (() => {
@@ -1104,6 +1161,9 @@ router.get(
       allowReplay: session.mode !== "EXAM",
       durationMin: session.durationMin, score: session.score, total: session.total,
       correctCount: session.correctCount, band: session.band,
+      skillBands: parseSkillBands(session.skillBands),
+      overallBand: session.overallBand, goalBand: session.goalBand,
+      scoringVersion: session.scoringVersion, scaled: session.scaled,
       startedAt: session.startedAt, submittedAt: session.submittedAt,
       paper: session.paper ? { id: session.paper.id, title: session.paper.title } : null,
       details: (() => {
@@ -1148,6 +1208,8 @@ router.get(
       select: {
         id: true, examType: true, skill: true, mode: true, score: true, total: true,
         correctCount: true, band: true, startedAt: true, submittedAt: true,
+        // V2.4.126:一并返回评分引擎产出,使前端不必也不能再自行估算
+        skillBands: true, overallBand: true, goalBand: true, scoringVersion: true, scaled: true,
         paper: { select: { title: true } },
       },
     });
@@ -1196,23 +1258,40 @@ router.get(
   requireAuth,
   requireRole("TEACHER", "ADMIN"),
   asyncHandler(async (req, res) => {
-    const { examType, skill } = req.query;
+    const { examType, skill, scope } = req.query;
     const where = { submittedAt: { not: null } };
     if (examType) where.examType = String(examType);
     if (skill) where.skill = String(skill);
-    // 只含写作/口语的会话(存在未批改的主观作答)
+    // H8:支持 ?scope=mine 只看自己布置的作业产生的会话。
+    // 默认值保持 all —— 教师本质是同事关系,而把"学生自主练习产生的待批改"藏起来
+    // 会直接破坏现有批改工作流,故此项做成**可选收窄**而非改变默认行为。
+    if (String(scope || "all") === "mine") {
+      const mine = await prisma.assignment.findMany({
+        where: { teacherId: req.user.id, languagePaperId: { not: null } },
+        select: { id: true },
+      });
+      const ids = mine.map((a) => a.id);
+      // 空数组必须是"零结果"而不是"不过滤"(与教务侧 visibleClassIds 的同一条铁律)
+      if (!ids.length) {
+        ok(res, { list: [], note: "你还没有布置过语言作业" });
+        return;
+      }
+      where.assignmentId = { in: ids };
+    }
+    // H6:列表不再 include 全量题目字段与全部 records
     const sessions = await prisma.languageSession.findMany({
       where,
       include: {
         student: { select: { id: true, name: true, email: true } },
-        records: { include: { question: { select: { id: true, qType: true, skill: true } } } },
+        paper: { select: { id: true, title: true } },
+        records: { select: { band: true, question: { select: { qType: true } } } },
       },
       orderBy: { submittedAt: "desc" },
-      take: 200,
+      take: 100,
     });
     const list = [];
     for (const s of sessions) {
-      const subs = s.records.filter((r) => ["TASK1", "TASK2", "PART1", "PART2", "PART3"].includes(r.question.qType));
+      const subs = s.records.filter((r) => SUBJECTIVE_QTYPES.includes(r.question.qType));
       const pending = subs.filter((r) => r.band === null || r.band === undefined);
       if (subs.length === 0) continue;
       list.push({
@@ -1221,9 +1300,11 @@ router.get(
         examType: s.examType,
         skill: s.skill,
         mode: s.mode,
+        paperTitle: s.paper?.title || null,
         submittedAt: s.submittedAt,
         totalSub: subs.length,
         pendingSub: pending.length,
+        overallBand: s.overallBand, // V2.4.126:列表直接看合成总分,不必逐条点开
       });
     }
     ok(res, { list });
@@ -1245,7 +1326,7 @@ router.get(
       },
     });
     if (!session) return fail(res, 404, "会话不存在");
-    const subs = session.records.filter((r) => ["TASK1", "TASK2", "PART1", "PART2", "PART3"].includes(r.question.qType));
+    const subs = session.records.filter((r) => SUBJECTIVE_QTYPES.includes(r.question.qType));
     ok(res, {
       id: session.id,
       student: session.student,
@@ -1255,6 +1336,13 @@ router.get(
       mode: session.mode,
       startedAt: session.startedAt,
       submittedAt: session.submittedAt,
+      band: session.band,
+      overallBand: session.overallBand,
+      skillBands: parseSkillBands(session.skillBands),
+      goalBand: session.goalBand,
+      scoringVersion: session.scoringVersion,
+      dims: dimsForSkill(subs[0]?.question?.skill || session.skill),
+      rubricVersion: RUBRIC_VERSION,
       objectiveSummary: {
         score: session.score, total: session.total, correctCount: session.correctCount,
       },
@@ -1273,13 +1361,17 @@ router.get(
         recordAudioUrl: r.audioUrl,
         band: r.band,
         feedback: r.feedback,
+        subscores: parseSubscores(r.subscores), // V2.4.126:四维已评分数(回显用)
+        gradedAt: r.gradedAt,
       })),
     });
   })
 );
 
-// POST /api/language/review-pool/:sessionId/grade — 批改单个作答(打 Band + 评语)
-// body: { recordId, band, feedback }
+// POST /api/language/review-pool/:sessionId/grade — 批改单个作答(四维 / 直接打分 + 评语)
+// body: { recordId, band?, subscores?, feedback? }
+//   subscores 给出时(如写作 {"TR":6.5,"CC":6,"LR":7,"GRA":6}),由四维自动合成该题 Band;
+//   未给出则沿用直接传入的 band。两者混用时以四维为准,避免"维度与总分自相矛盾"。
 router.post(
   "/review-pool/:sessionId/grade",
   requireAuth,
@@ -1287,39 +1379,118 @@ router.post(
   asyncHandler(async (req, res) => {
     const session = await prisma.languageSession.findUnique({ where: { id: req.params.sessionId } });
     if (!session) return fail(res, 404, "会话不存在");
-    const { recordId, band, feedback } = req.body || {};
+    const { recordId, band, feedback, subscores } = req.body || {};
     if (!recordId) return fail(res, 400, "缺少作答记录 id");
-    const rec = await prisma.languageAnswerRecord.findUnique({ where: { id: String(recordId) } });
+    const rec = await prisma.languageAnswerRecord.findUnique({
+      where: { id: String(recordId) },
+      include: { question: { select: { skill: true, qType: true } } },
+    });
     if (!rec || rec.sessionId !== session.id) return fail(res, 404, "作答记录不存在");
-    const b = band !== undefined && band !== null && band !== "" ? Number(band) : null;
-    if (b !== null && (b < 0 || b > 9)) return fail(res, 400, "Band 范围 0-9");
-    await prisma.languageAnswerRecord.update({
-      where: { id: rec.id },
-      data: { band: b, feedback: feedback ? String(feedback) : null },
-    });
-    // 若全部主观题已批改,合成会话 Band(主观平均)
-    const full = await prisma.languageAnswerRecord.findMany({
-      where: { sessionId: session.id },
-      include: { question: { select: { qType: true } } },
-    });
-    const bands = full
-      .filter((r) => ["TASK1", "TASK2", "PART1", "PART2", "PART3"].includes(r.question.qType))
-      .map((r) => r.band)
-      .filter((x) => x !== null && x !== undefined);
-    const hasObjective = full.some((r) => ["FILL_BLANK", "SINGLE_CHOICE", "MULTIPLE_CHOICE", "MATCHING", "HEADING", "TRUE_FALSE_NG", "YES_NO_NG"].includes(r.question.qType));
-    const pendingSub = full.some((r) => ["TASK1", "TASK2", "PART1", "PART2", "PART3"].includes(r.question.qType) && (r.band === null || r.band === undefined));
-    let bandFinal = session.band;
-    if (!pendingSub) {
-      if (bands.length) {
-        const avg = bands.reduce((a, x) => a + x, 0) / bands.length;
-        const round2half = Math.round(avg * 2) / 2;
-        bandFinal = hasObjective && session.band ? (session.band + round2half) / 2 : round2half;
+
+    // —— 四维 → 单题 Band ——
+    let sub = null;
+    let b = null;
+    if (subscores && typeof subscores === "object" && !Array.isArray(subscores)) {
+      const skill = rec.question.skill || session.skill;
+      const clean = {};
+      for (const d of dimsForSkill(skill)) {
+        const v = Number(subscores[d]);
+        if (Number.isFinite(v) && v >= 0 && v <= 9) clean[d] = v;
+      }
+      if (Object.keys(clean).length) {
+        if (Object.keys(clean).length !== Object.keys(subscores).length) return fail(res, 400, "四维分数含非法值(须为 0-9 的数字)");
+        sub = clean;
+        b = bandFromSubscores(skill, clean);
       }
     }
-    if (bandFinal !== session.band) {
-      await prisma.languageSession.update({ where: { id: session.id }, data: { band: bandFinal } });
+    if (b === null) {
+      const raw = band !== undefined && band !== null && band !== "" ? Number(band) : null;
+      if (raw !== null && (!Number.isFinite(raw) || raw < 0 || raw > 9)) return fail(res, 400, "Band 范围 0-9");
+      b = raw;
     }
-    ok(res, { recordId: rec.id, band: b, sessionBand: bandFinal }, "批改完成");
+
+    await prisma.languageAnswerRecord.update({
+      where: { id: rec.id },
+      data: {
+        band: b,
+        feedback: feedback ? String(feedback) : null,
+        subscores: sub ? JSON.stringify(sub) : null,
+        rubricVersion: sub ? RUBRIC_VERSION : null,
+        gradedBy: req.user.id,
+        gradedAt: new Date(),
+      },
+    });
+
+    // —— 重新合成会话分数(H1 根治点) ——
+    const full = await prisma.languageAnswerRecord.findMany({
+      where: { sessionId: session.id },
+      include: { question: { select: { qType: true, skill: true } } },
+    });
+
+    let skillBands = parseSkillBands(session.skillBands);
+    if (!skillBands) {
+      // 评分引擎上线前提交的历史会话:客观部分按新口径补算,使合成结果完整
+      skillBands = {};
+      await safeSeedTables();
+      const bySkill = new Map();
+      for (const r of full) {
+        if (!OBJECTIVE_QTYPES.includes(r.question.qType)) continue;
+        const k = r.question.skill || session.skill;
+        const it = bySkill.get(k) || { correct: 0, total: 0 };
+        it.total += 1;
+        if (r.isCorrect) it.correct += 1;
+        bySkill.set(k, it);
+      }
+      for (const [k, v] of bySkill.entries()) {
+        const { rows, maxRaw } = await loadBandTable(session.examType, k);
+        const rr = lookupBand(rows, v.correct, v.total, maxRaw);
+        skillBands[k] = { band: rr.band, correct: v.correct, total: v.total, scaled: rr.scaled };
+      }
+    }
+
+    // 主观技能:取该技能内已批改题目的平均分再进位到半分;同技能仍有未批改题则保持 pending
+    const gradedBySkill = new Map();
+    const countBySkill = new Map();
+    for (const r of full) {
+      if (!SUBJECTIVE_QTYPES.includes(r.question.qType)) continue;
+      const k = r.question.skill || session.skill;
+      countBySkill.set(k, (countBySkill.get(k) || 0) + 1);
+      if (r.band !== null && r.band !== undefined) {
+        const arr = gradedBySkill.get(k) || [];
+        arr.push(Number(r.band));
+        gradedBySkill.set(k, arr);
+      }
+    }
+    for (const [k, cnt] of countBySkill.entries()) {
+      const arr = gradedBySkill.get(k) || [];
+      if (arr.length === 0 || arr.length < cnt) {
+        skillBands[k] = { band: null, pending: true, totalSub: cnt, gradedSub: arr.length };
+      } else {
+        const avg = arr.reduce((a, x) => a + x, 0) / arr.length;
+        skillBands[k] = { ...(skillBands[k] || {}), band: roundIeltsBand(avg), totalSub: cnt, gradedSub: arr.length, pending: false };
+      }
+    }
+
+    const { overallBand } = composeOverall(skillBands);
+    let bandFinal = overallBand;
+    if (bandFinal === null) {
+      const keys = Object.keys(skillBands);
+      if (keys.length === 1) bandFinal = skillBands[keys[0]].band ?? null;
+    }
+    await prisma.languageSession.update({
+      where: { id: session.id },
+      data: {
+        band: bandFinal,
+        skillBands: JSON.stringify(skillBands),
+        overallBand,
+        scoringVersion: SCORING_VERSION,
+      },
+    });
+
+    ok(res, {
+      recordId: rec.id, band: b, subscores: sub, sessionBand: bandFinal,
+      overallBand, skillBands, scoringVersion: SCORING_VERSION,
+    }, "批改完成");
   })
 );
 
@@ -1377,6 +1548,441 @@ router.get(
         .sort((a, b) => a.correctRate - b.correctRate)
         .slice(0, 10),
     });
+  })
+);
+
+// ============================================================
+// V2.4.126 新增:评分引擎相关端点
+// ============================================================
+
+// GET /api/language/scoring-config — 当前评分口径与版本(全角色可读,供前端展示口径用)
+router.get(
+  "/scoring-config",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await safeSeedTables();
+    ok(res, await scoringConfig(), "当前评分口径");
+  })
+);
+
+// GET /api/language/band-tables?examType= — 查看 Band 换算表(教师/管理员)
+router.get(
+  "/band-tables",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    await safeSeedTables();
+    const examType = String(req.query.examType || "IELTS");
+    const list = await prisma.languageBandTable.findMany({
+      where: { examType },
+      orderBy: [{ skill: "asc" }, { effectiveFrom: "desc" }],
+    });
+    ok(res, {
+      scoringVersion: SCORING_VERSION,
+      list: list.map((t) => ({
+        id: t.id, examType: t.examType, skill: t.skill, name: t.name,
+        maxRaw: t.maxRaw, rows: parseRows(t.rows), isDefault: t.isDefault,
+        effectiveFrom: t.effectiveFrom, updatedAt: t.updatedAt,
+      })),
+    });
+  })
+);
+
+// PUT /api/language/band-tables/:id — 编辑换算表(教师/管理员)
+// body: { name?, maxRaw?, rows: [{raw, band}], isDefault? }
+router.put(
+  "/band-tables/:id",
+  requireAuth,
+  requireRole("TEACHER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const t = await prisma.languageBandTable.findUnique({ where: { id: String(req.params.id) } });
+    if (!t) return fail(res, 404, "换算表不存在");
+    const { name, maxRaw, rows, isDefault } = req.body || {};
+    const data = {};
+    if (name !== undefined && String(name).trim()) data.name = String(name).trim();
+    if (isDefault !== undefined) data.isDefault = !!isDefault;
+    if (maxRaw !== undefined) {
+      const m = Number(maxRaw);
+      if (!Number.isFinite(m) || m <= 0) return fail(res, 400, "maxRaw 须为正整数");
+      data.maxRaw = Math.round(m);
+    }
+    if (rows !== undefined) {
+      if (!Array.isArray(rows) || rows.length === 0) return fail(res, 400, "rows 须为非空数组");
+      const clean = rows
+        .map((r) => ({ raw: Number(r?.raw), band: Number(r?.band) }))
+        .filter((r) => Number.isFinite(r.raw) && Number.isFinite(r.band) && r.band >= 0 && r.band <= 9);
+      if (clean.length !== rows.length) return fail(res, 400, "rows 含非法项(raw 须为数字,band 须为 0-9 数字)");
+      data.rows = rowsToJson(clean.map((r) => [r.raw, r.band]));
+    }
+    const updated = await prisma.languageBandTable.update({ where: { id: t.id }, data });
+    ok(res, {
+      id: updated.id, skill: updated.skill, name: updated.name,
+      maxRaw: updated.maxRaw, rows: parseRows(updated.rows), isDefault: updated.isDefault,
+    }, "换算表已更新(仅影响此后提交的会话,历史会话保留原口径)");
+  })
+);
+
+// rows → JSON(与 lang-scoring 内部表示保持一致)
+function rowsToJson(pairs) {
+  return JSON.stringify(pairs.map(([raw, band]) => ({ raw, band })));
+}
+
+// POST /api/language/band-tables/reset — 恢复官方默认换算表(仅管理员)
+router.post(
+  "/band-tables/reset",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { skill, confirm } = req.body || {};
+    // 与"清空课表"同规格的双重确认:不显式 confirm 一律拒绝
+    if (confirm !== true) return fail(res, 400, "此操作会覆盖换算表,请传 confirm:true");
+    const target = skill && ["LISTENING", "READING"].includes(String(skill)) ? String(skill) : null;
+    await prisma.languageBandTable.deleteMany({ where: target ? { examType: "IELTS", skill: target } : { examType: "IELTS" } });
+    await ensureDefaultBandTables();
+    const list = await prisma.languageBandTable.findMany({ where: { examType: "IELTS" } });
+    ok(res, { count: list.length, restored: target || "ALL" }, "已恢复官方默认换算表");
+  })
+);
+
+// —— 目标分 ——
+
+// GET /api/language/goals?examType=&studentId= — 读取目标分(学生自己;教师可指定学生)
+router.get(
+  "/goals",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    let studentId = req.user.id;
+    if (req.query.studentId) {
+      if (!["TEACHER", "ADMIN"].includes(req.user.role)) return fail(res, 403, "无权查看他人目标分");
+      studentId = String(req.query.studentId);
+    }
+    const examType = String(req.query.examType || "IELTS");
+    const g = await prisma.languageGoal.findUnique({ where: { studentId_examType: { studentId, examType } } });
+    ok(res, {
+      examType,
+      goal: g ? {
+        overall: g.overall, listening: g.listening, reading: g.reading,
+        writing: g.writing, speaking: g.speaking, targetDate: g.targetDate,
+      } : null,
+    });
+  })
+);
+
+// PUT /api/language/goals — 写入目标分(学生自己;教师/管理员可代设)
+// body: { examType?, overall?, listening?, reading?, writing?, speaking?, targetDate?, studentId? }
+router.put(
+  "/goals",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    let studentId = req.user.id;
+    const body = req.body || {};
+    if (body.studentId) {
+      if (!["TEACHER", "ADMIN"].includes(req.user.role)) return fail(res, 403, "无权设置他人目标分");
+      studentId = String(body.studentId);
+    }
+    const examType = String(body.examType || "IELTS");
+    const numOrNull = (v) => {
+      if (v === undefined || v === null || v === "") return null;
+      const n = Number(v);
+      if (!Number.isFinite(n)) return undefined; // 非法值 → 明确报错,不静默置 null
+      return Math.max(0, Math.min(9, Math.round(n * 2) / 2));
+    };
+    const data = {};
+    for (const k of ["overall", "listening", "reading", "writing", "speaking"]) {
+      if (k in body) {
+        const v = numOrNull(body[k]);
+        if (v === undefined) return fail(res, 400, `${k} 须为 0-9 的数字`);
+        data[k] = v;
+      }
+    }
+    if ("targetDate" in body) {
+      data.targetDate = body.targetDate ? new Date(body.targetDate) : null;
+    }
+    const g = await prisma.languageGoal.upsert({
+      where: { studentId_examType: { studentId, examType } },
+      create: { studentId, examType, ...data },
+      update: data,
+    });
+    ok(res, {
+      examType: g.examType, overall: g.overall, listening: g.listening, reading: g.reading,
+      writing: g.writing, speaking: g.speaking, targetDate: g.targetDate,
+    }, "目标分已保存");
+  })
+);
+
+// —— 错题本(补 G1 断链:此前表存在、写了数据,但没有任何读取端点) ——
+
+// GET /api/language/wrong-book?examType=&skill=&mastered= — 学生自己的语言错题本
+router.get(
+  "/wrong-book",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { skill, qType, mastered } = req.query;
+    const where = { studentId: req.user.id };
+    if (skill) where.question = { ...(where.question || {}), skill: String(skill) };
+    if (mastered !== undefined) where.mastered = String(mastered) !== "false";
+    const list = await prisma.languageWrongBook.findMany({
+      where,
+      include: {
+        question: {
+          select: {
+            ...Q_FIELDS,
+            topic: true, tags: true, sourceRef: true, estSec: true,
+            material: { select: { id: true, title: true } },
+          },
+        },
+      },
+      orderBy: [{ mastered: "asc" }, { wrongCount: "desc" }, { updatedAt: "desc" }],
+      take: 300,
+    });
+    const items = list
+      .filter((w) => (qType ? w.question.qType === String(qType) : true))
+      .map((w) => ({
+        questionId: w.questionId,
+        wrongCount: w.wrongCount,
+        mastered: w.mastered,
+        updatedAt: w.updatedAt,
+        question: { ...fmtQ(w.question), tags: parseTags(w.question.tags) },
+      }));
+    // 面板用的聚合:按技能 / 按题型分布
+    const bySkill = {};
+    const byQType = {};
+    for (const it of items) {
+      const s = it.question.skill || "OTHER";
+      const qt = it.question.qType || "OTHER";
+      bySkill[s] = (bySkill[s] || 0) + 1;
+      byQType[qt] = (byQType[qt] || 0) + 1;
+    }
+    ok(res, {
+      total: items.length,
+      pending: items.filter((x) => !x.mastered).length,
+      mastered: items.filter((x) => x.mastered).length,
+      bySkill, byQType, items,
+    });
+  })
+);
+
+function parseTags(s) {
+  if (!s) return [];
+  try {
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+// POST /api/language/wrong-book/:questionId/master — 标记/取消「已掌握」
+// body: { mastered?: boolean } 缺省则取反
+router.post(
+  "/wrong-book/:questionId/master",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const qid = String(req.params.questionId);
+    const w = await prisma.languageWrongBook.findUnique({
+      where: { studentId_questionId: { studentId: req.user.id, questionId: qid } },
+    });
+    if (!w) return fail(res, 404, "错题本中没有这道题");
+    const want = req.body && typeof req.body.mastered === "boolean" ? req.body.mastered : !w.mastered;
+    const updated = await prisma.languageWrongBook.update({
+      where: { id: w.id },
+      data: { mastered: want },
+    });
+    ok(res, { questionId: qid, mastered: updated.mastered }, updated.mastered ? "已标记掌握" : "已取消掌握");
+  })
+);
+
+// DELETE /api/language/wrong-book/:questionId — 从错题本移除
+router.delete(
+  "/wrong-book/:questionId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const r = await prisma.languageWrongBook.deleteMany({
+      where: { studentId: req.user.id, questionId: String(req.params.questionId) },
+    });
+    if (!r.count) return fail(res, 404, "错题本中没有这道题");
+    ok(res, { removed: r.count }, "已移出错题本");
+  })
+);
+
+// —— 四维报告页 ——
+
+// GET /api/language/sessions/:id/report — 评后报告(分项 Band + 四维 + 错因 + 目标差距)
+router.get(
+  "/sessions/:id/report",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = await prisma.languageSession.findUnique({
+      where: { id: req.params.id },
+      include: {
+        paper: { select: { id: true, title: true, kind: true, mode: true } },
+        student: { select: { id: true, name: true } },
+        records: {
+          include: {
+            question: {
+              select: {
+                ...Q_FIELDS, topic: true, tags: true, sourceRef: true,
+                material: { select: { id: true, title: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!session) return fail(res, 404, "会话不存在");
+    const mine = session.studentId === req.user.id;
+    if (!mine && !["TEACHER", "ADMIN"].includes(req.user.role)) return fail(res, 403, "无权查看该报告");
+    if (!session.submittedAt) return fail(res, 400, "会话尚未提交,暂无报告");
+
+    const skillBands = parseSkillBands(session.skillBands) || {};
+    const { missing } = composeOverall(skillBands);
+
+    // 四维明细(主观题)
+    const subjectiveItems = session.records
+      .filter((r) => SUBJECTIVE_QTYPES.includes(r.question.qType))
+      .map((r) => ({
+        questionId: r.questionId,
+        qType: r.question.qType,
+        skill: r.question.skill,
+        stem: r.question.stem,
+        wordLimit: r.question.wordLimit,
+        selected: r.selected,
+        audioUrl: r.audioUrl,
+        band: r.band,
+        feedback: r.feedback,
+        subscores: parseSubscores(r.subscores),
+        solution: r.question.solution,
+        gradedAt: r.gradedAt,
+      }));
+
+    // 客观题明细 + 错因聚合
+    const objectiveItems = session.records
+      .filter((r) => OBJECTIVE_QTYPES.includes(r.question.qType))
+      .map((r) => ({
+        questionId: r.questionId,
+        qType: r.question.qType,
+        skill: r.question.skill,
+        topic: r.question.topic || null,
+        groupTitle: r.question.groupTitle,
+        stem: r.question.stem,
+        selected: r.selected,
+        answer: r.question.answer,
+        isCorrect: r.isCorrect,
+        solution: r.question.solution,
+        materialTitle: r.question.material?.title || null,
+      }));
+
+    const wrongQTypes = {};
+    const wrongSkills = {};
+    for (const it of objectiveItems) {
+      if (it.isCorrect) continue;
+      wrongQTypes[it.qType] = (wrongQTypes[it.qType] || 0) + 1;
+      wrongSkills[it.skill] = (wrongSkills[it.skill] || 0) + 1;
+    }
+
+    // 目标差距:S→建议下一步
+    const goal = goalGap(session.goalBand, skillBands);
+
+    ok(res, {
+      session: {
+        id: session.id, examType: session.examType, skill: session.skill, mode: session.mode,
+        startedAt: session.startedAt, submittedAt: session.submittedAt,
+        band: session.band, overallBand: session.overallBand, goalBand: session.goalBand,
+        score: session.score, total: session.total, correctCount: session.correctCount,
+        scaled: session.scaled, scoringVersion: session.scoringVersion,
+        pending: missing.length > 0 ? missing : [],
+      },
+      paper: session.paper,
+      student: mine ? null : session.student,
+      skillBands,
+      goalAnalysis: { ...goal, bands: Object.keys(skillBands).map((k) => ({ skill: k, cn: SKILL_CN[k] || k, band: skillBands[k]?.band ?? null })) },
+      objective: objectiveItems,
+      subjective: subjectiveItems,
+      wrongQTypes,
+      wrongSkills,
+      dims: { writing: WRITING_DIMS, speaking: SPEAKING_DIMS },
+    });
+  })
+);
+
+// POST /api/language/scoring/rescore — 按当前口径重算历史会话(仅管理员,dryRun 默认 true)
+// body: { confirm?: boolean, dryRun?: boolean, limit?: number }
+router.post(
+  "/scoring/rescore",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { confirm, limit } = req.body || {};
+    const dryRun = req.body?.dryRun !== false;
+    if (!dryRun && confirm !== true) return fail(res, 400, "写库模式必须传 confirm:true(建议先 dryRun 看影响面)");
+    await safeSeedTables();
+    const sessions = await prisma.languageSession.findMany({
+      where: { submittedAt: { not: null } },
+      include: { records: { include: { question: { select: { id: true, qType: true, skill: true } } } } },
+      orderBy: { submittedAt: "desc" },
+      take: Math.min(Number(limit) || 500, 2000),
+    });
+    const preview = [];
+    for (const s of sessions) {
+      const bySkill = new Map();
+      for (const r of s.records) {
+        if (!OBJECTIVE_QTYPES.includes(r.question.qType)) continue;
+        const k = r.question.skill || s.skill;
+        const it = bySkill.get(k) || { correct: 0, total: 0 };
+        it.total += 1;
+        if (r.isCorrect) it.correct += 1;
+        bySkill.set(k, it);
+      }
+      const subBySkill = new Map();
+      const cntBySkill = new Map();
+      for (const r of s.records) {
+        if (!SUBJECTIVE_QTYPES.includes(r.question.qType)) continue;
+        const k = r.question.skill || s.skill;
+        cntBySkill.set(k, (cntBySkill.get(k) || 0) + 1);
+        if (r.band !== null && r.band !== undefined) {
+          const arr = subBySkill.get(k) || [];
+          arr.push(Number(r.band));
+          subBySkill.set(k, arr);
+        }
+      }
+      const skillBands = {};
+      for (const [k, v] of bySkill.entries()) {
+        const { rows, maxRaw } = await loadBandTable(s.examType, k);
+        const rr = lookupBand(rows, v.correct, v.total, maxRaw);
+        skillBands[k] = { band: rr.band, correct: v.correct, total: v.total, scaled: rr.scaled };
+      }
+      for (const [k, cnt] of cntBySkill.entries()) {
+        const arr = subBySkill.get(k) || [];
+        if (arr.length && arr.length >= cnt) {
+          skillBands[k] = { band: roundIeltsBand(arr.reduce((a, x) => a + x, 0) / arr.length), totalSub: cnt, gradedSub: arr.length };
+        } else {
+          skillBands[k] = { band: null, pending: true, totalSub: cnt, gradedSub: arr.length };
+        }
+      }
+      const { overallBand } = composeOverall(skillBands);
+      let band = overallBand;
+      if (band === null) {
+        const keys = Object.keys(skillBands);
+        if (keys.length === 1) band = skillBands[keys[0]].band ?? null;
+      }
+      const changed = Math.abs(Number(band || 0) - Number(s.band || 0)) > 0.001;
+      if (changed || !dryRun) {
+        preview.push({ id: s.id, oldBand: s.band, newBand: band, changed });
+      }
+      if (!dryRun && changed) {
+        await prisma.languageSession.update({
+          where: { id: s.id },
+          data: { band, overallBand, skillBands: JSON.stringify(skillBands), scoringVersion: SCORING_VERSION },
+        });
+      }
+    }
+    ok(res, {
+      dryRun, scanned: sessions.length,
+      changed: preview.filter((x) => x.changed).length,
+      written: dryRun ? 0 : preview.filter((x) => x.changed).length,
+      sample: preview.slice(0, 20),
+      scoringVersion: SCORING_VERSION,
+    }, dryRun ? "预演完成(未写库)" : "重算完成");
   })
 );
 
