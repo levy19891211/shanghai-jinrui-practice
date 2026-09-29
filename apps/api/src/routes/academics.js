@@ -587,10 +587,14 @@ router.get(
     const ids = await visibleClassIds(req);
     const where = {};
     if (classId) {
-      if (ids.length && !ids.includes(String(classId)))
-        return fail(res, 403, "无权访问该班级");
+      // 严格作用域:不在可见集合内一律 403(空集合同样拒绝)。
+      // 旧写法 `ids.length && !ids.includes(...)` 在空集合时短路 ⇒ 不过滤,
+      // 会让无任何班级归属的教师/家长读到任意班级的课表与成绩。
+      if (!ids.includes(String(classId))) return fail(res, 403, "无权访问该班级");
       where.classId = String(classId);
-    } else if (ids.length) {
+    } else {
+      // 未指定班级 ⇒ 一律限定在可见集合内。旧写法 `else if (ids.length)` 在集合为空时
+      // 同样短路 ⇒ where 不加任何 classId 约束 = 返回全校数据,对无班级归属的账号是越权读取。
       where.classId = { in: ids };
     }
     if (subject) where.subject = String(subject);
@@ -1105,10 +1109,14 @@ router.get(
     const ids = await visibleClassIds(req);
     const where = {};
     if (classId) {
-      if (ids.length && !ids.includes(String(classId)))
-        return fail(res, 403, "无权访问该班级");
+      // 严格作用域:不在可见集合内一律 403(空集合同样拒绝)。
+      // 旧写法 `ids.length && !ids.includes(...)` 在空集合时短路 ⇒ 不过滤,
+      // 会让无任何班级归属的教师/家长读到任意班级的课表与成绩。
+      if (!ids.includes(String(classId))) return fail(res, 403, "无权访问该班级");
       where.classId = String(classId);
-    } else if (ids.length) {
+    } else {
+      // 未指定班级 ⇒ 一律限定在可见集合内。旧写法 `else if (ids.length)` 在集合为空时
+      // 同样短路 ⇒ where 不加任何 classId 约束 = 返回全校数据,对无班级归属的账号是越权读取。
       where.classId = { in: ids };
     }
     if (academicYear) where.academicYear = String(academicYear);
@@ -1137,102 +1145,9 @@ router.get(
   })
 );
 
-// POST /api/academics/timetable —— 教师/管理员(任教该班):新增课表条目
-router.post(
-  "/timetable",
-  requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(async (req, res) => {
-    const { classId, dayOfWeek, period, subject, teacherId, room, academicYear, term } = req.body || {};
-    if (!classId) return fail(res, 400, "班级必填");
-    if (!subject || !String(subject).trim()) return fail(res, 400, "科目必填");
-    if (!academicYear || !String(academicYear).trim()) return fail(res, 400, "学年必填");
-    if (!term || !String(term).trim()) return fail(res, 400, "学期必填");
-    if (!(await canManageClass(req, classId))) return fail(res, 403, "无权管理该班级课表");
-    if (dayOfWeek == null || period == null) return fail(res, 400, "星期与节次必填");
-    if (teacherId) {
-      const t = await prisma.user.findUnique({ where: { id: teacherId } });
-      if (!t || (t.role !== "TEACHER" && t.role !== "ADMIN"))
-        return fail(res, 400, "教师不存在或角色不符");
-    }
-    // 同一 slot 允许多门课程并存(选课走班),只挡「同科目 + 同教师」的完全重复;
-    // 唯一键含 teacherId,而 teacherId 为 NULL 时 SQLite 不参与唯一性判断,故这里显式查一次。
-    const dup = await prisma.timetableEntry.findFirst({
-      where: {
-        classId,
-        dayOfWeek: Number(dayOfWeek),
-        period: Number(period),
-        subject: String(subject).trim(),
-        teacherId: teacherId || null,
-        academicYear: String(academicYear).trim(),
-        term: String(term).trim(),
-      },
-    });
-    if (dup) return fail(res, 409, "该时段已有同一门课程(同科目同教师)");
-    try {
-      const e = await prisma.timetableEntry.create({
-        data: {
-          classId,
-          dayOfWeek: Number(dayOfWeek),
-          period: Number(period),
-          subject: String(subject).trim(),
-          teacherId: teacherId || null,
-          room: room ? String(room).trim() : null,
-          academicYear: String(academicYear).trim(),
-          term: String(term).trim(),
-        },
-      });
-      ok(res, { entry: e }, "已添加");
-    } catch (err) {
-      if (err && err.code === "P2002")
-        return fail(res, 409, "该时段已有同一门课程(同科目同教师)");
-      throw err;
-    }
-  })
-);
-
-// PUT /api/academics/timetable/:id —— 教师/管理员(任教该班):更新课表条目
-router.put(
-  "/timetable/:id",
-  requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(async (req, res) => {
-    const id = req.params.id;
-    const e = await prisma.timetableEntry.findUnique({ where: { id } });
-    if (!e) return fail(res, 404, "课表条目不存在");
-    if (!(await canManageClass(req, e.classId))) return fail(res, 403, "无权管理该班级课表");
-    const { dayOfWeek, period, subject, teacherId, room } = req.body || {};
-    const data = {};
-    if (dayOfWeek !== undefined) data.dayOfWeek = Number(dayOfWeek);
-    if (period !== undefined) data.period = Number(period);
-    if (subject !== undefined) data.subject = String(subject).trim();
-    if (teacherId !== undefined) data.teacherId = teacherId || null;
-    if (room !== undefined) data.room = room ? String(room).trim() : null;
-    try {
-      const updated = await prisma.timetableEntry.update({ where: { id }, data });
-      ok(res, { entry: updated }, "已更新");
-    } catch (err) {
-      if (err && err.code === "P2002")
-        return fail(res, 409, "该班级在该星期/节次/学年/学期下已有排课");
-      throw err;
-    }
-  })
-);
-
-// DELETE /api/academics/timetable/:id —— 教师/管理员(任教该班):删除课表条目
-router.delete(
-  "/timetable/:id",
-  requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(async (req, res) => {
-    const id = req.params.id;
-    const e = await prisma.timetableEntry.findUnique({ where: { id } });
-    if (!e) return fail(res, 404, "课表条目不存在");
-    if (!(await canManageClass(req, e.classId))) return fail(res, 403, "无权管理该班级课表");
-    await prisma.timetableEntry.delete({ where: { id } });
-    ok(res, { id }, "已删除");
-  })
-);
+// 注:课表写接口(POST/PUT/DELETE /api/academics/timetable)已于 V2.4.124 移除 ——
+//      班级管理「课程表」为只读视图,增删改一律走「排课管理」的 /api/scheduling/*。
+//      删除而非仅隐藏 UI,以免留下可直连调用、绕过权限与冲突检查的清空/篡改课表通道。
 
 // ============================================================
 // 家长关联 ParentLink(审批)

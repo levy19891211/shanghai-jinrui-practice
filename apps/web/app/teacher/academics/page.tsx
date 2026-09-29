@@ -45,7 +45,6 @@ function columnSpanRuns(itemsByPeriod: Record<number, TimetableItem[]>, maxPerio
 interface ParentLink { id: string; parent: { id: string; name: string }; student: { id: string; name: string; studentNo?: string | null }; relation?: string | null; status: string; matchMethod?: string | null; createdAt: string; }
 
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const SUBJECTS = ["数学", "物理", "化学", "生物"];
 const TYPES: Record<string, string> = { DAILY: "日常", MONTHLY: "月考", MIDTERM: "期中", FINAL: "期末", OTHER: "其他" };
 const VIS: Record<string, string> = { STUDENT: "仅学生", PARENT: "仅家长", BOTH: "学生+家长" };
 
@@ -259,7 +258,7 @@ function ClassPanel({ cls, isAdmin, canManage, onChanged, onGoScheduling }: { cl
       {tab === "members" && isAdmin && <MembersTab cls={cls} onChanged={onChanged} />}
       {tab === "teachers" && (isAdmin || canManage) && <TeachersTab cls={cls} onGoScheduling={onGoScheduling} />}
       {tab === "exams" && <ExamsTab cls={cls} />}
-      {tab === "timetable" && <TimetableTab cls={cls} isAdmin={isAdmin} onGoScheduling={onGoScheduling} />}
+      {tab === "timetable" && <TimetableTab cls={cls} onGoScheduling={onGoScheduling} />}
       {tab === "analytics" && <ClassAnalytics classId={cls.id} />}
       {tab === "course" && canManageCourse && <CourseSelectionClassPanel cls={cls} onChanged={onChanged} />}
     </div>
@@ -867,19 +866,19 @@ function FeedbackTab({ cls }: { cls: Cls }) {
 interface DayTplPeriod { period: number; label: string | null; startTime: string | null; endTime: string | null; range: string }
 interface DayTpl { periods: DayTplPeriod[] }
 
-function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boolean; onGoScheduling?: () => void }) {
+function TimetableTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () => void }) {
   const [entries, setEntries] = useState<TimetableItem[]>([]);
-  const [teachers, setTeachers] = useState<Tch[]>([]);
   const [dayTpl, setDayTpl] = useState<DayTpl | null>(null);
-  const [form, setForm] = useState({ dayOfWeek: 1, period: 1, subject: SUBJECTS[0], teacherId: "", room: "", academicYear: cls.academicYear, term: cls.term });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(() => { api.get<{ entries: TimetableItem[] }>(`/academics/timetable?classId=${cls.id}`).then((d) => setEntries(d.entries || [])).catch(() => {}); }, [cls.id]);
-  useEffect(() => {
-    load();
-    if (isAdmin) api.get<{ teachers: Tch[] }>("/academics/teachers").then((d) => { setTeachers(d.teachers); if (d.teachers[0]) setForm((f) => ({ ...f, teacherId: f.teacherId || d.teachers[0].id })); }).catch(() => {});
-  }, [cls.id, load, isAdmin]);
+  const load = useCallback(() => {
+    setLoading(true);
+    api.get<{ entries: TimetableItem[] }>(`/academics/timetable?classId=${cls.id}`)
+      .then((d) => setEntries(d.entries || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [cls.id]);
+  useEffect(() => { load(); }, [load]);
   // 一日安排模板(全校统一作息):行头节次名与时间段以它为准,拿不到(如权限或未配置)则回退到条目快照
   useEffect(() => {
     let alive = true;
@@ -889,14 +888,6 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
       .catch(() => { if (alive) setDayTpl(null); });
     return () => { alive = false; };
   }, [cls.academicYear, cls.term]);
-
-  async function add() {
-    setBusy(true); setErr("");
-    try { await api.post("/academics/timetable", form); setForm({ ...form, room: "" }); load(); }
-    catch (e: any) { setErr(e.message || "添加失败"); }
-    finally { setBusy(false); }
-  }
-  async function remove(id: string) { try { await api.del(`/academics/timetable/${id}`); load(); } catch (e: any) { alert(e.message); } }
 
   // 同时段可能有多条(分层走班:如"数学/A2物理"),用数组避免互相覆盖
   const grid: Record<number, Record<number, TimetableItem[]>> = {};
@@ -919,28 +910,19 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
 
   return (
     <div className="space-y-4">
-      {isAdmin && onGoScheduling && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-slate-600">
-          <span>建议改用「排课管理」:先在「组课」把课程与教师绑成课程块,再拖进课表网格。本页保留单条增删改。</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-slate-600">
+        <span>
+          <b className="font-medium text-slate-700">只读</b>:课表由「排课管理 → ② 排课」生成(把课程块拖进网格),节次名与时间段取自「一日安排」模板。
+          如需增删课程或调整教师/教室,请到排课管理操作。
+        </span>
+        {onGoScheduling && (
           <button onClick={onGoScheduling} className="shrink-0 rounded-md border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 hover:bg-indigo-50">前往排课管理 →</button>
-        </div>
-      )}
-      {isAdmin && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
-          <h4 className="text-sm font-medium text-slate-600">新增课表条目</h4>
-          {err && <p className="text-sm text-red-500">{err}</p>}
-          <div className="flex flex-wrap items-end gap-2">
-            <Field label="星期"><Select value={String(form.dayOfWeek)} onChange={(v) => setForm({ ...form, dayOfWeek: Number(v) })} options={DAYS.map((d, i) => ({ value: String(i + 1), label: d }))} /></Field>
-            <Field label="节次"><input type="number" className="ui-input w-16" value={form.period} onChange={(e) => setForm({ ...form, period: Number(e.target.value) })} /></Field>
-            <Field label="科目"><Select value={form.subject} onChange={(v) => setForm({ ...form, subject: v })} options={SUBJECTS.map((s) => ({ value: s, label: s }))} /></Field>
-            <Field label="教师"><Select value={form.teacherId} onChange={(v) => setForm({ ...form, teacherId: v })} options={teachers.map((t) => ({ value: t.id, label: t.name }))} /></Field>
-            <Field label="教室"><input className="ui-input w-20" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} /></Field>
-            <button onClick={add} disabled={busy} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">添加</button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2">
-        {entries.length === 0 ? <p className="p-4 text-slate-400">暂无课表。</p> : (
+        {loading ? <p className="p-4 text-slate-400">加载中…</p> : entries.length === 0 ? (
+          <p className="p-4 text-slate-400">暂无课表 —— 该班在「排课管理」里还没有已排课程。</p>
+        ) : (
           <table className="min-w-full text-sm">
             <thead className="text-slate-500"><tr><th className="px-2 py-1 text-left">节次</th>{DAYS.map((d) => <th key={d} className="px-2 py-1 text-center">{d}</th>)}</tr></thead>
             <tbody>
@@ -960,20 +942,17 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
                     if (span.covered[p]) return null;
                     const run = span.runs[p];
                     if (!run || run.items.length === 0) return <td key={di} className="px-2 py-1 align-top" />;
-                    // 同一 run 内多科(分层走班)合并为一张卡片,每科单列一行;管理员 hover 逐科删除。
+                    // 同一 run 内多科(分层走班)合并为一张卡片,每科单列一行(只读)。
                     // 撑满方案:td 设 relative,卡片层 absolute inset 铺满整个跨行单元格;
                     // 另留一份 invisible 占位副本参与行高计算,防止内容被裁切。
                     const teachersLabel = Array.from(new Set(run.items.map((it) => it.teacher?.name).filter(Boolean))).join(" / ") || "—";
                     const roomsLabel = Array.from(new Set(run.items.map((it) => it.room).filter(Boolean))).join(" / ");
                     // 同时间多课(分层走班)大格以第一门课颜色为准
                     const color = subjectColorMap.get(run.items[0]?.subject || "—") || FALLBACK_COLOR;
-                    const cardInner = (withDelete: boolean) => (
+                    const cardInner = () => (
                       <>
                         {run.items.map((item) => (
-                          <div key={item.id} className="font-medium" style={{ color: color.text }}>
-                            {item.subject}
-                            {withDelete && isAdmin && <button onClick={() => remove(item.id)} className="ml-1 hidden align-middle text-xs font-normal text-red-500 group-hover:inline">删除</button>}
-                          </div>
+                          <div key={item.id} className="font-medium" style={{ color: color.text }}>{item.subject}</div>
                         ))}
                         <div className="mt-0.5 text-xs text-slate-500">{teachersLabel}</div>
                         {roomsLabel && <div className="text-xs text-slate-400">{roomsLabel}</div>}
@@ -982,10 +961,10 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
                     return (
                       <td key={di} rowSpan={run.len} className="relative px-1 py-1 align-top">
                         <div className="invisible flex flex-col gap-1" aria-hidden="true">
-                          <div className="rounded px-1.5 py-2 text-center" style={{ backgroundColor: color.bg }}>{cardInner(false)}</div>
+                          <div className="rounded px-1.5 py-2 text-center" style={{ backgroundColor: color.bg }}>{cardInner()}</div>
                         </div>
                         <div className="absolute inset-1 flex flex-col items-stretch gap-1">
-                          <div className="group flex flex-1 flex-col items-center justify-center rounded px-1.5 py-2 text-center" style={{ backgroundColor: color.bg }}>{cardInner(true)}</div>
+                          <div className="flex flex-1 flex-col items-center justify-center rounded px-1.5 py-2 text-center" style={{ backgroundColor: color.bg }}>{cardInner()}</div>
                         </div>
                       </td>
                     );
