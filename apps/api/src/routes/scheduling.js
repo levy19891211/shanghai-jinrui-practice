@@ -52,6 +52,19 @@ const int = (v, d = 0) => {
 const MAX_PERIOD = 20; // 节次上限(与前端网格一致)
 const DAYS_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const MAX_GRADES = 6; // 开设年级多选上限
+// 年级可选范围:高一前的衔接年级 Pre高一 亦纳入;实际班级年级会并入
+const BASE_GRADE_OPTIONS = ["Pre高一", "高一", "高二", "高三"];
+// 年级展示顺序:衔接年级在前,其余按学年递进(未知年级置后)
+const GRADE_ORDER = ["Pre高一", "高一", "高二", "高三"];
+function sortGrades(arr) {
+  return arr.slice().sort((a, b) => {
+    const ia = GRADE_ORDER.indexOf(a), ib = GRADE_ORDER.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b, "zh");
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
 
 // 开设年级多选归一化:接受数组或逗号分隔串 → 去空白/去重/截断 → 逗号串(空串 = 全年级通用/跨年级)
 // 返回 { ok: true, value } 或 { ok: false, error }
@@ -194,7 +207,7 @@ router.get(
         _count: { select: { memberships: true, timetable: true } },
       },
     });
-    const grades = Array.from(new Set(list.map((c) => c.grade).filter(Boolean))).sort();
+    const grades = Array.from(new Set([...BASE_GRADE_OPTIONS, ...list.map((c) => c.grade).filter(Boolean)])).sort();
     const years = Array.from(new Set(list.map((c) => c.academicYear).filter(Boolean))).sort();
     const terms = Array.from(new Set(list.map((c) => c.term).filter(Boolean))).sort();
     ok(res, {
@@ -211,8 +224,8 @@ router.get(
       grades,
       years,
       terms,
-      // 尚无班级时给一组常见年级兜底,便于先把课程块配好
-      gradeOptions: grades.length ? grades : ["初一", "初二", "初三", "高一", "高二", "高三"],
+      // 基础年级范围(Pre高一/高一/高二/高三)并入实际班级年级,确保衔接年级始终可选
+      gradeOptions: sortGrades(grades),
     });
   })
 );
@@ -247,14 +260,14 @@ router.get(
     // 年级过滤在应用层做:多选年级(逗号串)用「包含」语义,未选年级 = 全年级通用恒命中
     const list = grade ? allRows.filter((b) => blockCoversGrade(b, T(grade))) : allRows;
 
-    const grades = Array.from(new Set(classes.map((c) => c.grade).filter(Boolean))).sort();
+    const grades = Array.from(new Set([...BASE_GRADE_OPTIONS, ...classes.map((c) => c.grade).filter(Boolean)])).sort();
     const years = Array.from(new Set(classes.map((c) => c.academicYear).filter(Boolean))).sort();
     const terms = Array.from(new Set(classes.map((c) => c.term).filter(Boolean))).sort();
 
     ok(res, {
       blocks: list.map(shapeBlock),
       teachers,
-      gradeOptions: grades.length ? grades : ["初一", "初二", "初三", "高一", "高二", "高三"],
+      gradeOptions: sortGrades(grades),
       years,
       terms,
     });

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, getUser } from "@/lib/api";
 
 const CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践"];
-const GRADE_OPTIONS = ["高一", "高二", "高三"];
+const GRADE_OPTIONS = ["Pre高一", "高一", "高二", "高三"];
 const TYPES = [
   { value: "REQUIRED", label: "必修" },
   { value: "ELECTIVE", label: "选修" },
