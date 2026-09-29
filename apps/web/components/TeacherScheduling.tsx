@@ -57,8 +57,7 @@ type Conflict = { kind: "place" | "move"; blockId?: string; entryId?: string; da
 
 // ============ 常量与配色 ============
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-// 常见中学学科(供组课下拉;非常规科目可写进备注)
-const SUBJECT_OPTIONS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理", "信息技术", "体育", "艺术", "班会"];
+// 组课「科目」下拉数据源 = 「课程管理」课程库(SchoolCourse,在开设的课程),不再用硬编码学科清单
 const TERM_OPTIONS = ["第一学期", "第二学期", "全年"];
 const FALLBACK_COLOR = { bg: "#eef2ff", text: "#4338ca" };
 
@@ -173,6 +172,17 @@ function GroupView({
   const [form, setForm] = useState({ subject: "", teacherId: "", grade: "", weeklyHours: "5", room: "", note: "" });
   const [busy, setBusy] = useState(false);
 
+  // 科目下拉数据源:「课程管理」课程库(SchoolCourse)。每次打开表单都重新拉取,保证与课程库同步
+  interface CourseLibItem { name: string; weeklyHours: number | null; grades: string; active: boolean }
+  const [courseLib, setCourseLib] = useState<CourseLibItem[]>([]);
+  const loadCourseLib = useCallback(() => {
+    api
+      .get<{ courses: CourseLibItem[] }>("/academics/school-courses")
+      .then((d) => setCourseLib(d.courses || []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { loadCourseLib(); }, [loadCourseLib]);
+
   // 元数据首次到位后,把默认学年/学期对齐到真实数据
   useEffect(() => {
     if (meta.years.length && !meta.years.includes(year)) setYear(meta.years[0]);
@@ -193,18 +203,48 @@ function GroupView({
 
   const colorMap = useMemo(() => buildSubjectColorMap(blocks.map((b) => b.subject)), [blocks]);
 
+  // 科目选项:仅取课程库中「在开设」的课程名(按课程库排序);编辑旧块时若其科目已不在库中,补进选项避免显示丢失
+  const subjectOptions = useMemo(() => {
+    const names = courseLib.filter((c) => c.active).map((c) => c.name);
+    if (form.subject && !names.includes(form.subject)) names.unshift(form.subject);
+    return Array.from(new Set(names));
+  }, [courseLib, form.subject]);
+
+  // 当前选中科目的课程库记录(用于展示参考课时/年级提示)
+  const selectedCourse = useMemo(() => courseLib.find((c) => c.name === form.subject) || null, [courseLib, form.subject]);
+
   function startNew() {
     setEditingId("new");
-    setForm({ subject: SUBJECT_OPTIONS[0], teacherId: "", grade: meta.gradeOptions[0] || "", weeklyHours: "5", room: "", note: "" });
+    loadCourseLib(); // 打开表单即拉最新课程库:课程管理里刚建的课立即可选
+    const first = courseLib.find((c) => c.active);
+    setForm({
+      subject: first?.name || "", teacherId: "", grade: meta.gradeOptions[0] || "",
+      weeklyHours: first?.weeklyHours != null ? String(first.weeklyHours) : "5", room: "", note: "",
+    });
   }
   function startEdit(b: Block) {
     setEditingId(b.id);
+    loadCourseLib();
     setForm({
       subject: b.subject, teacherId: b.teacherId || "", grade: b.grade,
       weeklyHours: String(b.weeklyHours), room: b.room || "", note: b.note || "",
     });
   }
   function cancelEdit() { setEditingId(null); }
+
+  // 选科目:新建态下同步课程库信息 —— 自动带入参考周课时;课程库只勾了一个年级时自动带入开设年级
+  function pickSubject(name: string) {
+    const c = courseLib.find((x) => x.name === name);
+    setForm((f) => {
+      const next = { ...f, subject: name };
+      if (editingId === "new" && c) {
+        if (c.weeklyHours != null) next.weeklyHours = String(c.weeklyHours);
+        const gs = (c.grades || "").split(",").filter(Boolean);
+        if (gs.length === 1 && meta.gradeOptions.includes(gs[0])) next.grade = gs[0];
+      }
+      return next;
+    });
+  }
 
   async function save() {
     if (!form.subject.trim()) return say("请选择科目", "err");
@@ -259,25 +299,46 @@ function GroupView({
 
       {/* 新建/编辑表单 */}
       {editingId && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
-          <h4 className="mb-2 text-sm font-medium text-slate-700">{editingId === "new" ? "新建课程块" : "编辑课程块"}</h4>
-          <div className="flex flex-wrap items-end gap-2">
-            <Field label="科目">
-              <Select value={form.subject} onChange={(v) => setForm({ ...form, subject: v })} options={SUBJECT_OPTIONS.map((s) => ({ value: s, label: s }))} />
-            </Field>
+        <div className="rounded-xl border border-indigo-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-slate-800">
+              {editingId === "new" ? "新建课程块" : "编辑课程块"}
+              <span className="ml-2 font-normal text-xs text-slate-400">科目取自「课程管理」课程库</span>
+            </h4>
+            {courseLib.filter((c) => c.active).length === 0 && (
+              <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-600">
+                课程库还没有在开设的课程,请先到「课程管理」新建课程
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="flex flex-col gap-1 text-xs text-slate-500">
+              <span>科目</span>
+              <Select value={form.subject} onChange={pickSubject} placeholder="请选择课程" options={subjectOptions.map((s) => ({ value: s, label: s }))} />
+              {selectedCourse && (
+                <span className="text-[11px] leading-4 text-slate-400">
+                  参考 {selectedCourse.weeklyHours ?? "/"} 课时/周 · {selectedCourse.grades ? selectedCourse.grades.split(",").join("/") : "全年级"}
+                </span>
+              )}
+            </div>
             <Field label="任课教师">
               <Select value={form.teacherId} onChange={(v) => setForm({ ...form, teacherId: v })} placeholder="暂不指定" options={teachers.map((t) => ({ value: t.id, label: t.name }))} />
             </Field>
             <Field label="预计每周课时数">
-              <input type="number" min={0} max={60} className="ui-input w-28" value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: e.target.value })} />
+              <input type="number" min={0} max={60} className="ui-input w-full" value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: e.target.value })} />
             </Field>
             <Field label="开设年级">
               <Select value={form.grade} onChange={(v) => setForm({ ...form, grade: v })} options={meta.gradeOptions.map((g) => ({ value: g, label: g }))} />
             </Field>
-            <Field label="建议教室"><input className="ui-input w-32" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="选填" /></Field>
-            <Field label="备注"><input className="ui-input w-44" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="如 合班 / A层" /></Field>
-            <button onClick={save} disabled={busy} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">保存</button>
-            <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100">取消</button>
+            <Field label="建议教室"><input className="ui-input w-full" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="选填" /></Field>
+            <Field label="备注"><input className="ui-input w-full" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="如 合班 / A层" /></Field>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <p className="text-[11px] text-slate-400">选中科目后自动带入课程库的参考课时与年级,均可手动修改。</p>
+            <div className="flex gap-2">
+              <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100">取消</button>
+              <button onClick={save} disabled={busy} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">保存</button>
+            </div>
           </div>
         </div>
       )}
