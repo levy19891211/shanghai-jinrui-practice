@@ -415,20 +415,27 @@ function GroupView({
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {list.map((b) => {
                 const c = colorMap.get(b.subject) || FALLBACK_COLOR;
+                const gradeList = (b.grades || "").split(",").filter(Boolean);
                 return (
                   <div key={b.id} className="group flex items-stretch gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:shadow-sm">
                     <span className="w-1.5 shrink-0 rounded-full" style={{ background: c.text }} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
+                      {/* 第 1 行:科目 + 周课时。科目过长时截断,不挤走右侧徽章 */}
+                      <div className="flex items-center gap-2">
                         <span className="truncate font-medium text-slate-800">{b.subject}</span>
-                        <span className="rounded px-1.5 py-0.5 text-xs font-medium" style={{ background: c.bg, color: c.text }}>
+                        <span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" style={{ background: c.bg, color: c.text }}>
                           {b.weeklyHours} 课时/周
                         </span>
-                        {(b.grades || "").split(",").filter(Boolean).map((g) => (
-                          <span key={g} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{g}</span>
-                        ))}
-                        {!(b.grades || "").split(",").filter(Boolean).length && (
-                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">跨年级通用</span>
+                      </div>
+                      {/* 第 2 行:开设年级徽章固定单行(年级很多时横向滚动,既不折行也不裁切) */}
+                      <div
+                        className="mt-1 flex flex-nowrap items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        title={gradeList.length ? gradeList.join(" / ") : "跨年级通用"}
+                      >
+                        {gradeList.length ? gradeList.map((g) => (
+                          <span key={g} className="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{g}</span>
+                        )) : (
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">跨年级通用</span>
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
