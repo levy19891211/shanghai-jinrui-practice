@@ -684,6 +684,82 @@ router.delete(
 );
 
 // ————————————————————————————————————————————
+// 子模块二附:一键「清空课表」—— 清空排课结果,保留课程块池,便于整体重排
+// ————————————————————————————————————————————
+// POST /api/scheduling/timetable/clear
+// body: { classId?, academicYear?, term?, scope?: "class" | "all", dryRun?: boolean, confirm?: boolean }
+//   scope=class(缺省) → 只清「指定班级」的课表条目(classId 必填)
+//   scope=all         → 清「该学年 + 该学期」下全部班级的课表条目(班级主数据不动)
+//   dryRun=true       → 预演:只统计将删除的条目/班级/教师数,不写库(前端弹窗展示用)
+//   confirm !== true  → 拒绝执行(400):破坏性动作必须显式确认,防误触,也防直连接口调用
+// 语义边界(清空后能"原样重排"):
+//   · 只删 TimetableEntry(排课结果)。CourseBlock(课程块池)、Class、成员、成绩、课程表配置一律不动,
+//     所以清空后课程块池依旧是满的,可直接重新拖拽排课,不必重走「组课」。
+//   · 学年/学期取 body,缺省回落到班级自身的学年学期;scope=all 且两者皆空 → 400,
+//     避免「不传条件 = 清掉全部历史课表」这种最危险的默认行为。
+router.post(
+  "/timetable/clear",
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const scope = T(b.scope) === "all" ? "all" : "class";
+    const classId = T(b.classId);
+
+    let klass = null;
+    if (scope === "class") {
+      if (!classId) return fail(res, 400, "请选择要清空的班级");
+      klass = await prisma.class.findUnique({
+        where: { id: classId },
+        select: { id: true, name: true, grade: true, academicYear: true, term: true },
+      });
+      if (!klass) return fail(res, 404, "班级不存在");
+    }
+
+    const academicYear = T(b.academicYear) || klass?.academicYear || "";
+    const term = T(b.term) || klass?.term || "";
+    // scope=all 必须有明确的学年学期边界,否则等于"清空所有历史课表"
+    if (!academicYear || !term) {
+      return fail(res, 400, "清空课表必须明确学年与学期(避免误清其他学期或全部历史课表)");
+    }
+
+    const where = scope === "class" ? { classId, academicYear, term } : { academicYear, term };
+
+    const rows = await prisma.timetableEntry.findMany({
+      where,
+      select: { id: true, classId: true, teacherId: true, subject: true },
+    });
+    const classIds = Array.from(new Set(rows.map((r) => r.classId)));
+    const teacherIds = Array.from(new Set(rows.map((r) => r.teacherId).filter(Boolean)));
+
+    const preview = {
+      scope,
+      academicYear,
+      term,
+      target: klass ? { id: klass.id, name: klass.name } : null,
+      entries: rows.length,
+      classes: classIds.length,
+      teachers: teacherIds.length,
+      subjects: Array.from(new Set(rows.map((r) => r.subject))).length,
+      dryRun: b.dryRun === true,
+    };
+
+    // 预演:不改任何数据,只回统计
+    if (b.dryRun === true) return ok(res, preview, "预演完成,未做任何修改");
+    // 双重确认:接口层再拦一道,防止前端漏传或直连调用
+    if (b.confirm !== true) return fail(res, 400, "清空课表为破坏性操作,请确认后再执行");
+    if (!rows.length) return ok(res, { ...preview, deleted: 0 }, "该范围内没有已排课程,无需清空");
+
+    const r = await prisma.timetableEntry.deleteMany({ where: { id: { in: rows.map((x) => x.id) } } });
+    ok(
+      res,
+      { ...preview, deleted: r.count },
+      scope === "class"
+        ? `已清空「${klass.name}」课表:删除 ${r.count} 条已排课程,课程块池保留,可直接重新排课`
+        : `已清空 ${academicYear} ${term} 全部班级课表:共 ${r.count} 条已排课程(涉及 ${classIds.length} 个班级),课程块池保留`
+    );
+  })
+);
+
+// ————————————————————————————————————————————
 // 子模块二附:一键「冲突检查」
 // ————————————————————————————————————————————
 // GET /api/scheduling/conflicts?academicYear=&term=

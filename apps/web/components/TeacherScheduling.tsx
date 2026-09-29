@@ -69,6 +69,22 @@ interface ConflictReport {
   summary: { teacherConflicts: number; roomConflicts: number; total: number; scannedEntries: number };
 }
 
+// 一键「清空课表」的预演/执行结果(来自 POST /scheduling/timetable/clear)
+//   dryRun=true  → 只回统计(不写库),用于弹窗展示"将删除多少";deleted 不返回
+//   confirm=true → 真实删除,额外回 deleted
+interface ClearPreview {
+  scope: "class" | "all";
+  academicYear: string;
+  term: string;
+  target: { id: string; name: string } | null;
+  entries: number;
+  classes: number;
+  teachers: number;
+  subjects: number;
+  dryRun: boolean;
+  deleted?: number;
+}
+
 // ============ 常量与配色 ============
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 // 组课「科目」下拉数据源 = 「课程管理」课程库(SchoolCourse,在开设的课程),不再用硬编码学科清单
@@ -498,6 +514,7 @@ function PlaceView({
   const [checking, setChecking] = useState(false);
   const [rowCount, setRowCount] = useState<string>("");
   const [showWeekend, setShowWeekend] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false); // 一键「清空课表」确认弹窗
   const dragRef = useRef<{ kind: "block" | "entry"; id: string } | null>(null);
   // 正在拖拽的已排条目 id(用于「拖出课表即删除」的提示条与判定)
   const [dragEntryId, setDragEntryId] = useState<string | null>(null);
@@ -697,6 +714,14 @@ function PlaceView({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2 pb-1">
+          <button
+            onClick={() => setClearOpen(true)}
+            disabled={!classId}
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title="一键清空已排好的课表格子,便于整体重新排课(课程块池原样保留)"
+          >
+            清空课表
+          </button>
           <button
             onClick={runConflictCheck}
             disabled={checking}
@@ -1005,6 +1030,17 @@ function PlaceView({
         </div>
       )}
 
+      {/* 一键清空课表:确认弹窗(含范围选择 + 预演统计 + 显式勾选确认) */}
+      {clearOpen && klass && (
+        <ClearTimetableDialog
+          klass={klass}
+          blockCount={stats?.blocks ?? 0}
+          say={say}
+          onClose={() => setClearOpen(false)}
+          onDone={() => { setClearOpen(false); load(); }}
+        />
+      )}
+
       {/* 一键冲突检查结果 */}
       {report && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => setReport(null)}>
@@ -1085,6 +1121,161 @@ function PlaceView({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============ 一键「清空课表」确认弹窗 ============
+//
+// 定位:排课结果一键归零,便于整体重新排课。
+//   · 只清「已排课表的格子」(TimetableEntry);课程块池、班级、成绩、节次设置全部保留。
+//   · 两级范围:仅当前班级 / 该学年学期全部班级(误清代价大,故范围显式单选而非缺省)。
+//   · 打开与切换范围时都先跑 dryRun 预演,把"将删除多少条、涉及几个班几个老师"摆到眼前;
+//     真正执行必须再勾选确认(服务端也要求 confirm=true,直连接口同样拦得住)。
+function ClearTimetableDialog({
+  klass, blockCount, onClose, onDone, say,
+}: {
+  klass: Klass;
+  blockCount: number;
+  onClose: () => void;
+  onDone: () => void;
+  say: (t: string, k?: "ok" | "err") => void;
+}) {
+  const [scope, setScope] = useState<"class" | "all">("class");
+  const [preview, setPreview] = useState<ClearPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [acked, setAcked] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // 切换范围 → 重新预演;同时把确认勾选复位(防止"手快"沿用上一次的勾选)
+  useEffect(() => {
+    setAcked(false);
+    let alive = true;
+    setLoading(true);
+    setPreview(null);
+    api
+      .post<ClearPreview>("/scheduling/timetable/clear", { classId: klass.id, scope, dryRun: true })
+      .then((d) => { if (alive) setPreview(d); })
+      .catch((e: any) => { if (alive) say(e.message || "无法统计待清空范围", "err"); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [scope, klass.id, say]);
+
+  async function doClear() {
+    if (!preview || !acked) return;
+    setBusy(true);
+    try {
+      const r = await api.post<ClearPreview>("/scheduling/timetable/clear", {
+        classId: klass.id, scope, confirm: true,
+      });
+      say(`已清空 ${r?.deleted ?? 0} 条已排课程 · 课程块池保留,可直接重新排课`);
+      onDone();
+    } catch (e: any) {
+      say(e.message || "清空失败", "err");
+      setBusy(false);
+    }
+  }
+
+  const scopeOptions = [
+    { k: "class" as const, title: `仅当前班级「${klass.name}」`, desc: "只清这一个班的课表" },
+    { k: "all" as const, title: `全部班级（${klass.academicYear} ${klass.term}）`, desc: "该学年学期下所有班级的课表一起清空" },
+  ];
+  const n = preview?.entries ?? 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-slate-800">
+            ⚠ 清空课表
+            <span className="ml-2 text-xs font-normal text-slate-400">{klass.academicYear} {klass.term}</span>
+          </h4>
+          <button onClick={onClose} className="rounded px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">✕</button>
+        </div>
+
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm">
+          <p className="text-xs text-slate-500">
+            清空的是<b className="font-medium text-slate-700">已排好的课表格子</b>,课程块池原样保留,清空后可立即重新拖拽排课,不必重走「组课」。
+          </p>
+
+          {/* 范围 */}
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-slate-600">清空范围</div>
+            {scopeOptions.map((o) => (
+              <label
+                key={o.k}
+                className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 transition ${scope === o.k ? "border-red-300 bg-red-50/60" : "border-slate-200 hover:border-slate-300"}`}
+              >
+                <input
+                  type="radio"
+                  name="clear-scope"
+                  checked={scope === o.k}
+                  onChange={() => setScope(o.k)}
+                  className="mt-0.5 cursor-pointer accent-red-600"
+                />
+                <span className="flex-1">
+                  <span className="block text-sm text-slate-700">{o.title}</span>
+                  <span className="mt-0.5 block text-xs text-slate-400">
+                    {o.desc}
+                    {scope === o.k && (
+                      <span className="ml-1 font-medium text-red-600">
+                        {loading ? "统计中…" : `将删除 ${n} 条已排课程${o.k === "all" ? `,涉及 ${preview?.classes ?? 0} 个班级` : ""}`}
+                      </span>
+                    )}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {/* 预演统计 */}
+          {preview && (
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-2.5 text-center">
+              <div>
+                <div className="text-base font-semibold tabular-nums text-slate-800">{preview.entries}</div>
+                <div className="text-xs text-slate-500">已排课程</div>
+              </div>
+              <div>
+                <div className="text-base font-semibold tabular-nums text-slate-800">{preview.classes}</div>
+                <div className="text-xs text-slate-500">涉及班级</div>
+              </div>
+              <div>
+                <div className="text-base font-semibold tabular-nums text-slate-800">{preview.teachers}</div>
+                <div className="text-xs text-slate-500">涉及教师</div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs leading-relaxed text-emerald-700">
+            <b className="font-medium">不受影响</b> —— 课程块池（{blockCount} 个课程块）、班级与学生名单、成绩记录、节次时间段设置,均原样保留。
+          </div>
+          <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-amber-700">
+            <b className="font-medium">需知晓</b> —— 班级管理里的「任课教师」与「考试与成绩」的课程列由课表派生,清空后会暂时为空,重新排课后自动恢复。
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2">
+            <input
+              type="checkbox"
+              checked={acked}
+              onChange={(e) => setAcked(e.target.checked)}
+              className="mt-0.5 cursor-pointer accent-red-600"
+            />
+            <span className="text-xs text-slate-600">我已确认清空上述范围内的课表(已排课程会立即删除,无法撤销)</span>
+          </label>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2.5">
+          <span className="mr-auto text-xs text-slate-400">{loading ? "正在统计…" : ""}</span>
+          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">取消</button>
+          <button
+            onClick={doClear}
+            disabled={!acked || busy || loading || !preview || preview.entries === 0}
+            className="rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+          >
+            {busy ? "清空中…" : preview && preview.entries === 0 ? "无课表可清空" : "确认清空"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
