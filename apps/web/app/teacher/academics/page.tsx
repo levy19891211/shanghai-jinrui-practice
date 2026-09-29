@@ -400,7 +400,7 @@ interface SubjectTeacherGroup {
 }
 function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () => void }) {
   const [items, setItems] = useState<SubjectTeacherGroup[]>([]);
-  const [summary, setSummary] = useState<{ subjects: number; teachers: number; entries: number } | null>(null);
+  const [summary, setSummary] = useState<{ subjects: number; teachers: number; entries: number; excludedNonAcademic?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -408,7 +408,7 @@ function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () =>
     setLoading(true);
     setErr("");
     api
-      .get<{ items: SubjectTeacherGroup[]; summary: { subjects: number; teachers: number; entries: number } }>(`/academics/classes/${cls.id}/subject-teachers`)
+      .get<{ items: SubjectTeacherGroup[]; summary: { subjects: number; teachers: number; entries: number; excludedNonAcademic?: number } }>(`/academics/classes/${cls.id}/subject-teachers`)
       .then((d) => { setItems(d.items || []); setSummary(d.summary || null); })
       .catch((e: any) => setErr(e.message || "加载失败"))
       .finally(() => setLoading(false));
@@ -420,6 +420,7 @@ function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () =>
         <span>
           <b className="font-medium text-slate-700">只读</b>:任课教师完全按「排课管理 → 排课」中本班课表已确认的课程生成。
           如需调整科目或教师,请到排课管理修改课表或课程块的任课教师。
+          <span className="ml-1 text-slate-500">「非学术课程」(如体育、社团)不指派教师,已从本列表排除。</span>
         </span>
         {onGoScheduling && (
           <button onClick={onGoScheduling} className="shrink-0 rounded-md border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 hover:bg-indigo-50">前往排课管理 →</button>
@@ -436,9 +437,16 @@ function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () =>
               <span>共 <b className="text-slate-700">{summary?.subjects ?? items.length}</b> 门课程</span>
               <span><b className="text-slate-700">{summary?.teachers ?? 0}</b> 位任课教师</span>
               <span>课表 <b className="text-slate-700">{summary?.entries ?? 0}</b> 个课时</span>
+              {!!summary?.excludedNonAcademic && (
+                <span className="text-slate-400">另有 {summary.excludedNonAcademic} 个非学术课程课时未计入(不指派教师)</span>
+              )}
             </div>
             {items.length === 0 ? (
-              <p className="py-3 text-center text-sm text-slate-400">暂无任课教师 —— 该班课表里还没有已排课程。</p>
+              <p className="py-3 text-center text-sm text-slate-400">
+                {summary?.excludedNonAcademic
+                  ? "本班课表只有「非学术课程」—— 这类课程不指派任课教师。"
+                  : "暂无任课教师 —— 该班课表里还没有已排课程。"}
+              </p>
             ) : (
               <table className="min-w-full text-sm">
                 <thead className="text-slate-500"><tr><th className="py-1 text-left">课程(科目)</th><th className="py-1 text-left">任课教师</th><th className="py-1 text-left">课表课时</th><th className="py-1 text-left">教室</th></tr></thead>
@@ -522,6 +530,7 @@ function ExamsTab({ cls }: { cls: Cls }) {
     <div className="space-y-4">
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
         本模块为<b>只读</b>视图:成绩按「本班涉及的全部课程」汇总展示,不支持新建考试或修改分数。
+        「非学术课程」不安排考试,不在此列。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">

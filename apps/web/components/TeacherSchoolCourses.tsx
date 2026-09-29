@@ -8,7 +8,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, getUser } from "@/lib/api";
 
-const CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践"];
+const CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践", "非学术课程"];
+// 「非学术课程」语义:不指派任课教师、不安排考试(可排进课表,但不产生教师归属与成绩)。
+// 后端同名字段 nonAcademic 为权威来源;category 兜底判断,保证老数据/接口缺字段时也能识别。
+const NON_ACADEMIC = "非学术课程";
 const GRADE_OPTIONS = ["Pre高一", "高一", "高二", "高三"];
 const TYPES = [
   { value: "REQUIRED", label: "必修" },
@@ -25,6 +28,13 @@ export interface SchoolCourse {
   sortOrder: number;
   active: boolean;
   note: string;
+  /** 后端标记:该课程属于「非学术课程」类别 */
+  nonAcademic?: boolean;
+}
+
+function isNonAcademic(c: { category?: string; nonAcademic?: boolean } | null | undefined): boolean {
+  if (!c) return false;
+  return c.nonAcademic === true || c.category === NON_ACADEMIC;
 }
 
 type Form = Partial<SchoolCourse>;
@@ -108,10 +118,17 @@ export default function TeacherSchoolCourses() {
     });
   }, [courses, q, fCategory, fGrade, fType, fActive]);
 
+  // 开设统计:必修/选修口径保持既有含义(含非学术课程);非学术课程另计一档并注明「含」
   const stats = useMemo(() => {
-    const active = courses.filter((c) => c.active).length;
-    const required = courses.filter((c) => c.active && c.type === "REQUIRED").length;
-    return { total: courses.length, active, elective: active - required };
+    const active = courses.filter((c) => c.active);
+    const required = active.filter((c) => c.type === "REQUIRED").length;
+    return {
+      total: courses.length,
+      active: active.length,
+      required,
+      elective: active.length - required,
+      nonAcademic: active.filter(isNonAcademic).length,
+    };
   }, [courses]);
 
   async function save() {
@@ -185,7 +202,8 @@ export default function TeacherSchoolCourses() {
         <div>
           <h2 className="text-base font-semibold text-slate-800">课程管理</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            维护学校开设的所有课程。共 {stats.total} 门,其中在开设 {stats.active} 门(必修 {stats.active - stats.elective}、选修 {stats.elective})。
+            维护学校开设的所有课程。共 {stats.total} 门,其中在开设 {stats.active} 门(必修 {stats.required}、选修 {stats.elective}
+            {stats.nonAcademic > 0 ? <>;含非学术 {stats.nonAcademic} 门</> : null})。
             {!canManage && " 您当前为只读权限。"}
           </p>
         </div>
@@ -275,7 +293,18 @@ export default function TeacherSchoolCourses() {
                   {c.name}
                   {c.note && <span className="ml-2 text-xs font-normal text-slate-400" title={c.note}>{c.note.length > 16 ? `${c.note.slice(0, 16)}…` : c.note}</span>}
                 </td>
-                <td className="px-3 py-2 text-center">{c.category}</td>
+                <td className="px-3 py-2 text-center">
+                  {isNonAcademic(c) ? (
+                    <span
+                      className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700"
+                      title="非学术课程:不指派任课教师、不安排考试(可正常排进课表)"
+                    >
+                      非学术课程
+                    </span>
+                  ) : (
+                    c.category
+                  )}
+                </td>
                 <td className="px-3 py-2 text-center">
                   <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${c.type === "REQUIRED" ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}`}>
                     {typeLabel(c.type)}
@@ -345,6 +374,12 @@ export default function TeacherSchoolCourses() {
                   </select>
                 </div>
               </div>
+              {isNonAcademic(editing) && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+                  <b>非学术课程</b>不涉及任课教师与考试:可照常排进课表,但不会出现在班级的「任课教师」与「考试与成绩」中,
+                  也不能为该课程安排考试。
+                </p>
+              )}
               <div>
                 <label className={label}>适用年级(可多选,都不勾选 = 全年级通用)</label>
                 <div className="flex gap-5 rounded-lg border border-slate-200 px-3 py-2">

@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 export interface SelectOption {
   value: string;
   label: string;
+  /** 选项右侧的小标签(如「非学术」),用于在不改变选项顺序的前提下做分组提示 */
+  hint?: string;
 }
 
 interface SelectProps {
@@ -101,11 +103,20 @@ export default function Select({ value, onChange, options, placeholder, classNam
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${isSel ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}
               >
                 <span className="truncate">{o.label}</span>
-                {isSel && (
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" className="shrink-0 text-indigo-600">
-                    <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0l-3.5-3.5a1 1 0 111.4-1.4l2.8 2.79 6.8-6.79a1 1 0 011.4 0z" clipRule="evenodd" />
-                  </svg>
-                )}
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {o.hint && (
+                    // leading-4 + 无纵向 padding:标记高度 16px < 行内文字行高 20px,
+                    // 这样「有标记的行」与「没标记的行」等高(都为 36px),同一面板里行高不会参差
+                    <span className={`rounded px-1.5 text-[10px] font-medium leading-4 ${isSel ? "bg-amber-100 text-amber-700" : "bg-amber-50 text-amber-600"}`}>
+                      {o.hint}
+                    </span>
+                  )}
+                  {isSel && (
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" className="shrink-0 text-indigo-600">
+                      <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0l-3.5-3.5a1 1 0 111.4-1.4l2.8 2.79 6.8-6.79a1 1 0 011.4 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </span>
               </button>
             );
           })}

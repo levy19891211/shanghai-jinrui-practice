@@ -32,6 +32,8 @@ interface Block {
   grades: string; academicYear: string; term: string; weeklyHours: number;
   room: string | null; note: string | null; sortOrder: number; usageCount?: number;
   placed?: number; cells?: { entryId: string; dayOfWeek: number; period: number }[];
+  /** 后端标记:该科目属于「非学术课程」类别(不指派任课教师、不安排考试) */
+  nonAcademic?: boolean;
 }
 interface Entry {
   id: string; classId: string; dayOfWeek: number; period: number;
@@ -45,6 +47,8 @@ interface BoardData {
   periodMeta: Record<string, { label: string | null; time: string | null }>;
   // 一日安排模板(全校统一作息):排课网格的行头与默认节数由它驱动
   dayTemplate: DayTemplate;
+  // 「非学术课程」科目名(课表格子据此显示「不指派教师」而非「未指定教师」)
+  nonAcademicSubjects?: string[];
   stats: {
     planned: number; placedTotal: number; remaining: number; over: number;
     electiveCells: number; electiveCourses: number;
@@ -110,6 +114,11 @@ const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周�
 // 组课「科目」下拉数据源 = 「课程管理」课程库(SchoolCourse,在开设的课程),不再用硬编码学科清单
 const TERM_OPTIONS = ["第一学期", "第二学期", "全年"];
 const FALLBACK_COLOR = { bg: "#eef2ff", text: "#4338ca" };
+// 「非学术课程」= 课程管理里的一个类别:不指派任课教师、不安排考试,但可正常排进课表。
+// 以后再选课表 / 改类别都会走这套判断,避免"未指定教师"的橙色告警对这类课程误导。
+const NON_ACADEMIC_CATEGORY = "非学术课程";
+const isNonAcademicCourse = (c: { category?: string; nonAcademic?: boolean } | null | undefined) =>
+  !!c && (c.nonAcademic === true || c.category === NON_ACADEMIC_CATEGORY);
 
 // ============ 「一日安排」时间小工具 ============
 // 时间统一存 "HH:mm";展示时去掉小时前导零("07:45" → "7:45"),与教师习惯的写法一致
@@ -238,7 +247,7 @@ function GroupView({
   const [busy, setBusy] = useState(false);
 
   // 科目下拉数据源:「课程管理」课程库(SchoolCourse)。每次打开表单都重新拉取,保证与课程库同步
-  interface CourseLibItem { name: string; weeklyHours: number | null; grades: string; active: boolean }
+  interface CourseLibItem { name: string; weeklyHours: number | null; grades: string; active: boolean; category?: string; nonAcademic?: boolean }
   const [courseLib, setCourseLib] = useState<CourseLibItem[]>([]);
   const loadCourseLib = useCallback(() => {
     api
@@ -277,6 +286,8 @@ function GroupView({
 
   // 当前选中科目的课程库记录(用于展示参考课时/年级提示)
   const selectedCourse = useMemo(() => courseLib.find((c) => c.name === form.subject) || null, [courseLib, form.subject]);
+  // 选中「非学术课程」→ 任课教师字段不适用(前端禁用;后端同样会忽略传入的教师)
+  const selectedIsNonAcademic = isNonAcademicCourse(selectedCourse);
 
   function startNew() {
     setEditingId("new");
@@ -312,6 +323,8 @@ function GroupView({
         const gs = (c.grades || "").split(",").filter(Boolean).filter((g) => meta.gradeOptions.includes(g));
         if (gs.length) next.grades = gs;
       }
+      // 非学术课程不指派任课教师:切到该科目时清空已选教师,避免留下无意义的归属
+      if (isNonAcademicCourse(c)) next.teacherId = "";
       return next;
     });
   }
@@ -388,15 +401,37 @@ function GroupView({
           <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
             <div className="flex flex-col gap-1 text-xs text-slate-500">
               <span>科目</span>
-              <Select value={form.subject} onChange={pickSubject} placeholder="请选择课程" options={subjectOptions.map((s) => ({ value: s, label: s }))} />
+              <Select
+                value={form.subject}
+                onChange={pickSubject}
+                placeholder="请选择课程"
+                options={subjectOptions.map((s) => ({
+                  value: s,
+                  label: s,
+                  hint: isNonAcademicCourse(courseLib.find((c) => c.name === s)) ? "非学术" : undefined,
+                }))}
+              />
               {selectedCourse && (
                 <span className="text-[11px] leading-4 text-slate-400">
-                  参考 {selectedCourse.weeklyHours ?? "/"} 课时/周 · {gradesLabel(selectedCourse.grades)}
+                  {selectedIsNonAcademic ? (
+                    <span className="text-amber-600">非学术课程 · 不指派教师 / 不安排考试</span>
+                  ) : (
+                    <>参考 {selectedCourse.weeklyHours ?? "/"} 课时/周 · {gradesLabel(selectedCourse.grades)}</>
+                  )}
                 </span>
               )}
             </div>
-            <Field label="任课教师">
-              <Select value={form.teacherId} onChange={(v) => setForm({ ...form, teacherId: v })} placeholder="暂不指定" options={teachers.map((t) => ({ value: t.id, label: t.name }))} />
+            <Field label={selectedIsNonAcademic ? "任课教师(不适用)" : "任课教师"}>
+              {selectedIsNonAcademic ? (
+                <div
+                  className="flex w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400"
+                  title="「非学术课程」不指派任课教师"
+                >
+                  非学术课程不指派教师
+                </div>
+              ) : (
+                <Select value={form.teacherId} onChange={(v) => setForm({ ...form, teacherId: v })} placeholder="暂不指定" options={teachers.map((t) => ({ value: t.id, label: t.name }))} />
+              )}
             </Field>
             <Field label="预计每周课时数">
               <input type="number" min={0} max={60} className="ui-input w-full" value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: e.target.value })} />
@@ -469,6 +504,11 @@ function GroupView({
                       {/* 第 1 行:科目 + 周课时。科目过长时截断,不挤走右侧徽章 */}
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium text-slate-800">{b.subject}</span>
+                        {b.nonAcademic && (
+                          <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700" title="非学术课程:不指派任课教师、不安排考试">
+                            非学术
+                          </span>
+                        )}
                         <span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" style={{ background: c.bg, color: c.text }}>
                           {b.weeklyHours} 课时/周
                         </span>
@@ -485,7 +525,11 @@ function GroupView({
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-                        <span>{b.teacher?.name || <span className="text-amber-600">未指定教师</span>}</span>
+                        <span>
+                          {b.nonAcademic
+                            ? <span className="text-slate-400">不指派教师</span>
+                            : b.teacher?.name || <span className="text-amber-600">未指定教师</span>}
+                        </span>
                         {b.room && <span>· {b.room}</span>}
                         {!!b.usageCount && <span>· 已被 {b.usageCount} 个班次使用</span>}
                       </div>
@@ -567,6 +611,8 @@ function PlaceView({
   const klass = meta.classes.find((c) => c.id === classId) || null;
   const entries = board?.entries || [];
   const blocks = board?.blocks || [];
+  // 「非学术课程」科目(来自课程库):课表格子里这类课程不显示"未指定教师"的告警
+  const nonAcademicSubjects = useMemo(() => new Set(board?.nonAcademicSubjects || []), [board]);
 
   const colorMap = useMemo(
     () => buildSubjectColorMap([...blocks.map((b) => b.subject), ...entries.map((e) => e.subject)]),
@@ -881,7 +927,9 @@ function PlaceView({
                         </div>
                         {/* 行2:教师 · 教室 */}
                         <div className="mt-px truncate text-[11px] text-slate-500">
-                          {b.teacher?.name || <span className="text-amber-600">未指定教师</span>}
+                          {b.nonAcademic
+                            ? <span className="text-slate-400">不指派教师</span>
+                            : b.teacher?.name || <span className="text-amber-600">未指定教师</span>}
                           {b.room && <span className="text-slate-400"> · {b.room}</span>}
                         </div>
                         {/* 行3:进度条 */}
@@ -992,7 +1040,12 @@ function PlaceView({
                                       title={`${e.subject}${e.teacher ? " · " + e.teacher.name : ""}${e.room ? " · " + e.room : ""}${isBlockEntry ? "" : "（手动/导入条目）"}`}
                                     >
                                       <div className="truncate text-xs font-medium">{e.subject}</div>
-                                      <div className="truncate text-[10px] opacity-80">{e.teacher?.name || "未指定教师"}{e.room ? ` · ${e.room}` : ""}</div>
+                                      <div className="truncate text-[10px] opacity-80">
+                                        {nonAcademicSubjects.has(e.subject)
+                                          ? "不指派教师"
+                                          : e.teacher?.name || "未指定教师"}
+                                        {e.room ? ` · ${e.room}` : ""}
+                                      </div>
                                       {/* hover 操作 */}
                                       <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex">
                                         <button

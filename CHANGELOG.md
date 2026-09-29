@@ -1,5 +1,30 @@
 # 版本历史
 
+## V2.4.123 (2026-09-29) — 课程管理新增「非学术课程」类别:不指派任课教师、不安排考试
+- 需求（附截图）：课程管理的课程类别里新增「非学术课程」这一类别，这类课程不涉及任课老师和考试。
+- **类别**：`SCHOOL_COURSE_CATEGORIES` / 前端 `CATEGORIES` 均新增「非学术课程」（例：体育、社团、班会、自习）。
+  它可照常排进课表、照常统计周课时，只是**不产生教师归属与成绩**。列表页该类别的类别列显示琥珀色徽章，
+  顶部统计追加「含非学术 N 门」；编辑弹窗选中该类别时给出语义说明。
+- **判定口径**：课程库 `name` 全校唯一 ⇒ 一律用「非学术课程名称集合」在派生视图里剔除，双端同一规则：
+  `academics.js` 的 `nonAcademicSubjectSet()`、`scheduling.js` 同名函数（后者 try/catch 兜底，
+  查库异常时退回「没有非学术课程」，保证排课主流程不因附加语义而 500）。
+- **后端行为**：
+  - `GET /academics/school-courses` 每门课返回 `nonAcademic` 标记，并回传 `nonAcademicCategory`。
+  - `GET /academics/classes/:id/subject-teachers`（班级「任课教师」）：剔除非学术课程，summary 增 `excludedNonAcademic`。
+  - `GET /academics/classes/:id/gradebook`（班级「考试与成绩」）：课程列表与考试均剔除非学术课程。
+  - `POST /academics/exams`：科目命中非学术课程 → **400**（纵深防御：前端无入口，直连接口同样拦住）。
+  - `GET /scheduling/blocks` / `GET /scheduling/board`：返回 `nonAcademic` / `nonAcademicSubjects`；
+    `POST`、`PUT /scheduling/blocks`：科目为非学术课程时**强制清空 teacherId**（传入教师一律忽略）。
+- **前端行为**：
+  - 组课：科目下拉对非学术课程标注「非学术」；选中后「任课教师」字段变为不可用的灰底提示「非学术课程不指派教师」，
+    并清空已选教师；课程块卡片显示琥珀色「非学术」标签 + 「不指派教师」（不再误报橙色「未指定教师」）。
+  - 排课：课程池与课表格子里同科目均显示「不指派教师」。
+  - `components/Select.tsx`：`SelectOption` 新增可选 `hint`（选项右侧小标签），供本次标注复用。
+  - 班级管理「任课教师」Tab：提示条补充说明，并在统计里展示被排除的非学术课时数（避免误以为数据丢了）。
+  - 班级管理「考试与成绩」Tab：提示条补充「非学术课程不安排考试,不在此列」。
+- **验证**：`node --check`(×2) + `tsc --noEmit` 通过；接口级 E2E 全过零残留（隔离学年自建自清，
+  真实数据前后比对零触碰）；build 通过；实抓 served chunk 核对版本号 v2.4.123。
+
 ## V2.4.122 (2026-09-29) — 排课管理新增「③ 一日安排」:全校统一作息模板,所有班级排课照此显示
 - 需求（附截图）：除了「组课」「排课」两个子模块，再增加一个「一日安排设定」模块，用于设置一天有几节课、每节课的时间段、课间休息的时间段等；设定好后所有班级排课都按这个模板走。
 - **数据模型**（`apps/api/prisma/schema.prisma` 新增 `DayPeriodTemplate`）：`academicYear + term + period(1..N) → label / startTime / endTime`，唯一键 `@@unique([academicYear, term, period])`。

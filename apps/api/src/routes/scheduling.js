@@ -125,6 +125,25 @@ function shapeBlock(b) {
   };
 }
 
+// ————————————————————————————————————————————
+// 「非学术课程」(V2.4.123):课程库里 category=非学术课程 的课程,不指派任课教师、不安排考试。
+// 例:体育、社团、班会、自习 —— 可排进课表,但不产生教师归属与成绩。
+// 课程库 name 全校唯一,故用「名称集合」判断;判断失败(查询异常)时整体回退为「没有非学术课程」,
+// 保证排课主流程不会因为该附加语义而报错。
+// ————————————————————————————————————————————
+const NON_ACADEMIC_CATEGORY = "非学术课程";
+async function nonAcademicSubjectSet() {
+  try {
+    const rows = await prisma.schoolCourse.findMany({
+      where: { category: NON_ACADEMIC_CATEGORY },
+      select: { name: true },
+    });
+    return new Set(rows.map((r) => r.name));
+  } catch {
+    return new Set();
+  }
+}
+
 function shapeEntry(e) {
   return {
     id: e.id,
@@ -440,7 +459,7 @@ router.get(
     if (academicYear) where.academicYear = T(academicYear);
     if (term) where.term = T(term);
 
-    const [allRows, teachers, classes] = await Promise.all([
+    const [allRows, teachers, classes, naSubjects] = await Promise.all([
       prisma.courseBlock.findMany({
         where,
         orderBy: [{ sortOrder: "asc" }, { subject: "asc" }],
@@ -452,6 +471,7 @@ router.get(
         orderBy: { name: "asc" },
       }),
       prisma.class.findMany({ select: { grade: true, academicYear: true, term: true } }),
+      nonAcademicSubjectSet(),
     ]);
     // 年级过滤在应用层做:多选年级(逗号串)用「包含」语义,未选年级 = 全年级通用恒命中
     const list = grade ? allRows.filter((b) => blockCoversGrade(b, T(grade))) : allRows;
@@ -461,7 +481,7 @@ router.get(
     const terms = Array.from(new Set(classes.map((c) => c.term).filter(Boolean))).sort();
 
     ok(res, {
-      blocks: list.map(shapeBlock),
+      blocks: list.map((b) => ({ ...shapeBlock(b), nonAcademic: naSubjects.has(b.subject) })),
       teachers,
       gradeOptions: sortGrades(grades),
       years,
@@ -488,7 +508,9 @@ router.post(
     const weeklyHours = int(b.weeklyHours, 0);
     if (weeklyHours < 0 || weeklyHours > 60) return fail(res, 400, "预计每周课时数需在 0–60 之间");
 
-    const teacherId = b.teacherId ? String(b.teacherId) : null;
+    // 「非学术课程」不指派任课教师:传入的教师一律忽略(前端已禁用该字段,这里是接口级兜底)
+    const isNonAcademic = (await nonAcademicSubjectSet()).has(subject);
+    const teacherId = isNonAcademic ? null : b.teacherId ? String(b.teacherId) : null;
     const t = await findTeacher(teacherId);
     if (t.error) return fail(res, 400, t.error);
 
@@ -517,7 +539,7 @@ router.post(
       },
       include: { teacher: TEACHER_SELECT, _count: { select: { entries: true } } },
     });
-    ok(res, { block: shapeBlock(row) }, "课程块已创建");
+    ok(res, { block: { ...shapeBlock(row), nonAcademic: isNonAcademic } }, "课程块已创建");
   })
 );
 
@@ -554,6 +576,9 @@ router.put(
       if (t.error) return fail(res, 400, t.error);
       data.teacherId = tid;
     }
+    // 「非学术课程」不指派任课教师:命中时清空教师(把科目改成非学术课程时同样生效)
+    const naSubjects = await nonAcademicSubjectSet();
+    if (naSubjects.has(data.subject ?? row.subject)) data.teacherId = null;
     if (b.room !== undefined) data.room = T(b.room) || null;
     if (b.note !== undefined) data.note = T(b.note) || null;
     if (b.sortOrder !== undefined) data.sortOrder = int(b.sortOrder, row.sortOrder);
@@ -579,7 +604,7 @@ router.put(
       data,
       include: { teacher: TEACHER_SELECT, _count: { select: { entries: true } } },
     });
-    ok(res, { block: shapeBlock(updated) }, "已保存");
+    ok(res, { block: { ...shapeBlock(updated), nonAcademic: naSubjects.has(updated.subject) } }, "已保存");
   })
 );
 
@@ -622,7 +647,7 @@ router.get(
     const grade = T(req.query.grade) || klass.grade || "";
     const { academicYear, term } = klass;
 
-    const [allBlocks, entries, otherRows] = await Promise.all([
+    const [allBlocks, entries, otherRows, naSubjects] = await Promise.all([
       prisma.courseBlock.findMany({
         where: { academicYear, term },
         orderBy: [{ sortOrder: "asc" }, { subject: "asc" }],
@@ -638,6 +663,7 @@ router.get(
         where: { NOT: { academicYear, term } },
         select: { grades: true },
       }),
+      nonAcademicSubjectSet(),
     ]);
     // 年级过滤在应用层做:多选年级用「包含」语义,未选年级的课程块 = 跨年级通用,所有年级池都显示
     const blocks = grade ? allBlocks.filter((b) => blockCoversGrade(b, grade)) : allBlocks;
@@ -657,7 +683,7 @@ router.get(
 
     const pool = blocks.map((b) => {
       const cells = cellsByBlock.get(b.id) || [];
-      return { ...shapeBlock(b), placed: cells.length, cells };
+      return { ...shapeBlock(b), nonAcademic: naSubjects.has(b.subject), placed: cells.length, cells };
     });
 
     // 行头元数据:优先「一日安排」模板(全校统一作息),无模板时回退到课表条目快照(兼容历史导入的网格课表)
@@ -690,6 +716,8 @@ router.get(
       entries: entries.map(shapeEntry),
       otherTermBlocks,
       periodMeta,
+      // 非学术课程科目名(课表格子/课程池据此显示「不指派教师」而非「未指定教师」)
+      nonAcademicSubjects: Array.from(naSubjects),
       // 一日安排模板:排课网格的节次名/时间段/默认节数都由它驱动(未配置时 periods 为空数组)
       dayTemplate,
       stats: {

@@ -322,9 +322,14 @@ router.get(
       include: { teacher: { select: { id: true, name: true } } },
     });
 
+    // 「非学术课程」不指派任课教师:从任课教师清单中剔除(它们仍留在课表里,只是不产生教师归属)
+    const naSubjects = await nonAcademicSubjectSet();
+    const academicEntries = entries.filter((e) => !naSubjects.has(e.subject));
+    const excludedNonAcademic = entries.length - academicEntries.length;
+
     // 按科目聚合:教师去重(各计课时)、教室去重、该科目课表总课时
     const bySubject = new Map();
-    for (const e of entries) {
+    for (const e of academicEntries) {
       let g = bySubject.get(e.subject);
       if (!g) {
         g = { subject: e.subject, periods: 0, teachers: new Map(), rooms: new Set() };
@@ -351,8 +356,10 @@ router.get(
       items,
       summary: {
         subjects: items.length,
-        teachers: new Set(entries.map((e) => e.teacherId).filter(Boolean)).size,
-        entries: entries.length,
+        teachers: new Set(academicEntries.map((e) => e.teacherId).filter(Boolean)).size,
+        entries: academicEntries.length,
+        // 被排除的非学术课程课时数(前端据此给出说明,避免用户以为数据丢了)
+        excludedNonAcademic,
       },
     });
   })
@@ -629,6 +636,9 @@ router.post(
     if (!subject || !String(subject).trim()) return fail(res, 400, "科目必填");
     if (!title || !String(title).trim()) return fail(res, 400, "考试名称必填");
     if (!examDate) return fail(res, 400, "考试日期必填");
+    // 「非学术课程」不安排考试(纵深防御:前端已不提供入口,直连接口同样拦住)
+    if ((await nonAcademicSubjectSet()).has(String(subject).trim()))
+      return fail(res, 400, "「非学术课程」不安排考试,请先在课程管理里调整该课程的类别");
     if (!(await canTeachSubject(req, classId, String(subject).trim())))
       return fail(res, 403, "无权为该班该科目录入考试");
     const cls = await prisma.class.findUnique({ where: { id: classId } });
@@ -822,7 +832,7 @@ router.get(
     const subs = await visibleSubjects(req, id);
     const allow = (subject) => subs === null || subs.includes(subject);
 
-    const [exams, memberships, catalog, timetableEntries] = await Promise.all([
+    const [exams, memberships, catalog, timetableEntries, naSubjects] = await Promise.all([
       prisma.exam.findMany({
         where: { classId: id },
         orderBy: [{ examDate: "asc" }, { title: "asc" }],
@@ -834,9 +844,11 @@ router.get(
       }),
       prisma.course.findMany({ where: { classId: id }, select: { name: true } }),
       prisma.timetableEntry.findMany({ where: { classId: id }, select: { subject: true } }),
+      nonAcademicSubjectSet(),
     ]);
 
-    const visibleExams = exams.filter((e) => allow(e.subject));
+    // 「非学术课程」不安排考试、不产生成绩:从成绩册的课程列表中剔除
+    const visibleExams = exams.filter((e) => allow(e.subject) && !naSubjects.has(e.subject));
     const examIds = visibleExams.map((e) => e.id);
     const scores = examIds.length
       ? await prisma.score.findMany({
@@ -852,8 +864,8 @@ router.get(
       examsBySubject.get(e.subject).push(e);
     }
     const subjects = new Set([...examsBySubject.keys()])
-    for (const c of catalog) if (c.name) subjects.add(c.name);
-    for (const t of timetableEntries) if (t.subject) subjects.add(t.subject);
+    for (const c of catalog) if (c.name && !naSubjects.has(c.name)) subjects.add(c.name);
+    for (const t of timetableEntries) if (t.subject && !naSubjects.has(t.subject)) subjects.add(t.subject);
     const courses = Array.from(subjects)
       .filter((s) => allow(s))
       .map((s) => ({ subject: s, exams: examsBySubject.get(s) || [] }))
@@ -1935,7 +1947,19 @@ router.delete(
 // 与班级维度的 Course 目录解耦:这里维护的是「学校开哪些课」的主数据
 // ============================================================
 
-const SCHOOL_COURSE_CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践"];
+const SCHOOL_COURSE_CATEGORIES = ["学术核心", "素养与综合", "艺术与体育", "研究与创新", "人工智能与实践", "非学术课程"];
+
+// 「非学术课程」(V2.4.123):课程库里的一个类别,语义 = 不指派任课教师、不安排考试。
+// 例:体育、社团、班会、自习等 —— 它们可以被排进课表,但不产生"任课教师"与"成绩"。
+// 课程库 name 全校唯一,故用「名称集合」在教师/成绩等派生视图里剔除这些课程。
+const NON_ACADEMIC_CATEGORY = "非学术课程";
+async function nonAcademicSubjectSet() {
+  const rows = await prisma.schoolCourse.findMany({
+    where: { category: NON_ACADEMIC_CATEGORY },
+    select: { name: true },
+  });
+  return new Set(rows.map((r) => r.name));
+}
 
 // 归一化课程库入参:仅取白名单字段,避免脏字段落库
 // partial=false(POST) 时 name 必填;partial=true(PUT) 时只处理显式传入的字段
@@ -2014,7 +2038,11 @@ router.get(
       where,
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
-    ok(res, { courses, categories: SCHOOL_COURSE_CATEGORIES });
+    ok(res, {
+      courses: courses.map((c) => ({ ...c, nonAcademic: c.category === NON_ACADEMIC_CATEGORY })),
+      categories: SCHOOL_COURSE_CATEGORIES,
+      nonAcademicCategory: NON_ACADEMIC_CATEGORY,
+    });
   })
 );
 
