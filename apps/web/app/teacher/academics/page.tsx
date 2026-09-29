@@ -16,8 +16,6 @@ import TeacherSchoolCourses from "@/components/TeacherSchoolCourses";
 interface Cls { id: string; name: string; grade?: string | null; academicYear: string; term: string; headTeacher: { id: string; name: string } | null; studentCount: number; subjectTeachers: { id: string; subject: string; role: string; teacher: { id: string; name: string } }[]; }
 interface Stu { id: string; name: string; studentNo?: string | null; }
 interface Tch { id: string; name: string; role: string; }
-interface ExamItem { id: string; classId: string; className: string; subject: string; title: string; type: string; examDate: string; totalScore: number; }
-interface ScoreRow { id?: string; studentId: string; student: { id: string; name: string; studentNo?: string | null }; score: number; rankInClass: number | null; comment: string | null; updatedAt?: string; }
 interface FeedbackItem { id: string; studentId: string; student: { id: string; name: string; studentNo?: string | null }; teacher: { id: string; name: string } | null; subject?: string | null; exam?: { id: string; title: string } | null; content: string; visibility: string; status: string; createdAt: string; }
 interface TimetableItem { id: string; classId: string; dayOfWeek: number; period: number; periodLabel?: string | null; periodTime?: string | null; subject: string; teacherId?: string | null; teacher: { id: string; name: string } | null; room?: string | null; academicYear: string; term: string; }
 
@@ -472,150 +470,318 @@ function TeachersTab({ cls, onGoScheduling }: { cls: Cls; onGoScheduling?: () =>
   );
 }
 
-// ============ 考试与成绩 ============
+// ============ 考试与成绩(只读) ============
+// 只读视图,零写入。成绩来源 = 班级课程目录(Course) ∪ 课表科目(TimetableEntry) ∪ 已建考试科目(Exam)
+// 对应的 Score 记录,由 GET /academics/classes/:id/gradebook 一次性返回后在前端透视。
+// 拆成两个子模块:① 按课程查看(课程 × 学生 成绩矩阵) ② 按学生查看(单个学生跨课程成绩明细)。
+// 新建考试/录入成绩等写操作已从本模块下线(后端写接口保留,成绩录入仍可用 PUT /exams/:id/scores)。
+type GExam = { id: string; title: string; type: string; examDate: string; totalScore: number };
+type GCourse = { subject: string; exams: GExam[] };
+type GScore = { examId: string; studentId: string; score: number; rankInClass: number | null; comment: string | null };
+type Gradebook = {
+  class: { id: string; name: string; grade?: string | null; academicYear: string; term: string };
+  courses: GCourse[];
+  students: Stu[];
+  scores: GScore[];
+  readonly: boolean;
+};
+
+const scoreKey = (examId: string, studentId: string) => `${examId}::${studentId}`;
+const fmt1 = (n: number) => (Math.round(n * 10) / 10).toString();
+const fmtDay = (s: string) => { const d = new Date(s); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(); };
+const rateOf = (score: number, total: number) => (total > 0 ? score / total : 0);
+const pctStr = (r: number) => `${Math.round(r * 1000) / 10}%`;
+
+function median(nums: number[]): number | null {
+  if (!nums.length) return null;
+  const a = nums.slice().sort((x, y) => x - y);
+  const h = Math.floor(a.length / 2);
+  return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2;
+}
+
 function ExamsTab({ cls }: { cls: Cls }) {
-  const [exams, setExams] = useState<ExamItem[]>([]);
-  const [selectedExam, setSelectedExam] = useState<string | null>(null);
+  const [sub, setSub] = useState<"course" | "student">("course");
+  const [data, setData] = useState<Gradebook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const scope = useScopes();
-  const isAdmin = !!scope?.isAdmin;
+  const [err, setErr] = useState("");
 
   const load = useCallback(() => {
-    setLoading(true);
-    api.get<{ exams: ExamItem[] }>(`/academics/exams?classId=${cls.id}`).then((d) => { setExams(d.exams || []); setLoading(false); }).catch(() => setLoading(false));
+    setLoading(true); setErr("");
+    api.get<Gradebook>(`/academics/classes/${cls.id}/gradebook`)
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((e: any) => { setErr(e.message || "加载失败"); setLoading(false); });
   }, [cls.id]);
-
   useEffect(() => { load(); }, [load]);
+
+  if (loading) return <p className="text-slate-400">加载中…</p>;
+  if (err) return <p className="text-sm text-red-500">{err}</p>;
+  if (!data) return null;
+  const examCount = data.courses.reduce((n, c) => n + c.exams.length, 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-600">考试列表</h3>
-        {isAdmin && <button onClick={() => setShowCreate((v) => !v)} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700">新建考试</button>}
-      </div>
-      {isAdmin && showCreate && <CreateExam cls={cls} onCreated={() => { setShowCreate(false); load(); }} />}
-      {loading ? <p className="text-slate-400">加载中…</p> : (
-        <div className="space-y-2">
-          {exams.length === 0 && <p className="text-slate-400">暂无考试。</p>}
-          {exams.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => setSelectedExam(e.id)}
-              className={`block w-full rounded-lg border p-3 text-left ${selectedExam === e.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
-            >
-              <div className="font-medium text-slate-800">{e.title} <span className="text-xs text-slate-400">{e.subject} · {TYPES[e.type] || e.type}</span></div>
-              <div className="text-xs text-slate-500">{new Date(e.examDate).toLocaleDateString()} · 满分 {e.totalScore}</div>
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        本模块为<b>只读</b>视图:成绩按「本班涉及的全部课程」汇总展示,不支持新建考试或修改分数。
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+          {([["course", "按课程查看"], ["student", "按学生查看"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setSub(k)}
+              className={`rounded-md px-3 py-1.5 ${sub === k ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+              {l}
             </button>
           ))}
         </div>
-      )}
-      {selectedExam && (
-        <div className="space-y-4">
-          <ScoreEntry classId={cls.id} examId={selectedExam} onSaved={load} />
+        <button onClick={load} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">刷新</button>
+        <span className="ml-auto text-xs text-slate-400">
+          {data.courses.length} 门课程 · {examCount} 场考试 · {data.students.length} 名学生 · {data.scores.length} 条成绩
+        </span>
+      </div>
+      {sub === "course" ? <GradeByCourse data={data} /> : <GradeByStudent data={data} />}
+    </div>
+  );
+}
+
+// ——— 子模块一:按课程查看(课程 × 学生 矩阵) ———
+function GradeByCourse({ data }: { data: Gradebook }) {
+  const initial = data.courses.find((c) => c.exams.length) || data.courses[0];
+  const [subject, setSubject] = useState(initial?.subject || "");
+  const [examId, setExamId] = useState<string | null>(null);
+  const course = data.courses.find((c) => c.subject === subject) || initial;
+
+  if (!course) return <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-400">本班暂无课程记录。</p>;
+
+  const scoreMap = new Map(data.scores.map((s) => [scoreKey(s.examId, s.studentId), s]));
+  const students = data.students;
+  // 每场考试的横截面统计(仅统计已录成绩者)
+  const stats = course.exams.map((e) => {
+    const nums = students.map((st) => scoreMap.get(scoreKey(e.id, st.id))).filter(Boolean).map((s) => (s as GScore).score);
+    return {
+      exam: e,
+      count: nums.length,
+      avg: nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null,
+      max: nums.length ? Math.max(...nums) : null,
+      min: nums.length ? Math.min(...nums) : null,
+      median: median(nums),
+    };
+  });
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <aside className="shrink-0 space-y-1 lg:w-56">
+        <p className="px-1 text-xs font-medium text-slate-400">课程({data.courses.length})</p>
+        <div className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap">
+          {data.courses.map((c) => (
+            <button key={c.subject} onClick={() => { setSubject(c.subject); setExamId(null); }}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm ${c.subject === course.subject ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+              <span className="truncate">{c.subject}</span>
+              <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] ${c.exams.length ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                {c.exams.length ? `${c.exams.length} 场` : "暂无"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-1">
+            <h4 className="text-sm font-medium text-slate-600">{course.subject} · 成绩汇总(学生 × 考试)</h4>
+            <span className="text-xs text-slate-400">点考试列标题可展开该场学情</span>
+          </div>
+          {course.exams.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">该课程暂无考试记录。</p>
+          ) : students.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">本班暂无学生。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="whitespace-nowrap py-1 pr-3 text-left font-medium">学生</th>
+                    {stats.map((s) => (
+                      <th key={s.exam.id} className="px-2 py-1 align-bottom">
+                        <button onClick={() => setExamId(s.exam.id === examId ? null : s.exam.id)}
+                          className={`w-full rounded px-1.5 py-0.5 ${s.exam.id === examId ? "bg-indigo-50 text-indigo-600" : "hover:bg-slate-50"}`}>
+                          <div className="font-medium text-slate-700">{s.exam.title}</div>
+                          <div className="text-[11px] font-normal text-slate-400">{TYPES[s.exam.type] || s.exam.type} · {fmtDay(s.exam.examDate)} · 满分 {s.exam.totalScore}</div>
+                        </button>
+                      </th>
+                    ))}
+                    <th className="whitespace-nowrap px-2 py-1 text-center font-medium">平均得分率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((st) => {
+                    const cells = course.exams.map((e) => scoreMap.get(scoreKey(e.id, st.id)));
+                    const ratios = cells
+                      .map((c, i) => (c ? rateOf(c.score, course.exams[i].totalScore || 100) : null))
+                      .filter((x): x is number => x != null);
+                    const avgRatio = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
+                    return (
+                      <tr key={st.id} className="border-t border-slate-100">
+                        <td className="whitespace-nowrap py-1.5 pr-3">
+                          <span className="text-slate-800">{st.name}</span>
+                          <span className="ml-1.5 text-xs text-slate-400">{st.studentNo || "—"}</span>
+                        </td>
+                        {cells.map((c, i) => (
+                          <td key={course.exams[i].id} className="px-2 py-1.5 text-center">
+                            {c ? (
+                              <>
+                                <span className="font-medium text-slate-800">{fmt1(c.score)}</span>
+                                <span className="ml-1 text-[11px] text-slate-400">/{course.exams[i].totalScore}</span>
+                                {c.rankInClass != null && <span className="ml-1 text-[11px] text-slate-400">#{c.rankInClass}</span>}
+                              </>
+                            ) : <span className="text-slate-300">—</span>}
+                          </td>
+                        ))}
+                        <td className="px-2 py-1.5 text-center text-slate-600">
+                          {avgRatio == null ? <span className="text-slate-300">—</span> : pctStr(avgRatio)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="border-t-2 border-slate-100 text-xs text-slate-500">
+                  <tr>
+                    <td className="py-1 pr-3">已录/参考</td>
+                    {stats.map((s) => <td key={s.exam.id} className="px-2 py-1 text-center">{s.count}/{students.length}</td>)}
+                    <td />
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3">平均分</td>
+                    {stats.map((s) => <td key={s.exam.id} className="px-2 py-1 text-center">{s.avg == null ? "—" : fmt1(s.avg)}</td>)}
+                    <td />
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3">中位数</td>
+                    {stats.map((s) => <td key={s.exam.id} className="px-2 py-1 text-center">{s.median == null ? "—" : fmt1(s.median)}</td>)}
+                    <td />
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3">最高/最低</td>
+                    {stats.map((s) => (
+                      <td key={s.exam.id} className="px-2 py-1 text-center">
+                        {s.max == null ? "—" : `${fmt1(s.max)} / ${fmt1(s.min as number)}`}
+                      </td>
+                    ))}
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+        {examId && (
           <div>
             <h4 className="mb-1 text-sm font-medium text-slate-600">本场考试学情</h4>
-            <ExamAnalytics examId={selectedExam} />
+            <ExamAnalytics examId={examId} />
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CreateExam({ cls, onCreated }: { cls: Cls; onCreated: () => void }) {
-  const [form, setForm] = useState({ subject: SUBJECTS[0], title: "", type: "DAILY", examDate: "", totalScore: 100 });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  async function submit() {
-    setBusy(true); setErr("");
-    try {
-      await api.post("/academics/exams", { ...form, classId: cls.id, examDate: new Date(form.examDate).toISOString() });
-      onCreated();
-    } catch (e: any) { setErr(e.message || "创建失败"); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white p-3">
-      <Field label="科目"><Select value={form.subject} onChange={(v) => setForm({ ...form, subject: v })} options={SUBJECTS.map((s) => ({ value: s, label: s }))} /></Field>
-      <Field label="名称"><input className="ui-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="如 第一次月考" /></Field>
-      <Field label="类型">
-        <Select value={form.type} onChange={(v) => setForm({ ...form, type: v })} options={Object.entries(TYPES).map(([k, v]) => ({ value: k, label: v }))} />
-      </Field>
-      <Field label="日期"><input type="date" className="ui-input" value={form.examDate} onChange={(e) => setForm({ ...form, examDate: e.target.value })} /></Field>
-      <Field label="满分"><input type="number" className="ui-input w-20" value={form.totalScore} onChange={(e) => setForm({ ...form, totalScore: Number(e.target.value) })} /></Field>
-      <button onClick={submit} disabled={busy} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">保存</button>
-      {err && <span className="text-sm text-red-500">{err}</span>}
-    </div>
-  );
-}
-
-function ScoreEntry({ classId, examId, onSaved }: { classId: string; examId: string; onSaved: () => void }) {
-  const [rows, setRows] = useState<ScoreRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      api.get<{ students: Stu[] }>(`/academics/classes/${classId}/students`),
-      api.get<{ scores: ScoreRow[] }>(`/academics/exams/${examId}`),
-    ]).then(([mem, exam]) => {
-      const scoreMap = new Map(exam.scores.map((s) => [s.studentId, s]));
-      setRows(mem.students.map((st) => {
-        const sc = scoreMap.get(st.id);
-        return { studentId: st.id, student: st, score: sc ? sc.score : 0, rankInClass: sc ? sc.rankInClass : null, comment: sc ? sc.comment : "" };
-      }));
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [classId, examId]);
-
-  function setVal(i: number, key: "score" | "rankInClass" | "comment", val: any) {
-    setRows((rs) => rs.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
-  }
-
-  async function save() {
-    setBusy(true); setErr("");
-    try {
-      await api.put(`/academics/exams/${examId}/scores`, {
-        scores: rows.map((r) => ({
-          studentId: r.studentId,
-          score: Number(r.score),
-          rankInClass: r.rankInClass == null ? null : r.rankInClass,
-          comment: r.comment || null,
-        })),
-      });
-      onSaved();
-    } catch (e: any) { setErr(e.message || "保存失败"); }
-    finally { setBusy(false); }
-  }
-
-  if (loading) return <p className="text-slate-400">加载中…</p>;
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-sm font-medium text-slate-600">录入成绩</h4>
-        <button onClick={save} disabled={busy} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">保存成绩</button>
+        )}
       </div>
-      {err && <p className="mb-2 text-sm text-red-500">{err}</p>}
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="text-slate-500"><tr><th className="py-1 text-left">姓名</th><th className="py-1 text-left">学号</th><th className="py-1 w-24">得分</th><th className="py-1 w-24">班级排名</th><th className="py-1 text-left">评语</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.studentId} className="border-t border-slate-100">
-                <td className="py-1.5">{r.student.name}</td>
-                <td className="py-1.5 text-slate-500">{r.student.studentNo || "—"}</td>
-                <td className="py-1.5"><input type="number" className="ui-input w-20" value={r.score} onChange={(e) => setVal(i, "score", Number(e.target.value))} /></td>
-                <td className="py-1.5"><input type="number" className="ui-input w-20" value={r.rankInClass ?? ""} onChange={(e) => setVal(i, "rankInClass", e.target.value === "" ? null : Number(e.target.value))} /></td>
-                <td className="py-1.5"><input className="ui-input" value={r.comment || ""} onChange={(e) => setVal(i, "comment", e.target.value)} /></td>
-              </tr>
+    </div>
+  );
+}
+
+// ——— 子模块二:按学生查看(单生跨课程成绩明细) ———
+function GradeByStudent({ data }: { data: Gradebook }) {
+  const [q, setQ] = useState("");
+  const [sid, setSid] = useState(data.students[0]?.id || "");
+  const examMeta = new Map<string, { exam: GExam; subject: string }>();
+  data.courses.forEach((c) => c.exams.forEach((e) => examMeta.set(e.id, { exam: e, subject: c.subject })));
+
+  const rows = data.scores
+    .filter((s) => s.studentId === sid)
+    .map((s) => { const m = examMeta.get(s.examId); return m ? { ...s, exam: m.exam, subject: m.subject } : null; })
+    .filter((x): x is GScore & { exam: GExam; subject: string } => !!x)
+    .sort((a, b) =>
+      a.subject.localeCompare(b.subject, "zh-Hans-CN") ||
+      new Date(a.exam.examDate).getTime() - new Date(b.exam.examDate).getTime()
+    );
+
+  const student = data.students.find((s) => s.id === sid);
+  const allExams = data.courses.reduce((n, c) => n + c.exams.length, 0);
+  const subjectCount = new Set(rows.map((r) => r.subject)).size;
+  const avgRatio = rows.length ? rows.reduce((a, r) => a + rateOf(r.score, r.exam.totalScore), 0) / rows.length : null;
+  const list = data.students.filter((s) => {
+    const k = q.trim();
+    return !k || s.name.includes(k) || String(s.studentNo || "").includes(k);
+  });
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <aside className="shrink-0 space-y-2 lg:w-56">
+        <input className="ui-input w-full" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索姓名 / 学号" />
+        <div className="max-h-[26rem] space-y-1 overflow-y-auto pr-1">
+          {list.length === 0 && <p className="px-1 py-2 text-xs text-slate-400">无匹配学生</p>}
+          {list.map((s) => {
+            const n = data.scores.filter((x) => x.studentId === s.id).length;
+            return (
+              <button key={s.id} onClick={() => setSid(s.id)}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm ${s.id === sid ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+                <span className="truncate">{s.name}</span>
+                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] ${n ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>{n} 条</span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h4 className="mb-3 text-sm font-medium text-slate-600">
+            {student ? student.name : "—"} <span className="text-xs font-normal text-slate-400">{student?.studentNo || "无学号"} · 各课程成绩明细</span>
+          </h4>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { l: "覆盖课程", v: subjectCount },
+              { l: "有成绩考试", v: rows.length },
+              { l: "全部考试", v: allExams },
+              { l: "平均得分率", v: avgRatio == null ? "—" : pctStr(avgRatio) },
+            ].map((c) => (
+              <div key={c.l} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-xs text-slate-500">{c.l}</div>
+                <div className="text-base font-medium text-slate-800">{c.v}</div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+          {rows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">该学生暂无成绩记录。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="whitespace-nowrap py-1 pr-3 text-left font-medium">课程</th>
+                    <th className="whitespace-nowrap py-1 pr-3 text-left font-medium">考试</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-center font-medium">得分/满分</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-center font-medium">得分率</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-center font-medium">排名</th>
+                    <th className="whitespace-nowrap py-1 pl-3 text-left font-medium">评语</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.examId} className="border-t border-slate-100">
+                      <td className="whitespace-nowrap py-1.5 pr-3 text-slate-600">{r.subject}</td>
+                      <td className="py-1.5 pr-3">
+                        <div className="whitespace-nowrap text-slate-800">{r.exam.title}</div>
+                        <div className="whitespace-nowrap text-[11px] text-slate-400">{TYPES[r.exam.type] || r.exam.type} · {fmtDay(r.exam.examDate)}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-center">
+                        <span className="font-medium text-slate-800">{fmt1(r.score)}</span>
+                        <span className="ml-0.5 text-xs text-slate-400">/{r.exam.totalScore}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-center text-slate-600">{pctStr(rateOf(r.score, r.exam.totalScore))}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-center text-slate-500">{r.rankInClass == null ? "—" : `#${r.rankInClass}`}</td>
+                      <td className="max-w-[16rem] py-1.5 pl-3 text-slate-500">{r.comment || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

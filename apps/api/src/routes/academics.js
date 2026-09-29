@@ -587,7 +587,9 @@ router.get(
       where.classId = { in: ids };
     }
     if (subject) where.subject = String(subject);
-    const exams = await prisma.exam.findMany({
+    // 注意:下面是 let —— 学科老师需按作用域再过滤一遍,用 const 会在赋值时抛
+    // 「Assignment to constant variable」,导致教师角色拉考试列表 500。
+    let exams = await prisma.exam.findMany({
       where,
       orderBy: { examDate: "desc" },
       include: { class: { select: { id: true, name: true } }, creator: { select: { id: true, name: true } } },
@@ -787,6 +789,106 @@ router.put(
       upserted++;
     }
     ok(res, { upserted }, "成绩已保存");
+  })
+);
+
+// ============================================================
+// 班级成绩册(只读聚合)Gradebook
+// ============================================================
+
+// GET /api/academics/classes/:id/gradebook —— 只读:本班「课程 × 学生」成绩总览
+//   课程范围 = 班级课程目录(Course.name) ∪ 课表科目(TimetableEntry.subject) ∪ 已建考试科目(Exam.subject)
+//     三源并集去重(「有考试」的课程排前),因此「班级所涉及的所有课程」都会出现,没有成绩的课程也能看到。
+//   返回扁平的 courses/students/scores 三份数据,由前端分别拼成「按课程查看」「按学生查看」两个视图。
+//   作用域:沿用考试/成绩口径 —— 需可见该班;学科老师(非班主任)仅本人任教科目(课程与考试一并收窄)。
+//   本接口零写入(成绩录入仍走 PUT /exams/:id/scores)。
+router.get(
+  "/classes/:id/gradebook",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    // 注意:此接口聚合全班成绩,作用域必须**严格**判断 —— 不能用老惯例 `ids.length && !ids.includes(id)`,
+    // 那样当可见班级集合为空数组([])时整条件短路,等于「不过滤」,导致无任何班级归属的学生/家长
+    // 和未任教任何班的老师都能读任意班级的成绩。这里改为集合必须命中。
+    const ids = await visibleClassIds(req);
+    if (!ids.includes(id)) return fail(res, 403, "无权访问该班级");
+    const cls = await prisma.class.findUnique({
+      where: { id },
+      select: { id: true, name: true, grade: true, academicYear: true, term: true },
+    });
+    if (!cls) return fail(res, 404, "班级不存在");
+
+    // 学科老师(非班主任)仅可见本人任教科目;班主任/管理员为 null(= 全部)
+    const subs = await visibleSubjects(req, id);
+    const allow = (subject) => subs === null || subs.includes(subject);
+
+    const [exams, memberships, catalog, timetableEntries] = await Promise.all([
+      prisma.exam.findMany({
+        where: { classId: id },
+        orderBy: [{ examDate: "asc" }, { title: "asc" }],
+        select: { id: true, subject: true, title: true, type: true, examDate: true, totalScore: true },
+      }),
+      prisma.classMembership.findMany({
+        where: { classId: id },
+        select: { student: { select: { id: true, name: true, studentNo: true } } },
+      }),
+      prisma.course.findMany({ where: { classId: id }, select: { name: true } }),
+      prisma.timetableEntry.findMany({ where: { classId: id }, select: { subject: true } }),
+    ]);
+
+    const visibleExams = exams.filter((e) => allow(e.subject));
+    const examIds = visibleExams.map((e) => e.id);
+    const scores = examIds.length
+      ? await prisma.score.findMany({
+          where: { examId: { in: examIds } },
+          select: { examId: true, studentId: true, score: true, rankInClass: true, comment: true },
+        })
+      : [];
+
+    // 科目 -> 该科目的考试列表
+    const examsBySubject = new Map();
+    for (const e of visibleExams) {
+      if (!examsBySubject.has(e.subject)) examsBySubject.set(e.subject, []);
+      examsBySubject.get(e.subject).push(e);
+    }
+    const subjects = new Set([...examsBySubject.keys()])
+    for (const c of catalog) if (c.name) subjects.add(c.name);
+    for (const t of timetableEntries) if (t.subject) subjects.add(t.subject);
+    const courses = Array.from(subjects)
+      .filter((s) => allow(s))
+      .map((s) => ({ subject: s, exams: examsBySubject.get(s) || [] }))
+      // 「有考试」的课程排前,其余按中文自然序,保证顺序稳定可预期
+      .sort((a, b) => (b.exams.length ? 1 : 0) - (a.exams.length ? 1 : 0) || a.subject.localeCompare(b.subject, "zh-Hans-CN"));
+
+    const students = memberships
+      .map((m) => m.student)
+      .sort((a, b) =>
+        String(a.studentNo || "~").localeCompare(String(b.studentNo || "~"), "zh-Hans-CN", { numeric: true }) ||
+        a.name.localeCompare(b.name, "zh-Hans-CN")
+      );
+
+    ok(res, {
+      class: cls,
+      courses: courses.map((c) => ({
+        subject: c.subject,
+        exams: c.exams.map((e) => ({
+          id: e.id,
+          title: e.title,
+          type: e.type,
+          examDate: e.examDate,
+          totalScore: e.totalScore,
+        })),
+      })),
+      students,
+      scores: scores.map((s) => ({
+        examId: s.examId,
+        studentId: s.studentId,
+        score: s.score,
+        rankInClass: s.rankInClass,
+        comment: s.comment,
+      })),
+      readonly: true,
+    });
   })
 );
 
