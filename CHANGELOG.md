@@ -1,5 +1,12 @@
 # 版本历史
 
+## V2.4.118 (2026-09-29) — 删除班级「课程表」下的批量导入(Excel/CSV)功能
+- 需求：班级管理 →「课程表」子页里的「批量导入课表(Excel/CSV)」整块功能下线。
+- 前端 `apps/web/app/teacher/academics/page.tsx`：删除 `TimetableImport` 组件（含文件选择、导入方式(追加/替换)、确认导入、校验预览表与格式说明，共 201 行）及其渲染调用；移除 `import * as XLSX from "xlsx"`（该页已无 XLSX 用法）；顶部提示语「本页保留单条增删改与整表导入」改为「本页保留单条增删改」。**「新增课表条目」单条增删改、课表网格(含分层走班多课并列/连堂课跨行合并)渲染全部保留**。
+- 后端 `apps/api/src/routes/academics.js`：删除 `POST /api/academics/classes/:id/timetable/import`（85 行，含 `mode:"replace"` 整表清空 + 应用层去重 + 逐条 create + errors 汇总）。避免留下「UI 已不可见但仍可被直接调用整表清空」的写接口。
+- 保留不动：`TimetableEntry` 的 `periodLabel`/`periodTime` 字段与前端读取（历史导入数据仍能正确显示节次名/时间，缺失时回退「第 N 节」）；`apps/web` 的 `xlsx` 依赖声明保留（仅本页用过，删声明会与 lockfile 失配，无体积影响——Next 只打包实际 import）。**无 DB / schema 变更、无数据迁移。**
+- 验证：`node --check academics.js` 通过；`tsc --noEmit` 通过；全仓 grep `timetable/import|批量导入课表|TimetableImport` 零命中；线上同参 E2E 见工作日志。
+
 ## V2.4.117 (2026-09-29) — 班级列表按年级从低到高自动排序
 - 需求：教务管理「全部班级」左栏此前按班级名字符串排序,出现「高一2 → 高一3 → 高一4 → 高三1 → 高二2」这类反直觉顺序(字符串比较下「高三 < 高二」);要求自动按年级从低到高排序。
 - 新增共享工具 `apps/api/src/lib/grade-order.js`：`cmpGrade` / `sortClassesByGrade` / `termSortKey`。规则:① 学段递增 小学 < 初中 < 高中;② 段内年级序号递增 高一 < 高二 < 高三;③ 衔接年级 `Pre高一`/`预高一` 排在对应年级**之前**(故 Pre高一 位于高一之前、全部年级最前);④ 纯数字年级按国内口径折算(1-6→小学段,7-9→初中段,10-12→高中段);⑤ 无法识别的年级一律置后;⑥ 班级名用 `numeric` 自然序,保证「高一2班」在「高一10班」之前;⑦ 空年级字段回退用班级名推断年级,避免脏数据打乱整表。

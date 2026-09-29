@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, getUser } from "@/lib/api";
 import { useScopes, ExamAnalytics, ClassAnalytics } from "@/components/AcademicAnalytics";
-import * as XLSX from "xlsx";
 import Select from "@/components/Select";
 import { CourseSelectionClassPanel } from "@/components/TeacherCourseSelection";
 import { GpaManageView } from "@/components/TeacherGpaManage";
@@ -730,12 +729,9 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
     <div className="space-y-4">
       {isAdmin && onGoScheduling && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-slate-600">
-          <span>建议改用「排课管理」:先在「组课」把课程与教师绑成课程块,再拖进课表网格。本页保留单条增删改与整表导入。</span>
+          <span>建议改用「排课管理」:先在「组课」把课程与教师绑成课程块,再拖进课表网格。本页保留单条增删改。</span>
           <button onClick={onGoScheduling} className="shrink-0 rounded-md border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 hover:bg-indigo-50">前往排课管理 →</button>
         </div>
-      )}
-      {isAdmin && (
-        <TimetableImport cls={cls} onDone={load} teachers={teachers} />
       )}
       {isAdmin && (
         <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
@@ -804,207 +800,6 @@ function TimetableTab({ cls, isAdmin, onGoScheduling }: { cls: Cls; isAdmin: boo
           </table>
         )}
       </div>
-    </div>
-  );
-}
-
-// ============ 管理员:Excel/CSV 批量导入课表 ============
-function TimetableImport({ cls, onDone, teachers }: { cls: Cls; onDone: () => void; teachers: Tch[] }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<any[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [mode, setMode] = useState<"append" | "replace">("append");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
-
-  const nameToId = Object.fromEntries(teachers.map((t) => [t.name, t.id]));
-
-  function parseDay(v: any): number | null {
-    if (v == null) return null;
-    const s = String(v).trim();
-    const map: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 };
-    if (/^[1-7]$/.test(s)) return Number(s);
-    const m = s.match(/[一二三四五六日天]/);
-    if (m) return map[m[0]];
-    return null;
-  }
-  function pick(row: any, keys: string[]): any {
-    for (const k of keys) if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== "") return row[k];
-    return undefined;
-  }
-  // 星期表头(列)→ dayOfWeek
-  function parseDayHeader(s: string): number | null {
-    const t = String(s || "").trim();
-    if (/周一|星期一|mon/i.test(t)) return 1;
-    if (/周二|星期二|tue/i.test(t)) return 2;
-    if (/周三|星期三|wed/i.test(t)) return 3;
-    if (/周四|星期四|thu/i.test(t)) return 4;
-    if (/周五|星期五|fri/i.test(t)) return 5;
-    if (/周六|星期六|sat/i.test(t)) return 6;
-    if (/周日|星期日|周天|sun/i.test(t)) return 7;
-    return null;
-  }
-  // 检测「节次 × 星期」网格表头:首列含「节次」且后续列出现 ≥3 个星期表头
-  function detectMatrixHeader(raw: any[][]): { row: number; dayCols: { col: number; day: number }[] } | null {
-    for (let i = 0; i < raw.length; i++) {
-      const row = raw[i] || [];
-      const first = String(row[0] || "").trim();
-      const isPeriodCol = first.includes("节次") || first === "节" || /period/i.test(first);
-      if (!isPeriodCol) continue;
-      const dayCols: { col: number; day: number }[] = [];
-      for (let j = 1; j < row.length; j++) {
-        const d = parseDayHeader(String(row[j] || ""));
-        if (d != null) dayCols.push({ col: j, day: d });
-      }
-      if (dayCols.length >= 3) return { row: i, dayCols };
-    }
-    return null;
-  }
-  // 解析网格:每行=一个时段,每列=一天;一格多科用 / 分隔自动拆成多条;网格无教师/教室列时留空
-  // fillMap: 纵向合并单元格填充映射("r:c"->顶部值),使连堂课在每个被占节次都有条目(忠实呈现)
-  function parseMatrix(raw: any[][], header: { row: number; dayCols: { col: number; day: number }[] }, fillMap: Map<string, string>): any[] {
-    const out: any[] = [];
-    let periodIndex = 0;
-    for (let i = header.row + 1; i < raw.length; i++) {
-      const row = raw[i] || [];
-      const periodRaw = String(row[0] || "").trim();
-      if (periodRaw === "") continue;
-      periodIndex++;
-      const periodLabel = periodRaw.split(/\n/)[0].trim();
-      const tm = periodRaw.match(/(\d{1,2}:\d{2})\s*[-–—~]\s*(\d{1,2}:\d{2})/);
-      const periodTime = tm ? `${tm[1]}-${tm[2]}` : "";
-      for (const { col, day } of header.dayCols) {
-        const cell = String(fillMap.get(`${i}:${col}`) ?? row[col] ?? "").trim();
-        if (cell === "") continue;
-        const parts = cell.split(/\s*[／/、]\s*/).map((s) => s.trim()).filter((s) => s !== "");
-        for (const subj of parts) {
-          out.push({ dayOfWeek: day, period: periodIndex, periodLabel, periodTime, subject: subj, teacherId: undefined, room: "", _row: i + 1, _ok: true });
-        }
-      }
-    }
-    return out;
-  }
-
-  async function onFile(f: File) {
-    setFile(f); setPreview([]); setWarnings([]); setMsg(""); setErr("");
-    try {
-      const buf = await f.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
-      if (raw.length === 0) { setErr("文件无数据"); return; }
-      const warns: string[] = [];
-      const matrix = detectMatrixHeader(raw);
-      let entries: any[];
-      if (matrix) {
-        // 纵向合并单元格(连堂课):把顶部值填充到合并范围内的每一行,保证每个被占节次都有条目
-        const fillMap = new Map<string, string>();
-        for (const m of ((ws as any)["!merges"] || []) as any[]) {
-          if (m.s.r === m.e.r) continue;
-          if (m.s.c === 0) continue;
-          const top = String((raw[m.s.r] || [])[m.s.c] ?? "").trim();
-          if (!top) continue;
-          for (let r = m.s.r + 1; r <= m.e.r; r++) fillMap.set(`${r}:${m.s.c}`, top);
-        }
-        entries = parseMatrix(raw, matrix, fillMap);
-      } else {
-        const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        if (rows.length === 0) { setErr("文件无数据"); return; }
-        entries = rows.map((r, idx) => {
-          const dayRaw = pick(r, ["星期", "周几", "dayOfWeek", "day", "星期几"]);
-          const periodRaw = pick(r, ["节次", "节", "period", "第几节"]);
-          const subject = pick(r, ["科目", "subject", "课程"]);
-          const teacherName = pick(r, ["教师", "teacher", "老师"]);
-          const room = pick(r, ["教室", "room", "地点"]);
-          const dayOfWeek = parseDay(dayRaw);
-          const period = periodRaw != null ? Number(periodRaw) : NaN;
-          const subjectStr = subject != null ? String(subject).trim() : "";
-          let teacherId: string | undefined = undefined;
-          if (teacherName != null) {
-            const id = nameToId[String(teacherName).trim()];
-            if (id) teacherId = id;
-            else warns.push(`第 ${idx + 2} 行:教师「${teacherName}」未在系统匹配,将留空`);
-          }
-          return {
-            dayOfWeek, period, subject: subjectStr, teacherId, room: room != null ? String(room).trim() : "",
-            _row: idx + 2,
-            _ok: dayOfWeek != null && !Number.isNaN(period) && subjectStr !== "",
-          };
-        });
-      }
-      setPreview(entries);
-      if (warns.length) setWarnings(warns);
-    } catch (e: any) {
-      setErr(e.message || "解析失败");
-    }
-  }
-
-  async function submit() {
-    const valid = preview.filter((p) => p._ok).map(({ dayOfWeek, period, periodLabel, periodTime, subject, teacherId, room }) => ({ dayOfWeek, period, periodLabel, periodTime, subject, teacherId, room, academicYear: cls.academicYear, term: cls.term }));
-    if (valid.length === 0) { setErr("没有可导入的有效行"); return; }
-    setBusy(true); setErr(""); setMsg("");
-    try {
-      const res = await api.post<{ created: number; skipped: number; errors: any[] }>(`/academics/classes/${cls.id}/timetable/import`, { entries: valid, mode });
-      let msg = `已${mode === "replace" ? "替换" : "追加"}导入:成功 ${res.created} 条,跳过 ${res.skipped} 条`;
-      if (res.errors && res.errors.length) {
-        const reasons = Array.from(new Set(res.errors.map((x: any) => x.reason).filter(Boolean))).slice(0, 3).join("; ");
-        msg += `(原因: ${reasons}${res.errors.length > 3 ? " 等" : ""})`;
-      }
-      setMsg(msg);
-      setFile(null); setPreview([]);
-      onDone();
-    } catch (e: any) { setErr(e.message || "导入失败"); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
-      <h4 className="text-sm font-medium text-indigo-700">批量导入课表(Excel/CSV)</h4>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-slate-500">
-          选择文件(.xlsx/.xls/.csv)
-          <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} className="ui-input w-64" />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-500">
-          导入方式
-          <Select value={mode} onChange={(v) => setMode(v as "append" | "replace")} options={[{ value: "append", label: "追加(保留已有)" }, { value: "replace", label: "替换(先清空再导入)" }]} />
-        </label>
-        <button onClick={submit} disabled={busy || preview.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">确认导入</button>
-      </div>
-      <p className="text-xs text-slate-500">支持两种格式:① 扁平(每行一条)列名:星期/周几、节次/节、科目、教师、教室;② 网格(节次×星期)首列节次(可含时间,如"第一节 8:15-8:55")、后列周一…周五;一格多科用 / 分隔自动拆成多条(分层走班),纵向合并单元格(连堂课)自动填充到每个被占节次。教师按姓名匹配系统账号;网格无教师/教室列时留空。</p>
-      {err && <p className="text-sm text-red-500">{err}</p>}
-      {msg && <p className="text-sm text-emerald-600">{msg}</p>}
-      {warnings.length > 0 && (
-        <details className="text-xs text-amber-700">
-          <summary>导入提示({warnings.length})</summary>
-          <ul className="list-disc pl-5">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </details>
-      )}
-      {preview.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-xs">
-            <thead className="bg-white/60 text-slate-500"><tr>
-              <th className="px-2 py-1 text-left">行</th><th className="px-2 py-1 text-left">星期</th><th className="px-2 py-1 text-left">节次</th><th className="px-2 py-1 text-left">时间</th>
-              <th className="px-2 py-1 text-left">科目</th><th className="px-2 py-1 text-left">教师</th><th className="px-2 py-1 text-left">教室</th><th className="px-2 py-1 text-left">校验</th>
-            </tr></thead>
-            <tbody>
-              {preview.map((p, pi) => (
-                <tr key={pi} className="border-t border-indigo-100">
-                  <td className="px-2 py-1">{p._row}</td>
-                  <td className="px-2 py-1">{DAYS[p.dayOfWeek - 1] || <span className="text-red-500">?</span>}</td>
-                  <td className="px-2 py-1">{Number.isNaN(p.period) ? <span className="text-red-500">?</span> : (p.periodLabel || p.period)}</td>
-                  <td className="px-2 py-1">{p.periodTime || "—"}</td>
-                  <td className="px-2 py-1">{p.subject || <span className="text-red-500">?</span>}</td>
-                  <td className="px-2 py-1">{p.teacherId ? "✓" : "—"}</td>
-                  <td className="px-2 py-1">{p.room || "—"}</td>
-                  <td className="px-2 py-1">{p._ok ? <span className="text-emerald-600">有效</span> : <span className="text-red-500">缺字段</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
