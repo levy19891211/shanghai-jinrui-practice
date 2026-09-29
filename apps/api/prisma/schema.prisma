@@ -984,7 +984,7 @@ model CourseBlock {
   subject      String // 科目,如 "数学"
   teacherId    String? // 任课教师(可空:暂未定教师)
   teacher      User?    @relation("CourseBlockTeacher", fields: [teacherId], references: [id])
-  grade        String // 开设年级,如 "高一"
+  grades       String   @default("") // 开设年级,逗号分隔多选,如 "高一,高二"(空=全年级通用,跨年级)
   academicYear String
   term         String
   weeklyHours  Int      @default(0) // 预计每周课时数(排课进度上限)
@@ -997,6 +997,6 @@ model CourseBlock {
 
   entries      TimetableEntry[]
 
-  @@index([grade, academicYear, term])
+  @@index([academicYear, term])
   @@index([subject])
 }

@@ -51,6 +51,33 @@ const int = (v, d = 0) => {
 };
 const MAX_PERIOD = 20; // 节次上限(与前端网格一致)
 const DAYS_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const MAX_GRADES = 6; // 开设年级多选上限
+
+// 开设年级多选归一化:接受数组或逗号分隔串 → 去空白/去重/截断 → 逗号串(空串 = 全年级通用/跨年级)
+// 返回 { ok: true, value } 或 { ok: false, error }
+function normalizeGrades(input, gradeOptions) {
+  const raw = Array.isArray(input) ? input : input == null || input === "" ? [] : String(input).split(",");
+  const seen = new Set();
+  const list = [];
+  for (const g0 of raw) {
+    const g = T(g0).slice(0, 20);
+    if (!g || seen.has(g)) continue;
+    seen.add(g);
+    list.push(g);
+  }
+  if (list.length > MAX_GRADES) return { ok: false, error: `开设年级最多选择 ${MAX_GRADES} 个` };
+  if (gradeOptions) {
+    const bad = list.find((g) => !gradeOptions.includes(g));
+    if (bad) return { ok: false, error: `开设年级「${bad}」不在可选范围内` };
+  }
+  return { ok: true, value: list.join(",") };
+}
+// 课程块是否对某年级可见:开设年级包含该年级,或未选年级 = 全年级通用
+function blockCoversGrade(b, grade) {
+  if (!grade) return true;
+  if (!b.grades) return true; // 空 = 跨年级通用
+  return b.grades.split(",").includes(grade);
+}
 
 // 注意:必须一起选出 role —— findTeacher 要用 role 做角色校验;
 // 只选 teacherRole 会让 t.role 恒为 undefined,导致"指定任课教师"时误报「教师不存在或角色不符」。
@@ -62,7 +89,7 @@ function shapeBlock(b) {
     subject: b.subject,
     teacherId: b.teacherId,
     teacher: b.teacher || null,
-    grade: b.grade,
+    grades: b.grades || "",
     academicYear: b.academicYear,
     term: b.term,
     weeklyHours: b.weeklyHours,
@@ -201,14 +228,13 @@ router.get(
   asyncHandler(async (req, res) => {
     const { grade, academicYear, term } = req.query;
     const where = {};
-    if (grade) where.grade = T(grade);
     if (academicYear) where.academicYear = T(academicYear);
     if (term) where.term = T(term);
 
-    const [list, teachers, classes] = await Promise.all([
+    const [allRows, teachers, classes] = await Promise.all([
       prisma.courseBlock.findMany({
         where,
-        orderBy: [{ grade: "asc" }, { sortOrder: "asc" }, { subject: "asc" }],
+        orderBy: [{ sortOrder: "asc" }, { subject: "asc" }],
         include: { teacher: TEACHER_SELECT, _count: { select: { entries: true } } },
       }),
       prisma.user.findMany({
@@ -218,6 +244,8 @@ router.get(
       }),
       prisma.class.findMany({ select: { grade: true, academicYear: true, term: true } }),
     ]);
+    // 年级过滤在应用层做:多选年级(逗号串)用「包含」语义,未选年级 = 全年级通用恒命中
+    const list = grade ? allRows.filter((b) => blockCoversGrade(b, T(grade))) : allRows;
 
     const grades = Array.from(new Set(classes.map((c) => c.grade).filter(Boolean))).sort();
     const years = Array.from(new Set(classes.map((c) => c.academicYear).filter(Boolean))).sort();
@@ -239,13 +267,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const b = req.body || {};
     const subject = T(b.subject);
-    const grade = T(b.grade);
     const academicYear = T(b.academicYear);
     const term = T(b.term);
     if (!subject) return fail(res, 400, "科目必填");
-    if (!grade) return fail(res, 400, "开设年级必填");
     if (!academicYear) return fail(res, 400, "学年必填");
     if (!term) return fail(res, 400, "学期必填");
+    // 开设年级多选:接受 grades(数组或逗号串);兼容旧客户端单值 grade 字段;全不选 = 全年级通用
+    const g = normalizeGrades(b.grades !== undefined ? b.grades : b.grade);
+    if (!g.ok) return fail(res, 400, g.error);
+    const grades = g.value;
     const weeklyHours = int(b.weeklyHours, 0);
     if (weeklyHours < 0 || weeklyHours > 60) return fail(res, 400, "预计每周课时数需在 0–60 之间");
 
@@ -254,19 +284,19 @@ router.post(
     if (t.error) return fail(res, 400, t.error);
 
     const dup = await prisma.courseBlock.findFirst({
-      where: { subject, grade, academicYear, term, teacherId },
+      where: { subject, academicYear, term, teacherId },
     });
-    if (dup) return fail(res, 409, "该学年学期/年级下已存在「同科目 + 同教师」的课程块");
+    if (dup) return fail(res, 409, "该学年学期下已存在「同科目 + 同教师」的课程块");
 
     const max = await prisma.courseBlock.aggregate({
-      where: { grade, academicYear, term },
+      where: { academicYear, term },
       _max: { sortOrder: true },
     });
 
     const row = await prisma.courseBlock.create({
       data: {
         subject,
-        grade,
+        grades,
         academicYear,
         term,
         teacherId,
@@ -297,10 +327,10 @@ router.put(
       if (!v) return fail(res, 400, "科目不能为空");
       data.subject = v;
     }
-    if (b.grade !== undefined) {
-      const v = T(b.grade);
-      if (!v) return fail(res, 400, "开设年级不能为空");
-      data.grade = v;
+    if (b.grades !== undefined || b.grade !== undefined) {
+      const g = normalizeGrades(b.grades !== undefined ? b.grades : b.grade);
+      if (!g.ok) return fail(res, 400, g.error);
+      data.grades = g.value;
     }
     if (b.academicYear !== undefined) data.academicYear = T(b.academicYear) || row.academicYear;
     if (b.term !== undefined) data.term = T(b.term) || row.term;
@@ -319,10 +349,9 @@ router.put(
     if (b.note !== undefined) data.note = T(b.note) || null;
     if (b.sortOrder !== undefined) data.sortOrder = int(b.sortOrder, row.sortOrder);
 
-    // 唯一性(同科目+同教师+同年级+同学年学期)
+    // 唯一性(同科目+同教师+同学年学期;年级为多选维度,不参与查重)
     const nextSubject = data.subject ?? row.subject;
     const nextTeacher = data.teacherId !== undefined ? data.teacherId : row.teacherId;
-    const nextGrade = data.grade ?? row.grade;
     const nextYear = data.academicYear ?? row.academicYear;
     const nextTerm = data.term ?? row.term;
     const dup = await prisma.courseBlock.findFirst({
@@ -330,12 +359,11 @@ router.put(
         id: { not: id },
         subject: nextSubject,
         teacherId: nextTeacher,
-        grade: nextGrade,
         academicYear: nextYear,
         term: nextTerm,
       },
     });
-    if (dup) return fail(res, 409, "已存在相同「科目 + 教师 + 年级 + 学年学期」的课程块");
+    if (dup) return fail(res, 409, "已存在相同「科目 + 教师 + 学年学期」的课程块");
 
     const updated = await prisma.courseBlock.update({
       where: { id },
@@ -385,9 +413,9 @@ router.get(
     const grade = T(req.query.grade) || klass.grade || "";
     const { academicYear, term } = klass;
 
-    const [blocks, entries, otherTermBlocks] = await Promise.all([
+    const [allBlocks, entries, otherRows] = await Promise.all([
       prisma.courseBlock.findMany({
-        where: { academicYear, term, ...(grade ? { grade } : {}) },
+        where: { academicYear, term },
         orderBy: [{ sortOrder: "asc" }, { subject: "asc" }],
         include: { teacher: TEACHER_SELECT },
       }),
@@ -396,11 +424,15 @@ router.get(
         orderBy: [{ dayOfWeek: "asc" }, { period: "asc" }],
         include: { teacher: TEACHER_SELECT },
       }),
-      // 该年级下属于其他学年/学期的课程块数量(池子为空时给用户可行动提示)
-      prisma.courseBlock.count({
-        where: { ...(grade ? { grade } : {}), NOT: { academicYear, term } },
+      // 该年级可见、但属于其他学年/学期的课程块(池子为空时给用户可行动提示)
+      prisma.courseBlock.findMany({
+        where: { NOT: { academicYear, term } },
+        select: { grades: true },
       }),
     ]);
+    // 年级过滤在应用层做:多选年级用「包含」语义,未选年级的课程块 = 跨年级通用,所有年级池都显示
+    const blocks = grade ? allBlocks.filter((b) => blockCoversGrade(b, grade)) : allBlocks;
+    const otherTermBlocks = grade ? otherRows.filter((b) => blockCoversGrade(b, grade)).length : otherRows.length;
 
     const cellsByBlock = new Map(); // blockId -> [{entryId, dayOfWeek, period}]
     const cellCount = new Map(); // "day-period" -> n

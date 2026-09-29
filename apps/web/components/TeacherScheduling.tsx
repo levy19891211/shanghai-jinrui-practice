@@ -29,7 +29,7 @@ interface Tch { id: string; name: string; teacherRole?: string | null }
 interface Klass { id: string; name: string; grade: string | null; academicYear: string; term: string; headTeacher?: { id: string; name: string } | null; studentCount: number; entryCount: number }
 interface Block {
   id: string; subject: string; teacherId: string | null; teacher: Tch | null;
-  grade: string; academicYear: string; term: string; weeklyHours: number;
+  grades: string; academicYear: string; term: string; weeklyHours: number;
   room: string | null; note: string | null; sortOrder: number; usageCount?: number;
   placed?: number; cells?: { entryId: string; dayOfWeek: number; period: number }[];
 }
@@ -76,6 +76,11 @@ function defaultYear(): string {
   const now = new Date();
   const y = now.getMonth() + 1 >= 8 ? now.getFullYear() : now.getFullYear() - 1;
   return `${y}-${y + 1}`;
+}
+
+// 开设年级多选(逗号串)的工具:展示标签 / 年级徽章数组
+function gradesLabel(grades: string): string {
+  return grades ? grades.split(",").filter(Boolean).join("/") : "全年级";
 }
 
 // ============ 主组件 ============
@@ -169,7 +174,7 @@ function GroupView({
   const [teachers, setTeachers] = useState<Tch[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null); // null=未编辑; "new"=新建
-  const [form, setForm] = useState({ subject: "", teacherId: "", grade: "", weeklyHours: "5", room: "", note: "" });
+  const [form, setForm] = useState({ subject: "", teacherId: "", grades: [] as string[], weeklyHours: "5", room: "", note: "" });
   const [busy, setBusy] = useState(false);
 
   // 科目下拉数据源:「课程管理」课程库(SchoolCourse)。每次打开表单都重新拉取,保证与课程库同步
@@ -218,7 +223,7 @@ function GroupView({
     loadCourseLib(); // 打开表单即拉最新课程库:课程管理里刚建的课立即可选
     const first = courseLib.find((c) => c.active);
     setForm({
-      subject: first?.name || "", teacherId: "", grade: meta.gradeOptions[0] || "",
+      subject: first?.name || "", teacherId: "", grades: [],
       weeklyHours: first?.weeklyHours != null ? String(first.weeklyHours) : "5", room: "", note: "",
     });
   }
@@ -226,21 +231,26 @@ function GroupView({
     setEditingId(b.id);
     loadCourseLib();
     setForm({
-      subject: b.subject, teacherId: b.teacherId || "", grade: b.grade,
+      subject: b.subject, teacherId: b.teacherId || "", grades: (b.grades || "").split(",").filter(Boolean),
       weeklyHours: String(b.weeklyHours), room: b.room || "", note: b.note || "",
     });
   }
   function cancelEdit() { setEditingId(null); }
 
-  // 选科目:新建态下同步课程库信息 —— 自动带入参考周课时;课程库只勾了一个年级时自动带入开设年级
+  // 年级复选:勾/取消一个年级(全不勾 = 全年级通用,跨所有年级)
+  function toggleGrade(g: string) {
+    setForm((f) => ({ ...f, grades: f.grades.includes(g) ? f.grades.filter((x) => x !== g) : [...f.grades, g] }));
+  }
+
+  // 选科目:新建态下同步课程库信息 —— 自动带入参考周课时;带入课程库勾选的开设年级(可再手动增删)
   function pickSubject(name: string) {
     const c = courseLib.find((x) => x.name === name);
     setForm((f) => {
       const next = { ...f, subject: name };
       if (editingId === "new" && c) {
         if (c.weeklyHours != null) next.weeklyHours = String(c.weeklyHours);
-        const gs = (c.grades || "").split(",").filter(Boolean);
-        if (gs.length === 1 && meta.gradeOptions.includes(gs[0])) next.grade = gs[0];
+        const gs = (c.grades || "").split(",").filter(Boolean).filter((g) => meta.gradeOptions.includes(g));
+        if (gs.length) next.grades = gs;
       }
       return next;
     });
@@ -248,11 +258,10 @@ function GroupView({
 
   async function save() {
     if (!form.subject.trim()) return say("请选择科目", "err");
-    if (!form.grade.trim()) return say("请选择开设年级", "err");
     setBusy(true);
     try {
       const payload = {
-        subject: form.subject, teacherId: form.teacherId || null, grade: form.grade,
+        subject: form.subject, teacherId: form.teacherId || null, grades: form.grades,
         academicYear: year, term, weeklyHours: Number(form.weeklyHours) || 0,
         room: form.room, note: form.note,
       };
@@ -266,7 +275,7 @@ function GroupView({
   }
 
   async function remove(b: Block) {
-    if (!confirm(`删除课程块「${b.grade} ${b.subject}${b.teacher ? " · " + b.teacher.name : ""}」?\n已排入课表的课时不会被删除,仅解除来源关联。`)) return;
+    if (!confirm(`删除课程块「${gradesLabel(b.grades)} ${b.subject}${b.teacher ? " · " + b.teacher.name : ""}」?\n已排入课表的课时不会被删除,仅解除来源关联。`)) return;
     try {
       const r = await api.del<{ unlinked: number }>(`/scheduling/blocks/${b.id}`);
       say(r?.unlinked ? `已删除;${r.unlinked} 处已排课表保留` : "已删除");
@@ -274,10 +283,15 @@ function GroupView({
     } catch (e: any) { say(e.message || "删除失败", "err"); }
   }
 
-  // 按年级分组 + 小计
+  // 按主年级分组 + 小计(多选年级的课程块归入第一个勾选年级;未选年级的归入「全年级」)
   const groups = useMemo(() => {
     const m = new Map<string, Block[]>();
-    blocks.forEach((b) => { const arr = m.get(b.grade) || []; arr.push(b); m.set(b.grade, arr); });
+    blocks.forEach((b) => {
+      const key = (b.grades || "").split(",").filter(Boolean)[0] || "全年级";
+      const arr = m.get(key) || [];
+      arr.push(b);
+      m.set(key, arr);
+    });
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [blocks]);
   const totalHours = blocks.reduce((s, b) => s + (b.weeklyHours || 0), 0);
@@ -311,13 +325,13 @@ function GroupView({
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
             <div className="flex flex-col gap-1 text-xs text-slate-500">
               <span>科目</span>
               <Select value={form.subject} onChange={pickSubject} placeholder="请选择课程" options={subjectOptions.map((s) => ({ value: s, label: s }))} />
               {selectedCourse && (
                 <span className="text-[11px] leading-4 text-slate-400">
-                  参考 {selectedCourse.weeklyHours ?? "/"} 课时/周 · {selectedCourse.grades ? selectedCourse.grades.split(",").join("/") : "全年级"}
+                  参考 {selectedCourse.weeklyHours ?? "/"} 课时/周 · {gradesLabel(selectedCourse.grades)}
                 </span>
               )}
             </div>
@@ -327,11 +341,34 @@ function GroupView({
             <Field label="预计每周课时数">
               <input type="number" min={0} max={60} className="ui-input w-full" value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: e.target.value })} />
             </Field>
-            <Field label="开设年级">
-              <Select value={form.grade} onChange={(v) => setForm({ ...form, grade: v })} options={meta.gradeOptions.map((g) => ({ value: g, label: g }))} />
-            </Field>
             <Field label="建议教室"><input className="ui-input w-full" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="选填" /></Field>
             <Field label="备注"><input className="ui-input w-full" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="如 合班 / A层" /></Field>
+          </div>
+          {/* 开设年级:多选,可跨年级组课;全不勾 = 全年级通用 */}
+          <div className="mt-3 flex flex-col gap-1.5 text-xs text-slate-500">
+            <span>
+              开设年级 <span className="font-normal text-slate-400">(可多选,跨年级组课;全不勾 = 全年级通用)</span>
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {meta.gradeOptions.length === 0 && <span className="text-slate-400">暂无可选年级</span>}
+              {meta.gradeOptions.map((g) => {
+                const on = form.grades.includes(g);
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => toggleGrade(g)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      on
+                        ? "border-indigo-500 bg-indigo-500 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
             <p className="text-[11px] text-slate-400">选中科目后自动带入课程库的参考课时与年级,均可手动修改。</p>
@@ -373,6 +410,12 @@ function GroupView({
                         <span className="rounded px-1.5 py-0.5 text-xs font-medium" style={{ background: c.bg, color: c.text }}>
                           {b.weeklyHours} 课时/周
                         </span>
+                        {(b.grades || "").split(",").filter(Boolean).map((g) => (
+                          <span key={g} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{g}</span>
+                        ))}
+                        {!(b.grades || "").split(",").filter(Boolean).length && (
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">跨年级通用</span>
+                        )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                         <span>{b.teacher?.name || <span className="text-amber-600">未指定教师</span>}</span>
