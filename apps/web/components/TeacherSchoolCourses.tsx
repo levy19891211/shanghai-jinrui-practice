@@ -250,10 +250,10 @@ export default function TeacherSchoolCourses() {
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="px-3 py-2 text-left">课程名称</th>
-              <th className="px-3 py-2 text-left">类别</th>
-              <th className="px-3 py-2 text-left">类型</th>
-              <th className="px-3 py-2 text-left">适用年级</th>
-              <th className="px-3 py-2 text-right">参考周课时数</th>
+              <th className="px-3 py-2 text-center">类别</th>
+              <th className="px-3 py-2 text-center">类型</th>
+              <th className="px-3 py-2 text-center">适用年级</th>
+              <th className="px-3 py-2 text-center">参考周课时数</th>
               <th className="px-3 py-2 text-center">状态</th>
               {canManage && <th className="px-3 py-2 text-right">操作</th>}
             </tr>
@@ -275,22 +275,22 @@ export default function TeacherSchoolCourses() {
                   {c.name}
                   {c.note && <span className="ml-2 text-xs font-normal text-slate-400" title={c.note}>{c.note.length > 16 ? `${c.note.slice(0, 16)}…` : c.note}</span>}
                 </td>
-                <td className="px-3 py-2">{c.category}</td>
-                <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${c.type === "REQUIRED" ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}`}>
+                <td className="px-3 py-2 text-center">{c.category}</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${c.type === "REQUIRED" ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}`}>
                     {typeLabel(c.type)}
                   </span>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 text-center">
                   {c.grades
                     ? c.grades.split(",").filter(Boolean).map((g) => (
                         <span key={g} className="mr-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{g}</span>
                       ))
                     : <span className="text-slate-400">全年级</span>}
                 </td>
-                <td className="px-3 py-2 text-right">{c.weeklyHours ?? "/"}</td>
+                <td className="px-3 py-2 text-center">{c.weeklyHours ?? "/"}</td>
                 <td className="px-3 py-2 text-center">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${c.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${c.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
                     {c.active ? "在开设" : "已停用"}
                   </span>
                 </td>
