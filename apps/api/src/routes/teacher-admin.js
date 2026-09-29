@@ -5,8 +5,15 @@ import { ok, fail, asyncHandler } from "../lib/res.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
-// 仅最高权限管理员 ADMIN 可访问「教师管理」
-router.use(requireAuth, requireRole("ADMIN"));
+// 教师管理:管理员 ADMIN 与教务老师(teacherRole=ACADEMIC)均可访问;
+// 但教务老师被限制为「不能管理管理员账号、不能修改/设置任何账号为管理员」(见各路由内校验)。
+function isTeacherAdmin(user) {
+  return user?.role === "ADMIN" || user?.teacherRole === "ACADEMIC";
+}
+router.use(requireAuth, (req, res, next) => {
+  if (!isTeacherAdmin(req.user)) return fail(res, 403, "仅管理员或教务老师可访问教师管理");
+  next();
+});
 
 // 把权限数组落库为 JSON 字符串;空/非法 → null(= 全部可见)
 function toPermJson(arr) {
@@ -96,6 +103,13 @@ router.put(
     const target = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!target || !["TEACHER", "ADMIN"].includes(target.role)) return fail(res, 404, "教师账号不存在");
     const isSelf = target.id === req.user.id;
+    const actingIsAdmin = req.user.role === "ADMIN";
+    // 教务老师(非管理员):禁止管理管理员账号,且禁止修改/设置任何账号角色(含设为管理员)
+    if (!actingIsAdmin) {
+      if (target.role === "ADMIN") return fail(res, 403, "教务老师不能管理管理员账号");
+      const bodyRole = (req.body || {}).role;
+      if (bodyRole !== undefined && bodyRole !== target.role) return fail(res, 403, "教务老师不能修改账号角色");
+    }
 
     const { name, email, password, permSubjects, permSourceTypes, role, teacherRole, status } = req.body || {};
     const data = {};
@@ -148,6 +162,8 @@ router.delete(
     const target = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!target || !["TEACHER", "ADMIN"].includes(target.role)) return fail(res, 404, "教师账号不存在");
     if (target.id === req.user.id) return fail(res, 400, "不能删除自己");
+    // 教务老师(非管理员):仅能删除教师账号,禁止删除管理员账号
+    if (req.user.role !== "ADMIN" && target.role === "ADMIN") return fail(res, 403, "教务老师不能删除管理员账号");
 
     // 级联:作业分发 → 分组
     const ownAssignments = await prisma.assignment.findMany({ where: { teacherId: target.id }, select: { id: true } });

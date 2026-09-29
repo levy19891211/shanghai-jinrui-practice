@@ -77,7 +77,7 @@ export default function TeacherAcademicsPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (tab === "gpa" || (tab === "teachers" && isAdmin) || tab === "placement" || tab === "myclasses" || (tab === "scheduling" && canManage))
+    if (tab === "gpa" || (tab === "teachers" && (isAdmin || canManage)) || tab === "placement" || tab === "myclasses" || (tab === "scheduling" && canManage))
       setSub(tab as typeof sub);
   }, [isAdmin, canManage]);
   const [classes, setClasses] = useState<Cls[]>([]);
@@ -105,14 +105,14 @@ export default function TeacherAcademicsPage() {
         {sub === "course" && canManage && <NewClassButton onCreated={loadClasses} />}
       </div>
 
-      {/* 子模块切换(「教师管理」仅管理员可见;「分层/选课分班」仅教务/管理员可见) */}
+      {/* 子模块切换(「教师管理」管理员/教务老师可见;「分层/选课分班」教务/管理员可见) */}
       <div className="flex flex-wrap gap-1 border-b border-slate-200 text-sm">
         {(
           [
             { k: "course", l: "课程管理" },
             { k: "gpa", l: "GPA管理" },
             ...(canManage ? [{ k: "scheduling", l: "排课管理" }] : []),
-            ...(isAdmin ? [{ k: "teachers", l: "教师管理" }] : []),
+            ...((isAdmin || canManage) ? [{ k: "teachers", l: "教师管理" }] : []),
             ...(canManage ? [{ k: "placement", l: "分层/选课分班" }] : []),
             { k: "myclasses", l: "我的教学班" },
           ] as { k: "course" | "gpa" | "teachers" | "placement" | "myclasses" | "scheduling"; l: string }[]

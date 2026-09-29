@@ -66,6 +66,10 @@ const EMPTY_FORM: FormState = {
 export function TeacherManageView() {
   const me = getUser();
   const myId = me?.id;
+  const isAdmin = me?.role === "ADMIN";
+  const isAcademic = me?.teacherRole === "ACADEMIC";
+  // 教务老师(非管理员):不能管理管理员账号,也不能将任何人设为管理员
+  const canEditAdmin = isAdmin;
   const [list, setList] = useState<TeacherRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -228,10 +232,10 @@ export function TeacherManageView() {
                   <td className="px-4 py-3 text-slate-600">{t.permSubjects && t.permSubjects.length ? t.permSubjects.join("、") : "全部"}</td>
                   <td className="px-4 py-3 text-slate-600">{t.permSourceTypes && t.permSourceTypes.length ? t.permSourceTypes.join("、") : "全部"}</td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => openEdit(t)} className="rounded-md px-2 py-1 text-indigo-600 hover:bg-indigo-50">编辑</button>
+                    <button onClick={() => openEdit(t)} disabled={!canEditAdmin && t.role === "ADMIN"} className="rounded-md px-2 py-1 text-indigo-600 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:text-slate-300">编辑</button>
                     <button
                       onClick={() => remove(t)}
-                      disabled={t.id === myId}
+                      disabled={t.id === myId || (!canEditAdmin && t.role === "ADMIN")}
                       className="ml-1 rounded-md px-2 py-1 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-300"
                     >
                       删除
@@ -276,7 +280,7 @@ export function TeacherManageView() {
                       else setForm({ ...form, role: "TEACHER", teacherRole: v });
                     }}
                   >
-                    <option value="ADMIN">管理员</option>
+                    {isAdmin && <option value="ADMIN">管理员</option>}
                     <option value="ACADEMIC">教务老师</option>
                     <option value="ASSISTANT">助教老师</option>
                     <option value="SUBJECT">任课教师</option>

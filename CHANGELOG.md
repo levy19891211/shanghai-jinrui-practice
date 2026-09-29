@@ -1,5 +1,11 @@
 # 版本历史
 
+## V2.4.107 (2026-09-29) — 教务老师获得「教师管理」权限（不能设置/管理管理员）
+- 需求:截图所示「教务管理」下的「教师管理」子模块,对教务老师(teacherRole=ACADEMIC)开放,但不得设置或管理管理员账号。
+- 后端:teacher-admin.js 路由由 `requireRole("ADMIN")` 改为 `isTeacherAdmin`(ADMIN 或 ACADEMIC 可访问);PUT 编辑接口禁止教务老师操作 ADMIN 账号、禁止修改任何账号角色(含设为管理员);DELETE 删除接口禁止教务老师删除管理员账号。
+- 前端:academics/page.tsx 的「教师管理」Tab 对 ACADEMIC 开放(含 ?tab=teachers 直达);TeacherTeachersManage.tsx 编辑弹窗隐藏「管理员」角色选项、ADMIN 账号行的编辑/删除按钮对教务老师禁用。
+- 验证:tsc 闸门通过;双端 md5 一致;next build 30/30 Compiled successfully;pm2 重启 web+api 后 /teacher/academics→200、无 token 访问教师管理→401;接口级 E2E 8/8 通过(教务老师可列/建/改普通教师、禁止改/删管理员与设管理员;普通教师 403;零残留)。
+
 ## V2.4.106 (2026-09-28) — 教务老师获得建立班级/新建课程/管理任课教师权限
 
 - 需求：教务老师(teacherRole=ACADEMIC)需具备建立班级、新建课程、指派/移除任课教师的教务管理权限；同时保持破坏性操作(删除班级、班级成员管理、分班/录取、GPA、我的班级等)仍仅管理员可执行。
