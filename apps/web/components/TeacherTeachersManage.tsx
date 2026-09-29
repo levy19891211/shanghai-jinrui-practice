@@ -169,8 +169,11 @@ export function TeacherManageView() {
     }
   }
 
-  const input =
-    "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
+  // 输入框 / 下拉框统一沿用 globals.css 的全局范式(.ui-input / .ui-select),
+  // 下拉再补 chevron 留白、悬停、禁用态,使其与本表单输入框视觉对齐(不再露出系统原生灰底样式)
+  const input = "ui-input";
+  const select =
+    "ui-input ui-select cursor-pointer pr-9 font-normal hover:border-slate-400 focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 [&>option]:text-[13px]";
 
   return (
     <div>
@@ -271,7 +274,7 @@ export function TeacherManageView() {
                 <div>
                   <label className="mb-1 block text-sm text-slate-600">角色</label>
                   <select
-                    className={input}
+                    className={select}
                     value={toRoleChoice(form.role, form.teacherRole)}
                     disabled={editing?.id === myId}
                     onChange={(e) => {
@@ -290,7 +293,7 @@ export function TeacherManageView() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm text-slate-600">状态</label>
-                  <select className={input} value={form.status} disabled={editing?.id === myId} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <select className={select} value={form.status} disabled={editing?.id === myId} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                     <option value="APPROVED">正常</option>
                     <option value="PENDING">待审核</option>
                     <option value="REJECTED">已停用</option>

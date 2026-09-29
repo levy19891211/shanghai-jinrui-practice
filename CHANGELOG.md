@@ -1,5 +1,13 @@
 # 版本历史
 
+## V2.4.109 (2026-09-29) — 「新建教师」弹窗两个下拉框视觉美化（统一到全局 ui-input/ui-select 范式）
+- 需求：新建/编辑教师弹窗中「角色」「状态」两个下拉露出系统原生灰底样式，与同一表单的输入框观感不一致。
+- 根因：`TeacherTeachersManage.tsx` 用了组件内局部 `input` 字符串（未含 `bg-white`、未加 `appearance-none`），是全站少数未接入 `globals.css` 全局范式（`.ui-input` / `.ui-select`，已有 33+ 处使用）的遗漏点。
+- 实现：输入框改用 `ui-input`；两个下拉改用 `ui-input ui-select`，并补 `pr-9`（自绘 chevron 留白）、`cursor-pointer`、`hover:border-slate-400`、focus ring、`disabled:`（浅灰底 + 灰字 + not-allowed）、`[&>option]:text-[13px]`（下拉列表字号收紧）。
+- 验证：`tsc --noEmit` 通过；双端 md5 一致（`ff5e43d5…`）；`next build` 30/30 `Compiled successfully`；`pm2 restart web` 后 `/teacher/academics` → 200；最新 chunk 含新 class 串。
+- 部署：仅前端组件改动，无 DB/schema 变更，无备份需求。
+- 备注：附离线前后对照图 `preview_select_before_after.png`（link 真实编译 CSS 渲染，非手绘 mock）。
+
 ## V2.4.108 (2026-09-29) — 修复 TMUA Paper 1 模考16 的 5 道缺陷题（答案键错 + 废题）
 - 二次校验:重新从线上库拉取原文逐题复算,确认 5 处缺陷;5 题历史作答记录(AnswerRecord)均为 0,改键/改选项对判分零副作用。Paper 2 模考16 全 20 题正确,不动。
 - Q2 答案键错:`531441` → `729`(解析误写 N=531441d²/400;实际 N=729d/20,最小 d=20 ⇒ N=729);解析同步修正。
