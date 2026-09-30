@@ -105,8 +105,14 @@ interface ClearPreview {
   classes: number;
   teachers: number;
   subjects: number;
+  // 考试清理(可选):无论开关与否,预演都回传"本范围内有多少场考试/多少条成绩",便于先摆数据再让用户决定
+  alsoClearExams?: boolean;
+  exams: number;
+  examScores: number;
+  examSamples?: { subject: string; title: string }[];
   dryRun: boolean;
   deleted?: number;
+  deletedExams?: number;
 }
 
 // ============ 常量与配色 ============
@@ -1242,7 +1248,9 @@ function PlaceView({
 // ============ 一键「清空课表」确认弹窗 ============
 //
 // 定位:排课结果一键归零,便于整体重新排课。
-//   · 只清「已排课表的格子」(TimetableEntry);课程块池、班级、成绩、节次设置全部保留。
+//   · 只清「已排课表的格子」(TimetableEntry);课程块池、班级、节次设置全部保留。
+//   · 可选勾选项「同时清空本范围内的已建考试」—— 默认关(原语义不动成绩数据);
+//     勾上后连同 Exam 及其 Score 一起删(Score 走 DB 级联)。走班的教学班考核不在范围内。
 //   · 两级范围:仅当前班级 / 该学年学期全部班级(误清代价大,故范围显式单选而非缺省)。
 //   · 打开与切换范围时都先跑 dryRun 预演,把"将删除多少条、涉及几个班几个老师"摆到眼前;
 //     真正执行必须再勾选确认(服务端也要求 confirm=true,直连接口同样拦得住)。
@@ -1260,15 +1268,18 @@ function ClearTimetableDialog({
   const [loading, setLoading] = useState(false);
   const [acked, setAcked] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 可选:连本范围内的「成绩考试」一起清(默认关 —— 清空课表的原语义不动成绩数据)
+  const [alsoExams, setAlsoExams] = useState(false);
 
   // 切换范围 → 重新预演;同时把确认勾选复位(防止"手快"沿用上一次的勾选)
   useEffect(() => {
     setAcked(false);
+    setAlsoExams(false);
     let alive = true;
     setLoading(true);
     setPreview(null);
     api
-      .post<ClearPreview>("/scheduling/timetable/clear", { classId: klass.id, scope, dryRun: true })
+      .post<ClearPreview>("/scheduling/timetable/clear", { classId: klass.id, scope, dryRun: true, alsoClearExams: false })
       .then((d) => { if (alive) setPreview(d); })
       .catch((e: any) => { if (alive) say(e.message || "无法统计待清空范围", "err"); })
       .finally(() => { if (alive) setLoading(false); });
@@ -1280,9 +1291,12 @@ function ClearTimetableDialog({
     setBusy(true);
     try {
       const r = await api.post<ClearPreview>("/scheduling/timetable/clear", {
-        classId: klass.id, scope, confirm: true,
+        classId: klass.id, scope, confirm: true, alsoClearExams: alsoExams,
       });
-      say(`已清空 ${r?.deleted ?? 0} 条已排课程 · 课程块池保留,可直接重新排课`);
+      say(
+        `已清空 ${r?.deleted ?? 0} 条已排课程 · 课程块池保留,可直接重新排课` +
+          (r?.deletedExams ? ` · 并删除 ${r.deletedExams} 场已建考试` : "")
+      );
       onDone();
     } catch (e: any) {
       say(e.message || "清空失败", "err");
@@ -1295,6 +1309,8 @@ function ClearTimetableDialog({
     { k: "all" as const, title: `全部班级（${klass.academicYear} ${klass.term}）`, desc: "该学年学期下所有班级的课表一起清空" },
   ];
   const n = preview?.entries ?? 0;
+  // 课表已空 ≠ 无事可做:勾了「同时清考试」且范围内还有考试时仍要执行(这正是清理残留考试的典型场景)
+  const nothingToDo = !!preview && preview.entries === 0 && (!alsoExams || !preview.exams);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
@@ -1360,11 +1376,48 @@ function ClearTimetableDialog({
             </div>
           )}
 
+          {/* 可选:连本范围内的「成绩考试」一起清(默认关) */}
+          {preview && preview.exams > 0 ? (
+            <label
+              className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 transition ${alsoExams ? "border-red-300 bg-red-50/60" : "border-slate-200 hover:border-slate-300"}`}
+            >
+              <input
+                type="checkbox"
+                checked={alsoExams}
+                onChange={(e) => setAlsoExams(e.target.checked)}
+                className="mt-0.5 cursor-pointer accent-red-600"
+              />
+              <span className="flex-1">
+                <span className="block text-sm text-slate-700">
+                  同时清空本范围内的已建考试（{preview.exams} 场{preview.examScores ? ` · 含 ${preview.examScores} 条成绩` : ""}）
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-400">
+                  用途:清掉「考试与成绩」里那些既无课表支撑又没录过分的残留考试。
+                  {preview.examSamples?.length
+                    ? ` 例:${preview.examSamples.map((x) => `${x.subject}·${x.title}`).join("、")}${preview.exams > preview.examSamples.length ? " 等" : ""}。`
+                    : ""}
+                  走班模块的教学班考核不在本范围内。
+                </span>
+                {alsoExams && preview.examScores > 0 && (
+                  <span className="mt-1 block text-xs font-medium text-red-600">
+                    ⚠ 这 {preview.examScores} 条成绩会随考试一并删除,无法撤销。
+                  </span>
+                )}
+              </span>
+            </label>
+          ) : preview ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-400">
+              本范围内没有已建考试,无需清理。
+            </p>
+          ) : null}
+
           <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs leading-relaxed text-emerald-700">
-            <b className="font-medium">不受影响</b> —— 课程块池（{blockCount} 个课程块）、班级与学生名单、成绩记录、节次时间段设置,均原样保留。
+            <b className="font-medium">不受影响</b> —— 课程块池（{blockCount} 个课程块）、班级与学生名单、节次时间段设置
+            {alsoExams ? "" : "、成绩记录"},均原样保留。
           </div>
           <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-amber-700">
-            <b className="font-medium">需知晓</b> —— 班级管理里的「任课教师」与「考试与成绩」的课程列由课表派生,清空后会暂时为空,重新排课后自动恢复。
+            <b className="font-medium">需知晓</b> —— 班级管理里的「任课教师」与「考试与成绩」的课程列由课表派生,清空后会暂时为空,重新排课后自动恢复;
+            本范围内「无课表且无成绩」的考试也会从「考试与成绩」中消失,管理员可在该页的折叠区里查看并删除。
           </div>
 
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2">
@@ -1374,7 +1427,10 @@ function ClearTimetableDialog({
               onChange={(e) => setAcked(e.target.checked)}
               className="mt-0.5 cursor-pointer accent-red-600"
             />
-            <span className="text-xs text-slate-600">我已确认清空上述范围内的课表(已排课程会立即删除,无法撤销)</span>
+            <span className="text-xs text-slate-600">
+              我已确认清空上述范围内的课表(已排课程会立即删除,无法撤销)
+              {alsoExams ? "，并连带删除本范围内的已建考试及其成绩" : "，成绩考试记录保持不变"}
+            </span>
           </label>
         </div>
 
@@ -1383,10 +1439,10 @@ function ClearTimetableDialog({
           <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">取消</button>
           <button
             onClick={doClear}
-            disabled={!acked || busy || loading || !preview || preview.entries === 0}
+            disabled={!acked || busy || loading || !preview || nothingToDo}
             className="rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
-            {busy ? "清空中…" : preview && preview.entries === 0 ? "无课表可清空" : "确认清空"}
+            {busy ? "清空中…" : nothingToDo ? "无可清空内容" : n === 0 ? "清空考试" : "确认清空"}
           </button>
         </div>
       </div>

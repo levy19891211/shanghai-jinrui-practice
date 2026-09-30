@@ -812,11 +812,14 @@ router.put(
 
 // GET /api/academics/classes/:id/gradebook —— 只读:本班「课程 × 学生」成绩总览
 //   课程范围 = 课表科目(TimetableEntry.subject) ∪ 已建考试科目(Exam.subject)(「有考试」的课程排前)。
-//   刻意**不含「班级课程目录(Course)」**(V2.4.125 修正):
+//   ① 刻意**不含「班级课程目录(Course)」**(V2.4.125 修正):
 //     Course 由「选课管理」维护,语义是"该班开设的可选课程池",不是"实际上课"的事实 —— 清空课表后它依然存在。
 //     若把它当课程源,就会出现「课表已清空,但『考试与成绩』里还列着一堆从没排过课的课程」,
 //     且与同班「任课教师」(纯课表派生,清空后为空)自相矛盾。Course 记录本身不删(选课仍需要),
 //     只是不再参与成绩册的课程列表。
+//   ② **「孤岛考试」不列出**(V2.4.127):某场考试若「该科目本班没排过课」且「自身 0 条成绩」,
+//     说明它是历史误建/试建或「清空课表」后的残留(清空课表按设计不动考试数据),不再出现在课程列表里;
+//     其明细通过 hiddenExams 原样回传,管理员可在页面上看到并清理 —— 只隐藏不删除,避免数据"凭空消失"。
 //   返回扁平的 courses/students/scores 三份数据,由前端分别拼成「按课程查看」「按学生查看」两个视图。
 //   作用域:沿用考试/成绩口径 —— 需可见该班;学科老师(非班主任)仅本人任教科目(课程与考试一并收窄)。
 //   本接口零写入(成绩录入仍走 PUT /exams/:id/scores)。
@@ -854,15 +857,32 @@ router.get(
       nonAcademicSubjectSet(),
     ]);
 
+    // 本班课表已排科目(剔除「非学术课程」)—— 判定「孤岛考试」的依据之一
+    const timetableSubjects = new Set(
+      timetableEntries.map((t) => t.subject).filter((s) => s && !naSubjects.has(s))
+    );
+
     // 「非学术课程」不安排考试、不产生成绩:从成绩册的课程列表中剔除
-    const visibleExams = exams.filter((e) => allow(e.subject) && !naSubjects.has(e.subject));
-    const examIds = visibleExams.map((e) => e.id);
-    const scores = examIds.length
+    const candidateExams = exams.filter((e) => allow(e.subject) && !naSubjects.has(e.subject));
+    const candidateIds = candidateExams.map((e) => e.id);
+    const allScores = candidateIds.length
       ? await prisma.score.findMany({
-          where: { examId: { in: examIds } },
+          where: { examId: { in: candidateIds } },
           select: { examId: true, studentId: true, score: true, rankInClass: true, comment: true },
         })
       : [];
+    const scoreCountByExam = new Map();
+    for (const s of allScores) scoreCountByExam.set(s.examId, (scoreCountByExam.get(s.examId) || 0) + 1);
+
+    // 拆分「有支撑的考试」与「孤岛考试」(规则与理由见接口头注释 ②)
+    const visibleExams = [];
+    const hiddenExams = [];
+    for (const e of candidateExams) {
+      const backed = timetableSubjects.has(e.subject) || (scoreCountByExam.get(e.id) || 0) > 0;
+      (backed ? visibleExams : hiddenExams).push(e);
+    }
+    const visibleIds = new Set(visibleExams.map((e) => e.id));
+    const scores = allScores.filter((s) => visibleIds.has(s.examId));
 
     // 科目 -> 该科目的考试列表
     const examsBySubject = new Map();
@@ -870,7 +890,7 @@ router.get(
       if (!examsBySubject.has(e.subject)) examsBySubject.set(e.subject, []);
       examsBySubject.get(e.subject).push(e);
     }
-    // 课程范围 = 已建考试科目 ∪ 课表已排科目(不含「班级课程目录 Course」,理由见接口头注释)
+    // 课程范围 = 已建考试科目(有支撑者) ∪ 课表已排科目(不含「班级课程目录 Course」,理由见接口头注释)
     const subjects = new Set([...examsBySubject.keys()]);
     for (const t of timetableEntries) if (t.subject && !naSubjects.has(t.subject)) subjects.add(t.subject);
     const courses = Array.from(subjects)
@@ -905,6 +925,15 @@ router.get(
         score: s.score,
         rankInClass: s.rankInClass,
         comment: s.comment,
+      })),
+      // 未列出的「孤岛考试」(无课表支撑且 0 成绩):管理员据此在页面上清理
+      hiddenExams: hiddenExams.map((e) => ({
+        id: e.id,
+        subject: e.subject,
+        title: e.title,
+        type: e.type,
+        examDate: e.examDate,
+        totalScore: e.totalScore,
       })),
       readonly: true,
     });

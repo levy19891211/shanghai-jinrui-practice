@@ -917,6 +917,11 @@ router.delete(
 //   scope=all         → 清「该学年 + 该学期」下全部班级的课表条目(班级主数据不动)
 //   dryRun=true       → 预演:只统计将删除的条目/班级/教师数,不写库(前端弹窗展示用)
 //   confirm !== true  → 拒绝执行(400):破坏性动作必须显式确认,防误触,也防直连接口调用
+//   alsoClearExams=true → 一并删除本范围内的「成绩考试」(Exam)及其成绩(Score 级联删除)。
+//     默认 false(语义不变:清空课表不动成绩数据)。预演时无论开关与否都回传 exams/examScores,
+//     便于前端先摆出"本范围内有 N 场考试、M 条成绩"再让用户决定。
+//     边界:只清理挂在**班级**上的考试(classId);走班模块的教学班考核(Exam.teachingClassId)不在范围内,
+//     它由「走班」模块自己管理,跨模块静默删除会造成更大困惑。
 // 语义边界(清空后能"原样重排"):
 //   · 只删 TimetableEntry(排课结果)。CourseBlock(课程块池)、Class、成员、成绩、课程表配置一律不动,
 //     所以清空后课程块池依旧是满的,可直接重新拖拽排课,不必重走「组课」。
@@ -955,6 +960,27 @@ router.post(
     const classIds = Array.from(new Set(rows.map((r) => r.classId)));
     const teacherIds = Array.from(new Set(rows.map((r) => r.teacherId).filter(Boolean)));
 
+    // 考试清理范围:scope=class → 该班;scope=all → 该学年学期下的全部班级
+    // (Exam 自身没有 academicYear/term 字段,只能借班级的学年学期来界定,故此处必须显式取班级集合)
+    const examClassIds =
+      scope === "class"
+        ? [classId]
+        : (
+            await prisma.class.findMany({
+              where: { academicYear, term },
+              select: { id: true },
+            })
+          ).map((c) => c.id);
+    const examRows = examClassIds.length
+      ? await prisma.exam.findMany({
+          where: { classId: { in: examClassIds } },
+          select: { id: true, classId: true, subject: true, title: true, examDate: true },
+        })
+      : [];
+    const examIds = examRows.map((e) => e.id);
+    const examScores = examIds.length ? await prisma.score.count({ where: { examId: { in: examIds } } }) : 0;
+    const alsoClearExams = b.alsoClearExams === true;
+
     const preview = {
       scope,
       academicYear,
@@ -964,6 +990,10 @@ router.post(
       classes: classIds.length,
       teachers: teacherIds.length,
       subjects: Array.from(new Set(rows.map((r) => r.subject))).length,
+      alsoClearExams,
+      exams: examIds.length,
+      examScores,
+      examSamples: examRows.slice(0, 5).map((e) => ({ subject: e.subject, title: e.title })),
       dryRun: b.dryRun === true,
     };
 
@@ -971,15 +1001,24 @@ router.post(
     if (b.dryRun === true) return ok(res, preview, "预演完成,未做任何修改");
     // 双重确认:接口层再拦一道,防止前端漏传或直连调用
     if (b.confirm !== true) return fail(res, 400, "清空课表为破坏性操作,请确认后再执行");
-    if (!rows.length) return ok(res, { ...preview, deleted: 0 }, "该范围内没有已排课程,无需清空");
+    // 注意:课表为空不代表无事可做 —— 勾选了清考试时仍要继续(典型场景正是"课表已空、只想清残留考试")
+    if (!rows.length && (!alsoClearExams || !examIds.length)) {
+      return ok(res, { ...preview, deleted: 0, deletedExams: 0 }, "该范围内没有已排课程,无需清空");
+    }
 
     const r = await prisma.timetableEntry.deleteMany({ where: { id: { in: rows.map((x) => x.id) } } });
+    const er = alsoClearExams && examIds.length
+      ? await prisma.exam.deleteMany({ where: { id: { in: examIds } } })
+      : { count: 0 };
+    const examTail = er.count
+      ? `,并删除 ${er.count} 场已建考试(含 ${examScores} 条成绩)`
+      : "";
     ok(
       res,
-      { ...preview, deleted: r.count },
-      scope === "class"
+      { ...preview, deleted: r.count, deletedExams: er.count },
+      (scope === "class"
         ? `已清空「${klass.name}」课表:删除 ${r.count} 条已排课程,课程块池保留,可直接重新排课`
-        : `已清空 ${academicYear} ${term} 全部班级课表:共 ${r.count} 条已排课程(涉及 ${classIds.length} 个班级),课程块池保留`
+        : `已清空 ${academicYear} ${term} 全部班级课表:共 ${r.count} 条已排课程(涉及 ${classIds.length} 个班级),课程块池保留`) + examTail
     );
   })
 );

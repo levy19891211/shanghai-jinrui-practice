@@ -466,4 +466,5 @@
 | 2026-08-07 | 建立刷题系统完整契约(认证/题库/会话/成绩/学情) | WB |
 | 2026-09-23 | 补录考试管理/考情分析契约;`GET /api/exams/:id/student/:studentId` 的 `perQuestion[]` 新增 `answeredAt`(ISO 8601,该题首次作答时刻),用于考情明细的时间分配甘特图 | WB |
 | 2026-09-23 | 新增 `POST /api/sessions/:id/visits`(分段停留上报,回答「一题多段」);`AnswerRecord` 新增 `visits` 字段;`perQuestion[]` 新增 `visits: [{start,end,seconds}]｜null`。老会话无 `visits`,前端回退单段渲染 | WB |
+| 2026-09-30 | **V2.4.127 教务成绩册契约变更**:① `GET /api/academics/classes/:id/gradebook` 新增「孤岛考试」规则 —— 某场考试若「该科目本班没排课」且「自身 0 条成绩」则不进入 `courses`,其明细(含 `subject`)通过新增的 `hiddenExams[]` 原样回传供管理员清理(**只隐藏不删除**);② `POST /api/scheduling/timetable/clear` 新增可选 `alsoClearExams`(默认 false),勾上后一并删除本范围内 `Exam`(`Score` 走 DB 级联),预演回传 `exams`/`examScores`/`examSamples`,响应新增 `deletedExams`;课表为空不再无条件短路(仅在未勾清考试或范围内无考试时短路) | WB |
 | 2026-09-30 | **V2.4.126 补录语言模块完整契约(§9)**:评分口径唯一来源(听读分离的可配换算表 + IELTS 半分进位 + 全真卷分项合成 + 目标判定)、新端点(`scoring-config`/`band-tables`/`goals`/`wrong-book`/`sessions/:id/report`/`scoring/rescore`)、`grade` 四维扩展、`skillBands`/`subscores` 数据结构、客观题判分规则 | WB |

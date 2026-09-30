@@ -490,6 +490,9 @@ type Gradebook = {
   courses: GCourse[];
   students: Stu[];
   scores: GScore[];
+  // 「孤岛考试」:该科目本班没排课且该场 0 成绩,后端不列出但原样回传,供管理员清理
+  // (带 subject —— courses 里的考试是按科目分组的,未列出的考试没有归属科目,必须自带)
+  hiddenExams?: (GExam & { subject: string })[];
   readonly: boolean;
 };
 
@@ -520,16 +523,39 @@ function ExamsTab({ cls }: { cls: Cls }) {
   }, [cls.id]);
   useEffect(() => { load(); }, [load]);
 
+  // 本视图是只读的,唯一开放的写操作是「清理误建/残留的考试记录」,且仅管理员可用。
+  // 之所以破例:历史遗留考试在只读化后已无任何入口可删(见 V2.4.127)。
+  const me = getUser();
+  const canDelete = me?.role === "ADMIN";
+  const [delTarget, setDelTarget] = useState<(GExam & { subject?: string }) | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function confirmDelete() {
+    if (!delTarget) return;
+    setDeleting(true);
+    try {
+      await api.del(`/academics/exams/${delTarget.id}`);
+      setDelTarget(null);
+      load();
+    } catch (e: any) {
+      alert(e.message || "删除失败");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loading) return <p className="text-slate-400">加载中…</p>;
   if (err) return <p className="text-sm text-red-500">{err}</p>;
   if (!data) return null;
   const examCount = data.courses.reduce((n, c) => n + c.exams.length, 0);
+  const hiddenCount = data.hiddenExams?.length || 0;
+  const scoreCountOf = (examId: string) => data.scores.filter((s) => s.examId === examId).length;
 
   return (
     <div className="space-y-4">
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
         本模块为<b>只读</b>视图:课程范围 = 本班<b>课表已排课程</b> + <b>已建考试</b>,不支持新建考试或修改分数。
-        「非学术课程」不安排考试,不在此列。课表变更后本页课程随之增减。
+        「非学术课程」不安排考试,不在此列;「无课表且无成绩」的考试也不列出。课表变更后本页课程随之增减。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
@@ -545,13 +571,73 @@ function ExamsTab({ cls }: { cls: Cls }) {
           {data.courses.length} 门课程 · {examCount} 场考试 · {data.students.length} 名学生 · {data.scores.length} 条成绩
         </span>
       </div>
-      {sub === "course" ? <GradeByCourse data={data} /> : <GradeByStudent data={data} />}
+      {hiddenCount > 0 && (
+        <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          <summary className="cursor-pointer text-slate-600">
+            另有 <b className="text-slate-700">{hiddenCount}</b> 场考试未列出 —— 该科目本班<b>没有排课</b>且该场<b>没有成绩</b>
+            {canDelete ? ",管理员可在此清理" : ",请联系管理员清理"}
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {data.hiddenExams!.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-2.5 py-1.5 ring-1 ring-slate-200">
+                <span className="text-slate-700">
+                  {e.subject} · {e.title}
+                </span>
+                <span className="text-slate-400">
+                  {TYPES[e.type] || e.type} · {fmtDay(e.examDate)} · 满分 {e.totalScore} · 0 条成绩
+                </span>
+                {canDelete && (
+                  <button onClick={() => setDelTarget(e)} className="ml-auto rounded px-1.5 py-0.5 text-red-500 hover:bg-red-50">
+                    删除
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {sub === "course" ? (
+        <GradeByCourse data={data} canDelete={canDelete} onDeleteExam={setDelTarget} />
+      ) : (
+        <GradeByStudent data={data} />
+      )}
+      {delTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => setDelTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
+            <h4 className="text-sm font-semibold text-slate-800">删除这场考试?</h4>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              {delTarget.subject} · <b className="text-slate-700">{delTarget.title}</b> · {fmtDay(delTarget.examDate)} · 满分 {delTarget.totalScore}
+            </p>
+            <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs leading-relaxed text-red-600">
+              会一并删除该场已录入的 <b>{scoreCountOf(delTarget.id)}</b> 条成绩,且无法撤销。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setDelTarget(null)} className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                {deleting ? "删除中…" : "确认删除"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ——— 子模块一:按课程查看(课程 × 学生 矩阵) ———
-function GradeByCourse({ data }: { data: Gradebook }) {
+function GradeByCourse({
+  data, canDelete, onDeleteExam,
+}: {
+  data: Gradebook;
+  canDelete: boolean;
+  onDeleteExam: (e: GExam) => void;
+}) {
   const initial = data.courses.find((c) => c.exams.length) || data.courses[0];
   const [subject, setSubject] = useState(initial?.subject || "");
   const [examId, setExamId] = useState<string | null>(null);
@@ -616,11 +702,22 @@ function GradeByCourse({ data }: { data: Gradebook }) {
                     <th className="whitespace-nowrap py-1 pr-3 text-left font-medium">学生</th>
                     {stats.map((s) => (
                       <th key={s.exam.id} className="px-2 py-1 align-bottom">
-                        <button onClick={() => setExamId(s.exam.id === examId ? null : s.exam.id)}
-                          className={`w-full rounded px-1.5 py-0.5 ${s.exam.id === examId ? "bg-indigo-50 text-indigo-600" : "hover:bg-slate-50"}`}>
-                          <div className="font-medium text-slate-700">{s.exam.title}</div>
-                          <div className="text-[11px] font-normal text-slate-400">{TYPES[s.exam.type] || s.exam.type} · {fmtDay(s.exam.examDate)} · 满分 {s.exam.totalScore}</div>
-                        </button>
+                        <div className="flex items-start gap-1">
+                          <button onClick={() => setExamId(s.exam.id === examId ? null : s.exam.id)}
+                            className={`min-w-0 flex-1 rounded px-1.5 py-0.5 ${s.exam.id === examId ? "bg-indigo-50 text-indigo-600" : "hover:bg-slate-50"}`}>
+                            <div className="font-medium text-slate-700">{s.exam.title}</div>
+                            <div className="text-[11px] font-normal text-slate-400">{TYPES[s.exam.type] || s.exam.type} · {fmtDay(s.exam.examDate)} · 满分 {s.exam.totalScore}</div>
+                          </button>
+                          {canDelete && (
+                            <button
+                              title="删除该场考试"
+                              onClick={() => onDeleteExam(s.exam)}
+                              className="mt-0.5 shrink-0 rounded px-1 text-[11px] leading-4 text-slate-300 hover:bg-red-50 hover:text-red-500"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
                       </th>
                     ))}
                     <th className="whitespace-nowrap px-2 py-1 text-center font-medium">平均得分率</th>
